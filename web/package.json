@@ -1,0 +1,13 @@
+{
+  "name": "roadie-web",
+  "private": true,
+  "scripts": {
+    "build": "cp index.html dist/ && esbuild src/app.ts --bundle --outdir=dist --sourcemap",
+    "watch": "cp index.html dist/ && esbuild src/app.ts --bundle --outdir=dist --sourcemap --watch",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

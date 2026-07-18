@@ -1,0 +1,283 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/dnswlt/roadie/internal/model"
+)
+
+var testStore *Store
+
+func TestMain(m *testing.M) {
+	url := os.Getenv("DATABASE_URL")
+	if url == "" {
+		// No database available (e.g. CI without services); skip all tests.
+		os.Exit(0)
+	}
+	ctx := context.Background()
+	st, err := Connect(ctx, url)
+	if err != nil {
+		panic(err)
+	}
+	if err := st.Migrate(ctx); err != nil {
+		panic(err)
+	}
+	testStore = st
+	code := m.Run()
+	st.Close()
+	os.Exit(code)
+}
+
+// newRoadmap creates a roadmap that is deleted when the test finishes.
+func newRoadmap(t *testing.T) model.Roadmap {
+	t.Helper()
+	ctx := context.Background()
+	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), rm.ID) })
+	return rm
+}
+
+func date(s string) model.Date {
+	d, err := model.ParseDate(s)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
+func isValidation(err error) bool {
+	var ve *ValidationError
+	return errors.As(err, &ve)
+}
+
+func TestRoadmapCRUD(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+
+	renamed, err := testStore.RenameRoadmap(ctx, rm.ID, "renamed")
+	if err != nil || renamed.Name != "renamed" {
+		t.Fatalf("rename: %v, name=%q", err, renamed.Name)
+	}
+	if !renamed.UpdatedAt.After(rm.UpdatedAt) && !renamed.UpdatedAt.Equal(rm.UpdatedAt) {
+		t.Errorf("updated_at not advanced")
+	}
+	if _, err := testStore.RenameRoadmap(ctx, -1, "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("rename missing roadmap: want ErrNotFound, got %v", err)
+	}
+	if _, err := testStore.CreateRoadmap(ctx, ""); !isValidation(err) {
+		t.Errorf("empty name: want validation error, got %v", err)
+	}
+	list, err := testStore.ListRoadmaps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range list {
+		if r.ID == rm.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("roadmap not in list")
+	}
+}
+
+func TestLanesAndReorder(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+
+	a, err := testStore.CreateLane(ctx, rm.ID, "A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := testStore.CreateLane(ctx, rm.ID, "B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := testStore.CreateLane(ctx, rm.ID, "C")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Position != 0 || b.Position != 1 || c.Position != 2 {
+		t.Fatalf("positions: %d %d %d", a.Position, b.Position, c.Position)
+	}
+
+	if err := testStore.ReorderLanes(ctx, rm.ID, []int64{c.ID, a.ID, b.ID}); err != nil {
+		t.Fatal(err)
+	}
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := [3]int64{full.Lanes[0].ID, full.Lanes[1].ID, full.Lanes[2].ID}
+	want := [3]int64{c.ID, a.ID, b.ID}
+	if got != want {
+		t.Errorf("lane order: got %v want %v", got, want)
+	}
+
+	if err := testStore.ReorderLanes(ctx, rm.ID, []int64{a.ID, b.ID}); !isValidation(err) {
+		t.Errorf("partial reorder: want validation error, got %v", err)
+	}
+	if err := testStore.ReorderLanes(ctx, rm.ID, []int64{a.ID, a.ID, b.ID}); !isValidation(err) {
+		t.Errorf("duplicate reorder: want validation error, got %v", err)
+	}
+
+	if _, err := testStore.CreateLane(ctx, -1, "X"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("lane for missing roadmap: want ErrNotFound, got %v", err)
+	}
+}
+
+func TestItemInvariants(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane1, _ := testStore.CreateLane(ctx, rm.ID, "L1")
+	lane2, _ := testStore.CreateLane(ctx, rm.ID, "L2")
+
+	parent, err := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "Parent", StartDate: date("2026-01-01"), EndDate: date("2026-06-30"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Child created "in lane2" but adopts parent's lane.
+	child, err := testStore.CreateItem(ctx, lane2.ID, NewItem{
+		Title: "Child", StartDate: date("2026-02-01"), EndDate: date("2026-03-31"),
+		ParentID: &parent.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.LaneID != lane1.ID {
+		t.Errorf("child lane: got %d want %d", child.LaneID, lane1.ID)
+	}
+
+	// No second nesting level.
+	if _, err := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "Grandchild", StartDate: date("2026-02-01"), EndDate: date("2026-02-28"),
+		ParentID: &child.ID,
+	}); !isValidation(err) {
+		t.Errorf("grandchild: want validation error, got %v", err)
+	}
+
+	// Invalid dates.
+	if _, err := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "Bad", StartDate: date("2026-05-01"), EndDate: date("2026-04-01"),
+	}); !isValidation(err) {
+		t.Errorf("end before start: want validation error, got %v", err)
+	}
+
+	// A parent cannot become a child.
+	other, _ := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "Other", StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+	})
+	if _, err := testStore.UpdateItem(ctx, parent.ID, ItemPatch{
+		ParentID: model.Opt[*int64]{Set: true, Value: &other.ID},
+	}); !isValidation(err) {
+		t.Errorf("parent as child: want validation error, got %v", err)
+	}
+
+	// An item cannot be its own parent.
+	if _, err := testStore.UpdateItem(ctx, other.ID, ItemPatch{
+		ParentID: model.Opt[*int64]{Set: true, Value: &other.ID},
+	}); !isValidation(err) {
+		t.Errorf("self parent: want validation error, got %v", err)
+	}
+
+	// A child cannot change lanes on its own.
+	if _, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		LaneID: model.Opt[int64]{Set: true, Value: lane2.ID},
+	}); !isValidation(err) {
+		t.Errorf("child lane change: want validation error, got %v", err)
+	}
+
+	// Moving the parent moves the children.
+	moved, err := testStore.UpdateItem(ctx, parent.ID, ItemPatch{
+		LaneID: model.Opt[int64]{Set: true, Value: lane2.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.LaneID != lane2.ID {
+		t.Errorf("parent lane after move: got %d", moved.LaneID)
+	}
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ln := range full.Lanes {
+		for _, it := range ln.Items {
+			if it.ID == parent.ID {
+				if ln.ID != lane2.ID {
+					t.Errorf("parent rendered in lane %d", ln.ID)
+				}
+				if len(it.Children) != 1 || it.Children[0].LaneID != lane2.ID {
+					t.Errorf("child did not follow parent: %+v", it.Children)
+				}
+			}
+		}
+	}
+
+	// Detach child, then move it to another lane.
+	detached, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		ParentID: model.Opt[*int64]{Set: true, Value: nil},
+		LaneID:   model.Opt[int64]{Set: true, Value: lane1.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detached.ParentID != nil || detached.LaneID != lane1.ID {
+		t.Errorf("detach: %+v", detached)
+	}
+
+	// Deleting a parent cascades to children.
+	child2, _ := testStore.CreateItem(ctx, lane2.ID, NewItem{
+		Title: "Child2", StartDate: date("2026-02-01"), EndDate: date("2026-02-15"),
+		ParentID: &parent.ID,
+	})
+	if err := testStore.DeleteItem(ctx, parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.UpdateItem(ctx, child2.ID, ItemPatch{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("child after parent delete: want ErrNotFound, got %v", err)
+	}
+}
+
+func TestItemUpdateFields(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
+	it, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "T", Description: "D",
+		StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upd, err := testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Title:       model.Opt[string]{Set: true, Value: "T2"},
+		Description: model.Opt[string]{Set: true, Value: ""},
+		StartDate:   model.Opt[model.Date]{Set: true, Value: date("2026-01-15")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd.Title != "T2" || upd.Description != "" || !upd.StartDate.Equal(date("2026-01-15").Time) {
+		t.Errorf("update result: %+v", upd)
+	}
+	if upd.EndDate.Format(time.DateOnly) != "2026-02-01" {
+		t.Errorf("end date changed unexpectedly: %v", upd.EndDate)
+	}
+	if _, err := testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Title: model.Opt[string]{Set: true, Value: ""},
+	}); !isValidation(err) {
+		t.Errorf("empty title: want validation error, got %v", err)
+	}
+}
