@@ -77,6 +77,7 @@ type Item struct {
 	Description string    `json:"description"`
 	StartDate   Date      `json:"startDate"`
 	EndDate     Date      `json:"endDate"`
+	Rank        int       `json:"rank"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 

@@ -272,6 +272,117 @@ func TestItemInvariants(t *testing.T) {
 	}
 }
 
+func TestItemRanks(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane1, _ := testStore.CreateLane(ctx, rm.ID, "L1")
+	lane2, _ := testStore.CreateLane(ctx, rm.ID, "L2")
+
+	mk := func(title string) model.Item {
+		it, err := testStore.CreateItem(ctx, lane1.ID, NewItem{
+			Title: title, StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return it
+	}
+	a, b, c := mk("A"), mk("B"), mk("C")
+	if a.Rank != 0 || b.Rank != 1 || c.Rank != 2 {
+		t.Fatalf("create ranks: %d %d %d", a.Rank, b.Rank, c.Rank)
+	}
+
+	laneOrder := func(laneID int64) []string {
+		t.Helper()
+		full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ln := range full.Lanes {
+			if ln.ID == laneID {
+				var titles []string
+				for i, it := range ln.Items {
+					if it.Rank != i {
+						t.Errorf("lane %d: item %q has rank %d at index %d", laneID, it.Title, it.Rank, i)
+					}
+					titles = append(titles, it.Title)
+				}
+				return titles
+			}
+		}
+		return nil
+	}
+
+	// Move C to the top.
+	if _, err := testStore.UpdateItem(ctx, c.ID, ItemPatch{
+		Rank: model.Opt[int]{Set: true, Value: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := laneOrder(lane1.ID); got[0] != "C" || got[1] != "A" || got[2] != "B" {
+		t.Errorf("after move to top: %v", got)
+	}
+
+	// Delete the middle item (A, rank 1): ranks stay dense.
+	if err := testStore.DeleteItem(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := laneOrder(lane1.ID); len(got) != 2 || got[0] != "C" || got[1] != "B" {
+		t.Errorf("after delete: %v", got)
+	}
+
+	// Cross-lane move without an explicit rank appends.
+	moved, err := testStore.UpdateItem(ctx, c.ID, ItemPatch{
+		LaneID: model.Opt[int64]{Set: true, Value: lane2.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.Rank != 0 {
+		t.Errorf("appended rank in empty lane: %d", moved.Rank)
+	}
+	if got := laneOrder(lane1.ID); len(got) != 1 || got[0] != "B" {
+		t.Errorf("source lane after cross-lane move: %v", got)
+	}
+
+	// Out-of-range ranks are clamped.
+	clamped, err := testStore.UpdateItem(ctx, c.ID, ItemPatch{
+		Rank: model.Opt[int]{Set: true, Value: 99},
+	})
+	if err != nil || clamped.Rank != 0 {
+		t.Errorf("clamped rank: %v, %d", err, clamped.Rank)
+	}
+
+	// Children rank within their parent.
+	c1, _ := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "b-child1", StartDate: date("2026-01-01"), EndDate: date("2026-01-10"), ParentID: &b.ID,
+	})
+	c2, err := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "b-child2", StartDate: date("2026-01-05"), EndDate: date("2026-01-15"), ParentID: &b.ID,
+	})
+	if err != nil || c1.Rank != 0 || c2.Rank != 1 {
+		t.Fatalf("child ranks: %v, %d %d", err, c1.Rank, c2.Rank)
+	}
+	if _, err := testStore.UpdateItem(ctx, c2.ID, ItemPatch{
+		Rank: model.Opt[int]{Set: true, Value: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ln := range full.Lanes {
+		for _, it := range ln.Items {
+			if it.ID == b.ID {
+				if len(it.Children) != 2 || it.Children[0].Title != "b-child2" {
+					t.Errorf("child order: %+v", it.Children)
+				}
+			}
+		}
+	}
+}
+
 func TestItemUpdateFields(t *testing.T) {
 	ctx := context.Background()
 	rm := newRoadmap(t)

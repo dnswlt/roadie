@@ -33,8 +33,9 @@ Invariants are enforced in **internal/store** (not triggers, not handlers):
 - Item nesting is at most one level deep (a parent cannot become a child; a child cannot gain children).
 - A child's lane always equals its parent's lane; moving a parent to another lane moves its children too.
 - Lane reorder (`PUT .../lane-order`) must list exactly the roadmap's lane IDs; positions are rewritten transactionally.
+- Items carry an explicit `rank`: their position within their container (lane for top-level items, parent for children), kept **dense 0..n-1 per container** by the store on every create/move/delete. `PATCH /api/items/{id}` with `rank` means "insert at this index after removing me" (clamped; omitted rank on a container move = append). The frontend relies on rank == array index.
 - Lanes have a `color` theme (blue/green/red/orange/purple — validated in the store, auto-assigned round-robin by position on create). The frontend maps the name to a hex in web/src/colors.ts and sets it as `--c` on the lane element; **all** bar/tint/border shades derive from `--c` via CSS `color-mix` in styles.css — never hard-code per-color CSS.
-- Vertical placement of items within a lane is **never stored** — the frontend packs overlapping items into rows (web/src/layout.ts).
+- Vertical layout is one row per item (top-level and children alike), stacked in rank order (web/src/layout.ts) — pixel positions are never stored, only the order is.
 
 Backend: stdlib `net/http` (Go 1.22 method routing) + pgx, hand-written SQL. internal/server is a thin JSON layer: it maps `store.ErrNotFound` → 404 and `*store.ValidationError` → 400 via `writeErr`. All item moves (dates, lane change, reparent) go through a single `PATCH /api/items/{id}`; `model.Opt[T]` distinguishes absent JSON fields from explicit `null` (used for `parentId`). Migrations: numbered SQL files in internal/store/migrations, embedded, applied at startup by store.Migrate — add a new `00N_*.sql` file, never edit applied ones.
 
@@ -42,7 +43,7 @@ Frontend (web/src, TypeScript, no framework, bundled by esbuild):
 
 - `state.ts` is the single client-side source of truth (subscribe/notify); every notify triggers a **full re-render** of the chart (render.ts) with scroll preserved. There is no virtual DOM and no partial updates — keep it that way unless item counts make it slow.
 - `actions.ts` wraps every mutation: optimistic local apply (mirroring the server invariants in `applyItemPatch`) → API call → rollback + toast on failure. Creates are not optimistic (server assigns IDs).
-- `dnd.ts` is one pointer-event controller for all gestures (bar move/resize, reparent by dropping on a `.block`, lane reorder via grip). Drags manipulate element styles only as a preview; the model is updated once on drop through `actions.updateItem`. Drop targets are found with `elementFromPoint` while the dragged element has `pointer-events: none`.
+- `dnd.ts` is one pointer-event controller for all gestures (bar move/resize, vertical reorder, reparent, lane reorder via grip). Drop semantics: hovering a top-level item's **header `.bar`** = nest into it; anywhere else in a lane = insert as top-level at the pointer's vertical index (insertion line shown); a child over its own parent block = reorder among siblings. Drags manipulate element styles only as a preview; the model is updated once on drop through `actions.updateItem`. Drop targets are found with `elementFromPoint` while the dragged element has `pointer-events: none`.
 - `timescale.ts` converts ISO dates ↔ integer day numbers ↔ pixels; end dates are **inclusive** (a one-day item spans start==end; bar width = end − start + 1 days).
 - CSS-only layout tricks that are load-bearing: the chart is one scroll container with `position: sticky` for the time header (top) and lane labels (left); item bars are absolutely positioned inside `.lane-canvas`.
 

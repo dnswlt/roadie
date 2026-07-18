@@ -76,6 +76,14 @@ export function renderChart(container: HTMLElement): void {
     cell.textContent = cw >= 34 ? t.label : "";
     mRow.append(cell);
   }
+  // Today: a small triangle at the bottom edge of the time header.
+  const tx = xOf(scale, today);
+  if (tx >= 0 && tx <= w) {
+    const marker = div("today-marker");
+    marker.style.left = `${tx}px`;
+    marker.title = "Today";
+    thRows.append(marker);
+  }
   thRows.append(qRow, mRow);
   thead.append(corner, thRows);
 
@@ -88,14 +96,6 @@ export function renderChart(container: HTMLElement): void {
     const hint = div("lanes-hint");
     hint.textContent = "This roadmap has no contexts yet — add one below.";
     lanesEl.append(hint);
-  }
-
-  // Today marker across all lanes.
-  const tx = xOf(scale, today);
-  if (tx >= 0 && tx <= w) {
-    const line = div("today-line");
-    line.style.left = `${LABEL_W + tx}px`;
-    lanesEl.append(line);
   }
 
   // Add-lane row.

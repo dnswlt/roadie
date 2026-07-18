@@ -26,12 +26,15 @@ async function optimistic(mutate: () => void, call: () => Promise<unknown>): Pro
   }
 }
 
-function sortByStart(items: Item[]): void {
-  items.sort((a, b) => (a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : a.id - b.id));
+function renumber(items: Item[]): void {
+  items.forEach((it, i) => {
+    it.rank = i;
+  });
 }
 
 // applyItemPatch mirrors the server's UpdateItem logic on the local state:
-// children adopt their parent's lane, and children follow a moving parent.
+// children adopt their parent's lane, children follow a moving parent, and
+// container arrays stay ordered with dense ranks.
 function applyItemPatch(id: number, patch: ItemPatch): void {
   const loc = state.findItem(id);
   if (!loc || !state.current) return;
@@ -48,35 +51,35 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
   if (newParent) newLaneId = newParent.item.laneId;
 
   const structural = newParentId !== item.parentId || newLaneId !== item.laneId;
-  if (structural) {
-    // Remove from the old container.
-    if (loc.parent) {
-      loc.parent.children = loc.parent.children.filter((c) => c.id !== id);
-    } else {
-      loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
-    }
-    item.parentId = newParentId;
-    item.laneId = newLaneId;
-    // Insert into the new container.
-    if (newParent) {
-      const parentFull = newParent.item as ItemFull;
-      const { children: _drop, ...plain } = item as ItemFull;
-      parentFull.children.push(plain as Item);
-      sortByStart(parentFull.children);
-    } else {
-      const lane = state.findLane(newLaneId);
-      if (lane) {
-        const full = item as ItemFull;
-        if (!full.children) full.children = [];
-        for (const c of full.children) c.laneId = newLaneId;
-        lane.items.push(full);
-        sortByStart(lane.items);
-      }
-    }
+  if (!structural && patch.rank === undefined) return;
+
+  // Remove from the old container.
+  const oldArr = loc.parent ? loc.parent.children : loc.lane.items;
+  const oldIdx = oldArr.findIndex((i) => i.id === id);
+  if (oldIdx >= 0) oldArr.splice(oldIdx, 1);
+  renumber(oldArr);
+  item.parentId = newParentId;
+  item.laneId = newLaneId;
+
+  // Insert into the new container at the requested position (append default).
+  if (newParent) {
+    const parentFull = newParent.item as ItemFull;
+    const { children: _drop, ...plain } = item as ItemFull;
+    const arr = parentFull.children;
+    const idx = patch.rank !== undefined ? Math.max(0, Math.min(patch.rank, arr.length)) : arr.length;
+    arr.splice(idx, 0, plain as Item);
+    renumber(arr);
   } else {
-    // Dates may have changed; keep container order consistent with the server.
-    if (loc.parent) sortByStart(loc.parent.children);
-    else sortByStart(loc.lane.items);
+    const lane = state.findLane(newLaneId);
+    if (lane) {
+      const full = item as ItemFull;
+      if (!full.children) full.children = [];
+      for (const c of full.children) c.laneId = newLaneId;
+      const idx =
+        patch.rank !== undefined ? Math.max(0, Math.min(patch.rank, lane.items.length)) : lane.items.length;
+      lane.items.splice(idx, 0, full);
+      renumber(lane.items);
+    }
   }
 }
 
@@ -205,17 +208,14 @@ export const actions = {
         endDate: isoOf(today + 27),
         parentId,
       });
+      // The server appends new items to their container.
       const lane = state.findLane(item.laneId);
       if (lane) {
         if (item.parentId !== null) {
           const parent = lane.items.find((i) => i.id === item.parentId);
-          if (parent) {
-            parent.children.push(item);
-            sortByStart(parent.children);
-          }
+          if (parent) parent.children.push(item);
         } else {
           lane.items.push({ ...item, children: [] });
-          sortByStart(lane.items);
         }
       }
       state.selectedItemId = item.id;
@@ -237,8 +237,13 @@ export const actions = {
       () => {
         const loc = state.findItem(id);
         if (!loc) return;
-        if (loc.parent) loc.parent.children = loc.parent.children.filter((c) => c.id !== id);
-        else loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
+        if (loc.parent) {
+          loc.parent.children = loc.parent.children.filter((c) => c.id !== id);
+          renumber(loc.parent.children);
+        } else {
+          loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
+          renumber(loc.lane.items);
+        }
         if (state.selectedItemId === id) state.selectedItemId = null;
       },
       () => api.deleteItem(id),

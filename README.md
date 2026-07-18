@@ -16,14 +16,16 @@ The data model is deliberately simple; all views are derived from it.
   planned start/end date. Items can have child items (one level deep, no
   further nesting). A child always lives in its parent's lane.
 
-Vertical placement inside a lane is computed by the frontend (overlapping
-items are packed into rows) — no layout state is stored.
+Items have an explicit order within their lane (and children within their
+parent); every item gets its own row in that order. Only the order is
+stored — pixel positions never are.
 
 ## UI
 
-- Drag a bar to move it in time; drop it on another lane to move it there;
-  drop it on another top-level item to make it a child; drop a child on empty
-  lane space to detach it.
+- Drag a bar to move it in time. Drag it up/down to reorder within the lane
+  (an insertion line shows where it will land), into another lane to move it
+  there, or onto a top-level item's header bar to make it a child. Drop a
+  child on empty lane space to detach it.
 - Drag a bar's left/right edge to adjust start/end (snaps to days).
 - Drag a lane's grip (⠿) to reorder swimlanes.
 - Click an item to edit title, description, and dates in the side panel.

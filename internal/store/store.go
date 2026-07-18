@@ -48,13 +48,13 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, updated_at"
+const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, updated_at"
 
 func scanItem(r rowScanner) (model.Item, error) {
 	var it model.Item
 	var start, end time.Time
 	err := r.Scan(&it.ID, &it.LaneID, &it.ParentID, &it.Title, &it.Description,
-		&start, &end, &it.UpdatedAt)
+		&start, &end, &it.Rank, &it.UpdatedAt)
 	if err != nil {
 		return model.Item{}, err
 	}
@@ -157,7 +157,7 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 	itemRows, err := s.pool.Query(ctx,
 		`SELECT `+itemCols+` FROM items
 		 WHERE lane_id IN (SELECT id FROM lanes WHERE roadmap_id = $1)
-		 ORDER BY start_date, id`, id)
+		 ORDER BY rank, id`, id)
 	if err != nil {
 		return full, err
 	}
@@ -372,9 +372,12 @@ func (s *Store) CreateItem(ctx context.Context, laneID int64, n NewItem) (model.
 		}
 	}
 
+	// New items are appended to their container (lane for top-level items,
+	// parent for children). Ranks are kept dense per container.
 	row := tx.QueryRow(ctx,
-		`INSERT INTO items (lane_id, parent_id, title, description, start_date, end_date)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO items (lane_id, parent_id, title, description, start_date, end_date, rank)
+		 VALUES ($1, $2, $3, $4, $5, $6,
+		         (SELECT COUNT(*) FROM items WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2))
 		 RETURNING `+itemCols,
 		laneID, n.ParentID, n.Title, n.Description, n.StartDate.Time, n.EndDate.Time)
 	it, err := scanItem(row)
@@ -391,6 +394,14 @@ type ItemPatch struct {
 	EndDate     model.Opt[model.Date] `json:"endDate"`
 	LaneID      model.Opt[int64]      `json:"laneId"`
 	ParentID    model.Opt[*int64]     `json:"parentId"`
+	Rank        model.Opt[int]        `json:"rank"`
+}
+
+func ptrEq(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // UpdateItem applies a partial update. Moves (lane change, reparenting) go
@@ -483,13 +494,43 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 		}
 	}
 
+	// Maintain dense per-container ranks. On a container move (or explicit
+	// rank change) the item is taken out of its old container's numbering
+	// and spliced into the target position; siblings shift accordingly.
+	containerChanged := next.LaneID != cur.LaneID || !ptrEq(next.ParentID, cur.ParentID)
+	if containerChanged || p.Rank.Set {
+		if _, err := tx.Exec(ctx,
+			`UPDATE items SET rank = rank - 1, updated_at = now()
+			 WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND rank > $3 AND id != $4`,
+			cur.LaneID, cur.ParentID, cur.Rank, id); err != nil {
+			return model.Item{}, err
+		}
+		var count int
+		if err := tx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM items
+			 WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND id != $3`,
+			next.LaneID, next.ParentID, id).Scan(&count); err != nil {
+			return model.Item{}, err
+		}
+		next.Rank = count // append by default
+		if p.Rank.Set {
+			next.Rank = max(0, min(p.Rank.Value, count))
+		}
+		if _, err := tx.Exec(ctx,
+			`UPDATE items SET rank = rank + 1, updated_at = now()
+			 WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND rank >= $3 AND id != $4`,
+			next.LaneID, next.ParentID, next.Rank, id); err != nil {
+			return model.Item{}, err
+		}
+	}
+
 	row = tx.QueryRow(ctx,
 		`UPDATE items SET lane_id = $2, parent_id = $3, title = $4, description = $5,
-		        start_date = $6, end_date = $7, updated_at = now()
+		        start_date = $6, end_date = $7, rank = $8, updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+itemCols,
 		id, next.LaneID, next.ParentID, next.Title, next.Description,
-		next.StartDate.Time, next.EndDate.Time)
+		next.StartDate.Time, next.EndDate.Time, next.Rank)
 	updated, err := scanItem(row)
 	if err != nil {
 		return model.Item{}, err
@@ -506,12 +547,29 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 }
 
 func (s *Store) DeleteItem(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM items WHERE id = $1`, id)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	defer tx.Rollback(ctx)
+
+	var laneID, rank int64
+	var parentID *int64
+	err = tx.QueryRow(ctx,
+		`DELETE FROM items WHERE id = $1 RETURNING lane_id, parent_id, rank`, id).
+		Scan(&laneID, &parentID, &rank)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	// Keep the container's ranks dense.
+	if _, err := tx.Exec(ctx,
+		`UPDATE items SET rank = rank - 1, updated_at = now()
+		 WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND rank > $3`,
+		laneID, parentID, rank); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
