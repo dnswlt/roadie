@@ -26,6 +26,41 @@ func invalidf(format string, args ...any) error {
 	return &ValidationError{Msg: fmt.Sprintf(format, args...)}
 }
 
+func (s *Store) lockRoadmap(ctx context.Context, tx pgx.Tx, roadmapID int64) error {
+	var dummy int64
+	err := tx.QueryRow(ctx, `SELECT id FROM roadmaps WHERE id = $1 FOR UPDATE`, roadmapID).Scan(&dummy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// lockRoadmapByLane locks the roadmap owning laneID and returns its id.
+func (s *Store) lockRoadmapByLane(ctx context.Context, tx pgx.Tx, laneID int64) (int64, error) {
+	var roadmapID int64
+	err := tx.QueryRow(ctx, `SELECT roadmap_id FROM lanes WHERE id = $1`, laneID).Scan(&roadmapID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	return roadmapID, s.lockRoadmap(ctx, tx, roadmapID)
+}
+
+// lockRoadmapByItem locks the roadmap owning itemID and returns its id.
+func (s *Store) lockRoadmapByItem(ctx context.Context, tx pgx.Tx, itemID int64) (int64, error) {
+	var roadmapID int64
+	err := tx.QueryRow(ctx, `SELECT roadmap_id FROM lanes WHERE id = (SELECT lane_id FROM items WHERE id = $1)`, itemID).Scan(&roadmapID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	return roadmapID, s.lockRoadmap(ctx, tx, roadmapID)
+}
+
 type Store struct {
 	pool *pgxpool.Pool
 }
@@ -218,18 +253,28 @@ func (s *Store) CreateLane(ctx context.Context, roadmapID int64, name string) (m
 	if name == "" {
 		return model.Lane{}, invalidf("lane name must not be empty")
 	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return model.Lane{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := s.lockRoadmap(ctx, tx, roadmapID); err != nil {
+		return model.Lane{}, err
+	}
+
 	var l model.Lane
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`WITH pos AS (SELECT COALESCE(MAX(position) + 1, 0) AS p FROM lanes WHERE roadmap_id = $1)
 		 INSERT INTO lanes (roadmap_id, name, position, color)
 		 SELECT r.id, $2, pos.p, (ARRAY['blue','green','red','orange','purple'])[(pos.p % 5) + 1]
 		 FROM roadmaps r, pos WHERE r.id = $1
 		 RETURNING id, roadmap_id, name, position, color`,
 		roadmapID, name).Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return model.Lane{}, ErrNotFound
+	if err != nil {
+		return model.Lane{}, err
 	}
-	return l, err
+	return l, tx.Commit(ctx)
 }
 
 type LanePatch struct {
@@ -244,8 +289,18 @@ func (s *Store) UpdateLane(ctx context.Context, id int64, p LanePatch) (model.La
 	if p.Color.Set && !validLaneColor(p.Color.Value) {
 		return model.Lane{}, invalidf("invalid lane color %q (want one of %v)", p.Color.Value, laneColors)
 	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return model.Lane{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := s.lockRoadmapByLane(ctx, tx, id); err != nil {
+		return model.Lane{}, err
+	}
+
 	var l model.Lane
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`UPDATE lanes SET name = CASE WHEN $2 THEN $3 ELSE name END,
 		        color = CASE WHEN $4 THEN $5 ELSE color END,
 		        updated_at = now()
@@ -256,18 +311,31 @@ func (s *Store) UpdateLane(ctx context.Context, id int64, p LanePatch) (model.La
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Lane{}, ErrNotFound
 	}
-	return l, err
+	if err != nil {
+		return model.Lane{}, err
+	}
+	return l, tx.Commit(ctx)
 }
 
 func (s *Store) DeleteLane(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM lanes WHERE id = $1`, id)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := s.lockRoadmapByLane(ctx, tx, id); err != nil {
+		return err
+	}
+
+	tag, err := tx.Exec(ctx, `DELETE FROM lanes WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 // ReorderLanes sets the lane order of a roadmap. laneIDs must contain exactly
@@ -279,8 +347,12 @@ func (s *Store) ReorderLanes(ctx context.Context, roadmapID int64, laneIDs []int
 	}
 	defer tx.Rollback(ctx)
 
+	if err := s.lockRoadmap(ctx, tx, roadmapID); err != nil {
+		return err
+	}
+
 	rows, err := tx.Query(ctx,
-		`SELECT id FROM lanes WHERE roadmap_id = $1 FOR UPDATE`, roadmapID)
+		`SELECT id FROM lanes WHERE roadmap_id = $1 ORDER BY position`, roadmapID)
 	if err != nil {
 		return err
 	}
@@ -344,12 +416,18 @@ func (s *Store) CreateItem(ctx context.Context, laneID int64, n NewItem) (model.
 	}
 	defer tx.Rollback(ctx)
 
+	roadmapID, err := s.lockRoadmapByLane(ctx, tx, laneID)
+	if err != nil {
+		return model.Item{}, err
+	}
+
 	if n.ParentID != nil {
-		var parentLane int64
+		var parentLane, parentRoadmap int64
 		var grandparent *int64
 		err := tx.QueryRow(ctx,
-			`SELECT lane_id, parent_id FROM items WHERE id = $1`, *n.ParentID).
-			Scan(&parentLane, &grandparent)
+			`SELECT i.lane_id, l.roadmap_id, i.parent_id
+			 FROM items i JOIN lanes l ON l.id = i.lane_id WHERE i.id = $1`, *n.ParentID).
+			Scan(&parentLane, &parentRoadmap, &grandparent)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return model.Item{}, invalidf("parent item %d not found", *n.ParentID)
 		}
@@ -358,6 +436,9 @@ func (s *Store) CreateItem(ctx context.Context, laneID int64, n NewItem) (model.
 		}
 		if grandparent != nil {
 			return model.Item{}, invalidf("items can only be nested one level deep")
+		}
+		if parentRoadmap != roadmapID {
+			return model.Item{}, invalidf("parent item %d belongs to a different roadmap", *n.ParentID)
 		}
 		// Children always live in their parent's lane.
 		laneID = parentLane
@@ -413,7 +494,12 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 	}
 	defer tx.Rollback(ctx)
 
-	row := tx.QueryRow(ctx, `SELECT `+itemCols+` FROM items WHERE id = $1 FOR UPDATE`, id)
+	roadmapID, err := s.lockRoadmapByItem(ctx, tx, id)
+	if err != nil {
+		return model.Item{}, err
+	}
+
+	row := tx.QueryRow(ctx, `SELECT `+itemCols+` FROM items WHERE id = $1`, id)
 	cur, err := scanItem(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Item{}, ErrNotFound
@@ -465,11 +551,12 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 		if hasChildren {
 			return model.Item{}, invalidf("an item with children cannot become a child itself")
 		}
-		var parentLane int64
+		var parentLane, parentRoadmap int64
 		var grandparent *int64
 		err := tx.QueryRow(ctx,
-			`SELECT lane_id, parent_id FROM items WHERE id = $1 FOR UPDATE`, pid).
-			Scan(&parentLane, &grandparent)
+			`SELECT i.lane_id, l.roadmap_id, i.parent_id
+			 FROM items i JOIN lanes l ON l.id = i.lane_id WHERE i.id = $1`, pid).
+			Scan(&parentLane, &parentRoadmap, &grandparent)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return model.Item{}, invalidf("parent item %d not found", pid)
 		}
@@ -479,18 +566,25 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 		if grandparent != nil {
 			return model.Item{}, invalidf("items can only be nested one level deep")
 		}
+		if parentRoadmap != roadmapID {
+			return model.Item{}, invalidf("parent item %d belongs to a different roadmap", pid)
+		}
 		if p.LaneID.Set && p.LaneID.Value != parentLane {
 			return model.Item{}, invalidf("child items inherit their parent's lane")
 		}
 		next.LaneID = parentLane
 	} else if next.LaneID != cur.LaneID {
-		var exists bool
-		if err := tx.QueryRow(ctx,
-			`SELECT EXISTS (SELECT 1 FROM lanes WHERE id = $1)`, next.LaneID).Scan(&exists); err != nil {
+		var laneRoadmap int64
+		err := tx.QueryRow(ctx,
+			`SELECT roadmap_id FROM lanes WHERE id = $1`, next.LaneID).Scan(&laneRoadmap)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Item{}, invalidf("lane %d not found", next.LaneID)
+		}
+		if err != nil {
 			return model.Item{}, err
 		}
-		if !exists {
-			return model.Item{}, invalidf("lane %d not found", next.LaneID)
+		if laneRoadmap != roadmapID {
+			return model.Item{}, invalidf("lane %d belongs to a different roadmap", next.LaneID)
 		}
 	}
 
@@ -552,6 +646,10 @@ func (s *Store) DeleteItem(ctx context.Context, id int64) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	if _, err := s.lockRoadmapByItem(ctx, tx, id); err != nil {
+		return err
+	}
 
 	var laneID, rank int64
 	var parentID *int64
