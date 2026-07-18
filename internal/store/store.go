@@ -135,7 +135,7 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 	}
 
 	laneRows, err := s.pool.Query(ctx,
-		`SELECT id, roadmap_id, name, position FROM lanes WHERE roadmap_id = $1 ORDER BY position, id`, id)
+		`SELECT id, roadmap_id, name, position, color FROM lanes WHERE roadmap_id = $1 ORDER BY position, id`, id)
 	if err != nil {
 		return full, err
 	}
@@ -144,7 +144,7 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 	laneIdx := map[int64]int{}
 	for laneRows.Next() {
 		var l model.Lane
-		if err := laneRows.Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position); err != nil {
+		if err := laneRows.Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color); err != nil {
 			return full, err
 		}
 		laneIdx[l.ID] = len(full.Lanes)
@@ -201,32 +201,58 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 
 // Lanes
 
+// laneColors are the color themes a swimlane can use; they are also
+// auto-assigned round-robin when lanes are created.
+var laneColors = []string{"blue", "green", "red", "orange", "purple"}
+
+func validLaneColor(c string) bool {
+	for _, v := range laneColors {
+		if v == c {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) CreateLane(ctx context.Context, roadmapID int64, name string) (model.Lane, error) {
 	if name == "" {
 		return model.Lane{}, invalidf("lane name must not be empty")
 	}
 	var l model.Lane
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO lanes (roadmap_id, name, position)
-		 SELECT r.id, $2, (SELECT COALESCE(MAX(position) + 1, 0) FROM lanes WHERE roadmap_id = $1)
-		 FROM roadmaps r WHERE r.id = $1
-		 RETURNING id, roadmap_id, name, position`,
-		roadmapID, name).Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position)
+		`WITH pos AS (SELECT COALESCE(MAX(position) + 1, 0) AS p FROM lanes WHERE roadmap_id = $1)
+		 INSERT INTO lanes (roadmap_id, name, position, color)
+		 SELECT r.id, $2, pos.p, (ARRAY['blue','green','red','orange','purple'])[(pos.p % 5) + 1]
+		 FROM roadmaps r, pos WHERE r.id = $1
+		 RETURNING id, roadmap_id, name, position, color`,
+		roadmapID, name).Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Lane{}, ErrNotFound
 	}
 	return l, err
 }
 
-func (s *Store) RenameLane(ctx context.Context, id int64, name string) (model.Lane, error) {
-	if name == "" {
+type LanePatch struct {
+	Name  model.Opt[string] `json:"name"`
+	Color model.Opt[string] `json:"color"`
+}
+
+func (s *Store) UpdateLane(ctx context.Context, id int64, p LanePatch) (model.Lane, error) {
+	if p.Name.Set && p.Name.Value == "" {
 		return model.Lane{}, invalidf("lane name must not be empty")
+	}
+	if p.Color.Set && !validLaneColor(p.Color.Value) {
+		return model.Lane{}, invalidf("invalid lane color %q (want one of %v)", p.Color.Value, laneColors)
 	}
 	var l model.Lane
 	err := s.pool.QueryRow(ctx,
-		`UPDATE lanes SET name = $2, updated_at = now() WHERE id = $1
-		 RETURNING id, roadmap_id, name, position`,
-		id, name).Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position)
+		`UPDATE lanes SET name = CASE WHEN $2 THEN $3 ELSE name END,
+		        color = CASE WHEN $4 THEN $5 ELSE color END,
+		        updated_at = now()
+		 WHERE id = $1
+		 RETURNING id, roadmap_id, name, position, color`,
+		id, p.Name.Set, p.Name.Value, p.Color.Set, p.Color.Value).
+		Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Lane{}, ErrNotFound
 	}

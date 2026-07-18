@@ -66,6 +66,7 @@ type Lane struct {
 	RoadmapID int64  `json:"roadmapId"`
 	Name      string `json:"name"`
 	Position  int    `json:"position"`
+	Color     string `json:"color"`
 }
 
 type Item struct {

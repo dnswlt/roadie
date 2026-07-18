@@ -12,13 +12,18 @@
     <header class="topbar">
       <span class="brand">Roadie</span>
       <select id="rm-select" aria-label="Roadmap"></select>
+      <div class="menu-wrap">
+        <button id="rm-menu" class="icon-btn" title="Roadmap actions"></button>
+        <div id="rm-menu-pop" class="menu hidden">
+          <button id="rm-rename" class="menu-item">Rename</button>
+          <button id="rm-delete" class="menu-item menu-danger">Delete roadmap</button>
+        </div>
+      </div>
       <button id="rm-new" class="btn">New</button>
-      <button id="rm-rename" class="icon-btn" title="Rename roadmap">✎</button>
-      <button id="rm-delete" class="icon-btn" title="Delete roadmap">🗑</button>
       <span class="spacer"></span>
       <div class="zoom">
-        <button id="zoom-out" class="icon-btn" title="Zoom out (Ctrl+scroll)">−</button>
-        <button id="zoom-in" class="icon-btn" title="Zoom in (Ctrl+scroll)">+</button>
+        <button id="zoom-out" class="icon-btn" title="Zoom out (Ctrl+scroll)"></button>
+        <button id="zoom-in" class="icon-btn" title="Zoom in (Ctrl+scroll)"></button>
       </div>
     </header>
     <div class="main">

@@ -1,6 +1,8 @@
 // Renders the swimlane chart from the current state. The chart is rebuilt
 // on every state change; scroll position is preserved across rebuilds.
 
+import { laneColorValue } from "./colors";
+import { icons } from "./icons";
 import { LABEL_W, layoutLane, type PlacedBlock } from "./layout";
 import { state } from "./state";
 import {
@@ -121,12 +123,13 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   const layout = layoutLane(lane, scale);
   const laneEl = div("lane");
   laneEl.dataset.laneId = String(lane.id);
+  laneEl.style.setProperty("--c", laneColorValue(lane.color));
 
   const label = div("lane-label");
   const grip = document.createElement("button");
   grip.className = "lane-grip";
   grip.title = "Drag to reorder";
-  grip.textContent = "⠿";
+  grip.append(icons.grip());
   const name = document.createElement("span");
   name.className = "lane-name";
   name.textContent = lane.name;
@@ -135,12 +138,18 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   const add = document.createElement("button");
   add.className = "icon-btn lane-add";
   add.title = "Add item";
-  add.textContent = "+";
+  add.append(icons.plus(14));
+  const color = document.createElement("button");
+  color.className = "icon-btn lane-color";
+  color.title = "Lane color";
+  const dot = document.createElement("span");
+  dot.className = "color-dot";
+  color.append(dot);
   const del = document.createElement("button");
   del.className = "icon-btn lane-del";
   del.title = "Delete context";
-  del.textContent = "×";
-  laneActions.append(add, del);
+  del.append(icons.trash(14));
+  laneActions.append(add, color, del);
   label.append(grip, name, laneActions);
 
   const canvas = div("lane-canvas");

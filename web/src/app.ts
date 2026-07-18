@@ -1,7 +1,9 @@
 import "./styles.css";
 import { actions } from "./actions";
+import { LANE_COLOR_ORDER, laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { initDnd } from "./dnd";
+import { icons } from "./icons";
 import { LABEL_W } from "./layout";
 import { renderChart } from "./render";
 import { renderPanel } from "./panel";
@@ -49,7 +51,28 @@ function setZoom(pxPerDay: number): void {
   chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
 }
 
+function injectIcons(): void {
+  $("rm-new").prepend(icons.plus(14));
+  $("rm-menu").append(icons.dots(18));
+  $("rm-rename").prepend(icons.pencil(14));
+  $("rm-delete").prepend(icons.trash(14));
+  $("zoom-in").append(icons.zoomIn());
+  $("zoom-out").append(icons.zoomOut());
+}
+
 function wireTopbar(): void {
+  const menuPop = $("rm-menu-pop");
+  $("rm-menu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    menuPop.classList.toggle("hidden");
+  });
+  document.addEventListener("click", (e) => {
+    if (!menuPop.classList.contains("hidden") && !(e.target as HTMLElement).closest(".menu-wrap")) {
+      menuPop.classList.add("hidden");
+    }
+    closeColorPop(e.target as HTMLElement);
+  });
+
   rmSelect.addEventListener("change", () => {
     void actions.selectRoadmap(Number(rmSelect.value));
   });
@@ -58,11 +81,13 @@ function wireTopbar(): void {
     if (name) void actions.createRoadmap(name);
   });
   $("rm-rename").addEventListener("click", async () => {
+    menuPop.classList.add("hidden");
     if (!state.current) return;
     const name = await promptDialog("Rename roadmap", state.current.name, "Rename");
     if (name) void actions.renameRoadmap(name);
   });
   $("rm-delete").addEventListener("click", async () => {
+    menuPop.classList.add("hidden");
     if (!state.current) return;
     if (await confirmDialog(`Delete roadmap "${state.current.name}" and everything in it?`)) {
       void actions.deleteRoadmap();
@@ -104,6 +129,13 @@ function wireChart(): void {
       const laneId = Number(laneEl.dataset.laneId);
       if (t.closest(".lane-add")) {
         void actions.addItem(laneId, null);
+        return;
+      }
+      const colorBtn = t.closest<HTMLElement>(".lane-color");
+      if (colorBtn) {
+        // Keep this click away from the document-level close handler.
+        e.stopPropagation();
+        toggleColorPop(colorBtn, laneId);
         return;
       }
       if (t.closest(".lane-del")) {
@@ -153,8 +185,45 @@ function wireChart(): void {
   });
 }
 
+// Lane color picker popover: a row of swatches anchored to the color button.
+
+function closeColorPop(target?: HTMLElement): void {
+  const pop = document.querySelector<HTMLElement>(".color-pop");
+  if (pop && (!target || !target.closest(".color-pop"))) pop.remove();
+}
+
+function toggleColorPop(anchor: HTMLElement, laneId: number): void {
+  const existing = document.querySelector<HTMLElement>(".color-pop");
+  const wasOpenHere = existing?.dataset.laneId === String(laneId);
+  closeColorPop();
+  if (wasOpenHere) return;
+
+  const lane = state.findLane(laneId);
+  if (!lane) return;
+  const pop = document.createElement("div");
+  pop.className = "color-pop";
+  pop.dataset.laneId = String(laneId);
+  for (const name of LANE_COLOR_ORDER) {
+    const sw = document.createElement("button");
+    sw.className = "swatch";
+    sw.title = name;
+    sw.style.background = laneColorValue(name);
+    if (name === lane.color) sw.append(icons.check(12));
+    sw.addEventListener("click", () => {
+      closeColorPop();
+      if (name !== lane.color) void actions.setLaneColor(laneId, name);
+    });
+    pop.append(sw);
+  }
+  const r = anchor.getBoundingClientRect();
+  pop.style.left = `${r.left}px`;
+  pop.style.top = `${r.bottom + 6}px`;
+  document.body.append(pop);
+}
+
 async function boot(): Promise<void> {
   state.subscribe(render);
+  injectIcons();
   wireTopbar();
   wireChart();
   initDnd(chart);

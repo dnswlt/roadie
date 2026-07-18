@@ -4,6 +4,7 @@
 
 import { actions } from "./actions";
 import { confirmDialog } from "./dialogs";
+import { icons } from "./icons";
 import { state } from "./state";
 import type { ItemFull } from "./types";
 
@@ -38,7 +39,7 @@ export function renderPanel(panel: HTMLElement): void {
   const close = document.createElement("button");
   close.className = "icon-btn";
   close.title = "Close";
-  close.textContent = "×";
+  close.append(icons.x());
   close.addEventListener("click", () => {
     state.selectedItemId = null;
     state.notify();

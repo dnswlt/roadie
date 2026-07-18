@@ -27,7 +27,8 @@ items are packed into rows) — no layout state is stored.
 - Drag a bar's left/right edge to adjust start/end (snaps to days).
 - Drag a lane's grip (⠿) to reorder swimlanes.
 - Click an item to edit title, description, and dates in the side panel.
-- Double-click a lane name to rename it.
+- Double-click a lane name to rename it; the color dot in the lane header
+  picks one of five lane color themes (blue, green, red, orange, purple).
 - Zoom with the +/− buttons or Ctrl/Cmd + scroll. The red line marks today.
 - Escape cancels a drag or closes the panel.
 
@@ -56,7 +57,7 @@ installed Postgres. Override with `DATABASE_URL` (default
 
 ## API
 
-```
+```text
 GET/POST            /api/roadmaps
 GET/PATCH/DELETE    /api/roadmaps/{id}         GET returns the full payload (lanes + items)
 POST                /api/roadmaps/{id}/lanes

@@ -216,12 +216,12 @@ func (s *Server) patchLane(w http.ResponseWriter, r *http.Request) {
 		writeClientErr(w, err)
 		return
 	}
-	var req nameReq
-	if err := readJSON(w, r, &req); err != nil {
+	var patch store.LanePatch
+	if err := readJSON(w, r, &patch); err != nil {
 		writeClientErr(w, err)
 		return
 	}
-	lane, err := s.store.RenameLane(r.Context(), id, req.Name)
+	lane, err := s.store.UpdateLane(r.Context(), id, patch)
 	if err != nil {
 		s.writeErr(w, err)
 		return

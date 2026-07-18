@@ -132,6 +132,28 @@ func TestLanesAndReorder(t *testing.T) {
 	if _, err := testStore.CreateLane(ctx, -1, "X"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("lane for missing roadmap: want ErrNotFound, got %v", err)
 	}
+
+	// Colors are auto-assigned round-robin on creation.
+	if a.Color != "blue" || b.Color != "green" || c.Color != "red" {
+		t.Errorf("auto colors: got %s %s %s", a.Color, b.Color, c.Color)
+	}
+	upd, err := testStore.UpdateLane(ctx, a.ID, LanePatch{
+		Color: model.Opt[string]{Set: true, Value: "purple"},
+	})
+	if err != nil || upd.Color != "purple" || upd.Name != "A" {
+		t.Errorf("color update: %v, %+v", err, upd)
+	}
+	if _, err := testStore.UpdateLane(ctx, a.ID, LanePatch{
+		Color: model.Opt[string]{Set: true, Value: "mauve"},
+	}); !isValidation(err) {
+		t.Errorf("invalid color: want validation error, got %v", err)
+	}
+	renamed, err := testStore.UpdateLane(ctx, a.ID, LanePatch{
+		Name: model.Opt[string]{Set: true, Value: "A2"},
+	})
+	if err != nil || renamed.Name != "A2" || renamed.Color != "purple" {
+		t.Errorf("rename keeps color: %v, %+v", err, renamed)
+	}
 }
 
 func TestItemInvariants(t *testing.T) {

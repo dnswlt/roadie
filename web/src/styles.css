@@ -1,21 +1,21 @@
 :root {
-  --bg: #f6f7f9;
+  --bg: #f7f8f9;
   --surface: #ffffff;
-  --ink: #0f172a;
-  --ink-2: #475569;
-  --muted: #94a3b8;
-  --border: #e2e8f0;
-  --grid: #eef1f5;
-  --grid-strong: #dbe1ea;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-soft: #eef2ff;
-  --accent-border: #c7d2fe;
-  --child-bg: #e0e7ff;
-  --child-ink: #3730a3;
-  --danger: #dc2626;
+  --ink: #1a1f26;
+  --ink-2: #4b5563;
+  --muted: #9aa3af;
+  --border: #e5e8ec;
+  --border-strong: #d3d8de;
+  --grid: #eef0f3;
+  --grid-strong: #dfe3e8;
+  --focus: #94a3b8;
+  --danger: #c92c2c;
+  --danger-soft: #fdeaea;
   --today: #e11d48;
-  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-pop: 0 4px 16px rgba(16, 24, 40, 0.14), 0 1px 3px rgba(16, 24, 40, 0.08);
+  /* Default lane color; each .lane overrides --c with its own theme. */
+  --c: #2456b8;
 }
 
 * {
@@ -55,10 +55,9 @@ body {
 
 .brand {
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: 0.2px;
-  margin-right: 8px;
-  color: var(--accent);
+  margin-right: 12px;
 }
 
 .spacer {
@@ -66,37 +65,63 @@ body {
 }
 
 select#rm-select {
+  appearance: none;
+  -webkit-appearance: none;
   font: inherit;
-  padding: 5px 8px;
+  font-weight: 600;
+  padding: 6px 30px 6px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
+  border-radius: 8px;
+  background: var(--surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%234b5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
   color: var(--ink);
-  min-width: 180px;
+  min-width: 200px;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
+
+select#rm-select:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+
+select#rm-select:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
+}
+
+/* Buttons */
 
 .btn {
   font: inherit;
-  padding: 5px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
 }
 
 .btn:hover {
   background: var(--bg);
+  border-color: var(--border-strong);
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--ink);
+  border-color: var(--ink);
   color: #fff;
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
+  background: #2c333d;
+  border-color: #2c333d;
 }
 
 .btn-danger {
@@ -112,8 +137,9 @@ select#rm-select {
 }
 
 .btn-ghost:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--ink);
+  background: var(--grid);
+  border-color: transparent;
 }
 
 .icon-btn {
@@ -124,14 +150,15 @@ select#rm-select {
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--ink-2);
   cursor: pointer;
+  padding: 0;
 }
 
 .icon-btn:hover {
-  background: var(--bg);
+  background: var(--grid);
   color: var(--ink);
 }
 
@@ -139,6 +166,78 @@ select#rm-select {
 .btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.zoom {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.zoom .icon-btn {
+  border-radius: 0;
+  width: 32px;
+}
+
+.zoom .icon-btn:first-child {
+  border-right: 1px solid var(--border);
+}
+
+/* Dropdown menu */
+
+.menu-wrap {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+  padding: 5px;
+}
+
+.menu.hidden {
+  display: none;
+}
+
+.menu-item {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.menu-item:hover {
+  background: var(--grid);
+}
+
+.menu-item svg {
+  color: var(--ink-2);
+  flex: none;
+}
+
+.menu-danger,
+.menu-danger svg {
+  color: var(--danger);
+}
+
+.menu-danger:hover {
+  background: var(--danger-soft);
 }
 
 /* Layout */
@@ -233,7 +332,7 @@ select#rm-select {
   flex: none;
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: 2px;
   padding: 10px 8px 10px 4px;
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -244,41 +343,98 @@ select#rm-select {
   background: transparent;
   color: var(--muted);
   cursor: grab;
-  font-size: 13px;
-  padding: 2px 4px;
+  padding: 4px 2px;
   border-radius: 4px;
+  display: inline-flex;
 }
 
 .lane-grip:hover {
   color: var(--ink-2);
-  background: var(--bg);
+  background: var(--grid);
 }
 
 .lane-name {
   flex: 1;
   font-weight: 600;
-  padding-top: 2px;
+  padding-top: 3px;
   overflow-wrap: anywhere;
+}
+
+.lane-name::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--c);
+  margin-right: 7px;
 }
 
 .lane-name-input {
   flex: 1;
   font: inherit;
   font-weight: 600;
-  border: 1px solid var(--accent-border);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   padding: 1px 4px;
+  min-width: 0;
 }
 
 .lane-actions {
   display: flex;
-  gap: 2px;
+  gap: 1px;
   opacity: 0;
   transition: opacity 0.15s;
 }
 
 .lane-label:hover .lane-actions {
   opacity: 1;
+}
+
+.lane-actions .icon-btn {
+  width: 25px;
+  height: 25px;
+}
+
+.lane-del:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+.color-pop {
+  position: fixed;
+  z-index: 110;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  padding: 0;
+}
+
+.swatch:hover {
+  box-shadow: 0 0 0 3px var(--grid-strong);
 }
 
 .lane-canvas {
@@ -305,7 +461,7 @@ select#rm-select {
   bottom: 0;
   width: 0;
   border-left: 2px solid var(--today);
-  opacity: 0.6;
+  opacity: 0.55;
   pointer-events: none;
   z-index: 5;
 }
@@ -331,12 +487,12 @@ select#rm-select {
   left: 0;
   right: 0;
   height: 0;
-  border-top: 2px solid var(--accent);
+  border-top: 2px solid var(--ink);
   z-index: 15;
   pointer-events: none;
 }
 
-/* Items */
+/* Items — all colors derive from the lane's --c via color-mix. */
 
 .block {
   position: absolute;
@@ -344,8 +500,8 @@ select#rm-select {
 }
 
 .block.has-children {
-  background: rgba(79, 70, 229, 0.05);
-  border: 1px solid var(--accent-border);
+  background: color-mix(in oklab, var(--c) 6%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--c) 28%, var(--surface));
   border-radius: 8px;
   overflow: visible;
 }
@@ -358,7 +514,7 @@ select#rm-select {
   height: 30px;
   display: flex;
   align-items: center;
-  background: var(--accent);
+  background: var(--c);
   color: #fff;
   border-radius: 6px;
   cursor: grab;
@@ -371,23 +527,23 @@ select#rm-select {
 }
 
 .bar:hover {
-  background: var(--accent-hover);
+  background: color-mix(in oklab, var(--c) 88%, black);
 }
 
 .child-bar {
   position: absolute;
   display: flex;
   align-items: center;
-  background: var(--child-bg);
-  color: var(--child-ink);
-  border: 1px solid var(--accent-border);
+  background: color-mix(in oklab, var(--c) 13%, var(--surface));
+  color: color-mix(in oklab, var(--c) 65%, black);
+  border: 1px solid color-mix(in oklab, var(--c) 32%, var(--surface));
   border-radius: 4px;
   cursor: grab;
   user-select: none;
 }
 
 .child-bar:hover {
-  filter: brightness(0.97);
+  background: color-mix(in oklab, var(--c) 20%, var(--surface));
 }
 
 .bar-title {
@@ -409,13 +565,12 @@ select#rm-select {
   border-radius: 4px;
 }
 
-.bar .rh:hover,
-.child-bar .rh:hover {
+.bar .rh:hover {
   background: rgba(255, 255, 255, 0.35);
 }
 
 .child-bar .rh:hover {
-  background: rgba(79, 70, 229, 0.25);
+  background: color-mix(in oklab, var(--c) 30%, transparent);
 }
 
 .bar.selected,
@@ -430,13 +585,12 @@ select#rm-select {
 }
 
 .drop-target {
-  outline: 2px dashed var(--accent);
+  outline: 2px dashed var(--ink-2);
   outline-offset: 2px;
-  background: var(--accent-soft);
 }
 
 .drop-lane {
-  background: rgba(79, 70, 229, 0.04);
+  background: color-mix(in oklab, var(--c) 4%, var(--surface));
 }
 
 .drag-tooltip {
@@ -524,7 +678,7 @@ select#rm-select {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--surface);
   color: var(--ink);
 }
@@ -536,8 +690,9 @@ select#rm-select {
 
 .panel-field input:focus,
 .panel-field textarea:focus {
-  outline: 2px solid var(--accent-border);
-  border-color: var(--accent);
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
 }
 
 .panel-row {
@@ -557,18 +712,29 @@ select#rm-select {
   border-top: 1px solid var(--border);
 }
 
+.panel-actions .btn-danger {
+  background: transparent;
+  border-color: color-mix(in oklab, var(--danger) 35%, white);
+  color: var(--danger);
+}
+
+.panel-actions .btn-danger:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
 /* Dialog */
 
 dialog {
   border: none;
-  border-radius: 10px;
-  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(16, 24, 40, 0.2);
   padding: 20px;
   min-width: 320px;
 }
 
 dialog::backdrop {
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(16, 24, 40, 0.35);
 }
 
 dialog h3 {
@@ -585,7 +751,13 @@ dialog input {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
+}
+
+dialog input:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
 }
 
 .dialog-actions {

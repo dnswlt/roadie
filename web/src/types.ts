@@ -10,6 +10,12 @@ export interface Lane {
   roadmapId: number;
   name: string;
   position: number;
+  color: string;
+}
+
+export interface LanePatch {
+  name?: string;
+  color?: string;
 }
 
 export interface Item {

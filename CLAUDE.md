@@ -1,0 +1,49 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```sh
+make db-up                # start dev Postgres (container, port 5433 — see below)
+make dev                  # esbuild watch + Go server (-dev -seed) on http://localhost:8080
+make test                 # Go tests; store tests need the compose DB and skip if DATABASE_URL is unset
+make check                # go vet + tsc --noEmit
+make build                # production binary (embedded frontend) -> bin/roadie
+npm run --prefix web build   # rebuild frontend only (also copies index.html to dist)
+```
+
+Single Go test: `DATABASE_URL=postgres://roadie:roadie@localhost:5433/roadie go test ./internal/store -run TestItemInvariants`
+
+Environment quirks (this machine):
+
+- The dev DB is on **port 5433** because a native Postgres already owns 5432. Don't "fix" this back to 5432.
+- Docker runs via colima; the Makefile deliberately uses the dashed `docker-compose` binary on macOS (`DC_CMD`) — the `docker compose` plugin is not wired up here.
+- `make dev` serves `web/dist` from disk (`-dev` flag); production builds embed it via `go:embed` (web/embed.go). `web/dist/.gitkeep` must exist for the embed to compile.
+
+## Architecture
+
+Single-page roadmap editor. Guiding principle: **radically simple data model; all views are derived from it.**
+
+Model (3 entities, see internal/store/migrations/001_init.sql):
+`roadmaps` → `lanes` ("contexts", the swimlanes, ordered by `position`) → `items` (start/end DATE, nullable `parent_id`).
+
+Invariants are enforced in **internal/store** (not triggers, not handlers):
+
+- Item nesting is at most one level deep (a parent cannot become a child; a child cannot gain children).
+- A child's lane always equals its parent's lane; moving a parent to another lane moves its children too.
+- Lane reorder (`PUT .../lane-order`) must list exactly the roadmap's lane IDs; positions are rewritten transactionally.
+- Lanes have a `color` theme (blue/green/red/orange/purple — validated in the store, auto-assigned round-robin by position on create). The frontend maps the name to a hex in web/src/colors.ts and sets it as `--c` on the lane element; **all** bar/tint/border shades derive from `--c` via CSS `color-mix` in styles.css — never hard-code per-color CSS.
+- Vertical placement of items within a lane is **never stored** — the frontend packs overlapping items into rows (web/src/layout.ts).
+
+Backend: stdlib `net/http` (Go 1.22 method routing) + pgx, hand-written SQL. internal/server is a thin JSON layer: it maps `store.ErrNotFound` → 404 and `*store.ValidationError` → 400 via `writeErr`. All item moves (dates, lane change, reparent) go through a single `PATCH /api/items/{id}`; `model.Opt[T]` distinguishes absent JSON fields from explicit `null` (used for `parentId`). Migrations: numbered SQL files in internal/store/migrations, embedded, applied at startup by store.Migrate — add a new `00N_*.sql` file, never edit applied ones.
+
+Frontend (web/src, TypeScript, no framework, bundled by esbuild):
+
+- `state.ts` is the single client-side source of truth (subscribe/notify); every notify triggers a **full re-render** of the chart (render.ts) with scroll preserved. There is no virtual DOM and no partial updates — keep it that way unless item counts make it slow.
+- `actions.ts` wraps every mutation: optimistic local apply (mirroring the server invariants in `applyItemPatch`) → API call → rollback + toast on failure. Creates are not optimistic (server assigns IDs).
+- `dnd.ts` is one pointer-event controller for all gestures (bar move/resize, reparent by dropping on a `.block`, lane reorder via grip). Drags manipulate element styles only as a preview; the model is updated once on drop through `actions.updateItem`. Drop targets are found with `elementFromPoint` while the dragged element has `pointer-events: none`.
+- `timescale.ts` converts ISO dates ↔ integer day numbers ↔ pixels; end dates are **inclusive** (a one-day item spans start==end; bar width = end − start + 1 days).
+- CSS-only layout tricks that are load-bearing: the chart is one scroll container with `position: sticky` for the time header (top) and lane labels (left); item bars are absolutely positioned inside `.lane-canvas`.
+
+Verification: beyond `make test`/`make check`, UI changes should be exercised in a real browser. A headless driver pattern that works here: playwright-core with `channel: "chrome"` (Chrome is installed; no browser download needed).

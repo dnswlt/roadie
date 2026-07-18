@@ -153,7 +153,17 @@ export const actions = {
         const lane = state.findLane(id);
         if (lane) lane.name = name;
       },
-      () => api.renameLane(id, name),
+      () => api.updateLane(id, { name }),
+    );
+  },
+
+  async setLaneColor(id: number, color: string): Promise<void> {
+    await optimistic(
+      () => {
+        const lane = state.findLane(id);
+        if (lane) lane.color = color;
+      },
+      () => api.updateLane(id, { color }),
     );
   },
 
