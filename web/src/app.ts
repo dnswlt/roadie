@@ -1,0 +1,178 @@
+import "./styles.css";
+import { actions } from "./actions";
+import { confirmDialog, promptDialog } from "./dialogs";
+import { initDnd } from "./dnd";
+import { LABEL_W } from "./layout";
+import { renderChart } from "./render";
+import { renderPanel } from "./panel";
+import { state } from "./state";
+import { MAX_PX_PER_DAY, MIN_PX_PER_DAY } from "./timescale";
+
+function $(id: string): HTMLElement {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`missing element #${id}`);
+  return el;
+}
+
+const chart = $("chart");
+const panel = $("panel");
+const rmSelect = $("rm-select") as HTMLSelectElement;
+
+function render(): void {
+  renderTopbar();
+  renderChart(chart);
+  renderPanel(panel);
+}
+
+function renderTopbar(): void {
+  rmSelect.replaceChildren();
+  for (const rm of state.roadmaps) {
+    const opt = document.createElement("option");
+    opt.value = String(rm.id);
+    opt.textContent = rm.name;
+    if (state.current?.id === rm.id) opt.selected = true;
+    rmSelect.append(opt);
+  }
+  rmSelect.disabled = state.roadmaps.length === 0;
+  ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
+  ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
+}
+
+// setZoom keeps the date under the viewport center fixed while zooming.
+function setZoom(pxPerDay: number): void {
+  const px = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, pxPerDay));
+  if (px === state.pxPerDay) return;
+  const ratio = px / state.pxPerDay;
+  const centerX = chart.scrollLeft + chart.clientWidth / 2 - LABEL_W;
+  state.pxPerDay = px;
+  state.notify();
+  chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
+}
+
+function wireTopbar(): void {
+  rmSelect.addEventListener("change", () => {
+    void actions.selectRoadmap(Number(rmSelect.value));
+  });
+  $("rm-new").addEventListener("click", async () => {
+    const name = await promptDialog("New roadmap", "", "Create");
+    if (name) void actions.createRoadmap(name);
+  });
+  $("rm-rename").addEventListener("click", async () => {
+    if (!state.current) return;
+    const name = await promptDialog("Rename roadmap", state.current.name, "Rename");
+    if (name) void actions.renameRoadmap(name);
+  });
+  $("rm-delete").addEventListener("click", async () => {
+    if (!state.current) return;
+    if (await confirmDialog(`Delete roadmap "${state.current.name}" and everything in it?`)) {
+      void actions.deleteRoadmap();
+    }
+  });
+  $("zoom-in").addEventListener("click", () => setZoom(state.pxPerDay * 1.4));
+  $("zoom-out").addEventListener("click", () => setZoom(state.pxPerDay / 1.4));
+  chart.addEventListener(
+    "wheel",
+    (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom(state.pxPerDay * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+    },
+    { passive: false },
+  );
+}
+
+function wireChart(): void {
+  chart.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+
+    if (t.closest("#empty-create")) {
+      void (async () => {
+        const name = await promptDialog("New roadmap", "", "Create");
+        if (name) void actions.createRoadmap(name);
+      })();
+      return;
+    }
+    if (t.closest("#add-lane")) {
+      void (async () => {
+        const name = await promptDialog("New context (swimlane)", "", "Add");
+        if (name) void actions.addLane(name);
+      })();
+      return;
+    }
+    const laneEl = t.closest<HTMLElement>(".lane");
+    if (laneEl) {
+      const laneId = Number(laneEl.dataset.laneId);
+      if (t.closest(".lane-add")) {
+        void actions.addItem(laneId, null);
+        return;
+      }
+      if (t.closest(".lane-del")) {
+        const lane = state.findLane(laneId);
+        if (!lane) return;
+        void (async () => {
+          const n = lane.items.length;
+          const suffix = n > 0 ? ` and its ${n} item(s)` : "";
+          if (await confirmDialog(`Delete context "${lane.name}"${suffix}?`)) {
+            void actions.deleteLane(laneId);
+          }
+        })();
+        return;
+      }
+    }
+    // Click on empty chart space clears the selection.
+    if (!t.closest(".bar, .child-bar, .lane-label") && state.selectedItemId !== null) {
+      state.selectedItemId = null;
+      state.notify();
+    }
+  });
+
+  // Double-click a lane name to rename it inline.
+  chart.addEventListener("dblclick", (e) => {
+    const nameEl = (e.target as HTMLElement).closest<HTMLElement>(".lane-name");
+    const laneEl = (e.target as HTMLElement).closest<HTMLElement>(".lane");
+    if (!nameEl || !laneEl) return;
+    const laneId = Number(laneEl.dataset.laneId);
+    const input = document.createElement("input");
+    input.className = "lane-name-input";
+    input.value = nameEl.textContent ?? "";
+    nameEl.replaceWith(input);
+    input.select();
+    let done = false;
+    const commit = (save: boolean) => {
+      if (done) return;
+      done = true;
+      const v = input.value.trim();
+      input.replaceWith(nameEl);
+      if (save && v && v !== nameEl.textContent) void actions.renameLane(laneId, v);
+    };
+    input.addEventListener("blur", () => commit(true));
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") commit(true);
+      if (ev.key === "Escape") commit(false);
+    });
+  });
+}
+
+async function boot(): Promise<void> {
+  state.subscribe(render);
+  wireTopbar();
+  wireChart();
+  initDnd(chart);
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.selectedItemId !== null) {
+      state.selectedItemId = null;
+      state.notify();
+    }
+  });
+
+  await actions.loadRoadmaps();
+  const stored = Number(localStorage.getItem("roadie.roadmap"));
+  const initial = state.roadmaps.find((r) => r.id === stored) ?? state.roadmaps[0];
+  if (initial) {
+    await actions.selectRoadmap(initial.id);
+  } else {
+    state.notify();
+  }
+}
+
+void boot();

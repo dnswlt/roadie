@@ -295,11 +295,11 @@ func (s *Store) ReorderLanes(ctx context.Context, roadmapID int64, laneIDs []int
 // Items
 
 type NewItem struct {
-	Title       string      `json:"title"`
-	Description string      `json:"description"`
-	StartDate   model.Date  `json:"startDate"`
-	EndDate     model.Date  `json:"endDate"`
-	ParentID    *int64      `json:"parentId"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	StartDate   model.Date `json:"startDate"`
+	EndDate     model.Date `json:"endDate"`
+	ParentID    *int64     `json:"parentId"`
 }
 
 func (s *Store) CreateItem(ctx context.Context, laneID int64, n NewItem) (model.Item, error) {
@@ -359,12 +359,12 @@ func (s *Store) CreateItem(ctx context.Context, laneID int64, n NewItem) (model.
 }
 
 type ItemPatch struct {
-	Title       model.Opt[string] `json:"title"`
-	Description model.Opt[string] `json:"description"`
+	Title       model.Opt[string]     `json:"title"`
+	Description model.Opt[string]     `json:"description"`
 	StartDate   model.Opt[model.Date] `json:"startDate"`
 	EndDate     model.Opt[model.Date] `json:"endDate"`
-	LaneID      model.Opt[int64]  `json:"laneId"`
-	ParentID    model.Opt[*int64] `json:"parentId"`
+	LaneID      model.Opt[int64]      `json:"laneId"`
+	ParentID    model.Opt[*int64]     `json:"parentId"`
 }
 
 // UpdateItem applies a partial update. Moves (lane change, reparenting) go

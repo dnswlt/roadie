@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roadie</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234f46e5'/%3E%3Crect x='5' y='7' width='18' height='5' rx='2.5' fill='%23fff'/%3E%3Crect x='9' y='14' width='18' height='5' rx='2.5' fill='%23c7d2fe'/%3E%3Crect x='5' y='21' width='12' height='5' rx='2.5' fill='%23fff' opacity='.8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <span class="brand">Roadie</span>
+      <select id="rm-select" aria-label="Roadmap"></select>
+      <button id="rm-new" class="btn">New</button>
+      <button id="rm-rename" class="icon-btn" title="Rename roadmap">✎</button>
+      <button id="rm-delete" class="icon-btn" title="Delete roadmap">🗑</button>
+      <span class="spacer"></span>
+      <div class="zoom">
+        <button id="zoom-out" class="icon-btn" title="Zoom out (Ctrl+scroll)">−</button>
+        <button id="zoom-in" class="icon-btn" title="Zoom in (Ctrl+scroll)">+</button>
+      </div>
+    </header>
+    <div class="main">
+      <div id="chart" class="chart-scroll"></div>
+      <aside id="panel" class="panel"></aside>
+    </div>
+    <div id="toasts"></div>
+    <dialog id="dialog"></dialog>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

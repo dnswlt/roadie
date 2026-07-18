@@ -1,0 +1,109 @@
+// Date <-> pixel math. Dates are handled as integer day numbers
+// (days since the Unix epoch, UTC) to keep arithmetic trivial.
+
+import type { RoadmapFull } from "./types";
+
+export const MS_PER_DAY = 86_400_000;
+
+export function dayOf(iso: string): number {
+  return Math.round(Date.parse(iso + "T00:00:00Z") / MS_PER_DAY);
+}
+
+export function isoOf(day: number): string {
+  return new Date(day * MS_PER_DAY).toISOString().slice(0, 10);
+}
+
+export function todayDay(): number {
+  const now = new Date();
+  return Math.round(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / MS_PER_DAY);
+}
+
+export interface Scale {
+  startDay: number;
+  endDay: number; // inclusive
+  pxPerDay: number;
+}
+
+export const MIN_PX_PER_DAY = 0.6;
+export const MAX_PX_PER_DAY = 16;
+export const DEFAULT_PX_PER_DAY = 3;
+
+export function xOf(scale: Scale, day: number): number {
+  return (day - scale.startDay) * scale.pxPerDay;
+}
+
+export function chartWidth(scale: Scale): number {
+  return (scale.endDay - scale.startDay + 1) * scale.pxPerDay;
+}
+
+// computeRange derives the visible horizon from the data: all items plus
+// today, padded and snapped to month boundaries.
+export function computeRange(rm: RoadmapFull | null, today: number): { startDay: number; endDay: number } {
+  let min = today;
+  let max = today;
+  if (rm) {
+    for (const lane of rm.lanes) {
+      for (const item of lane.items) {
+        min = Math.min(min, dayOf(item.startDate));
+        max = Math.max(max, dayOf(item.endDate));
+        for (const c of item.children) {
+          min = Math.min(min, dayOf(c.startDate));
+          max = Math.max(max, dayOf(c.endDate));
+        }
+      }
+    }
+  }
+  return { startDay: monthStart(min, -1), endDay: monthStart(max, 3) - 1 };
+}
+
+// monthStart returns the day number of the first day of the month `offset`
+// months relative to the month containing `day`.
+export function monthStart(day: number, offset: number): number {
+  const d = new Date(day * MS_PER_DAY);
+  return Math.round(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + offset, 1) / MS_PER_DAY);
+}
+
+export interface Tick {
+  day: number;
+  days: number; // width of the tick period in days (clipped to the scale)
+  label: string;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+export function monthTicks(scale: Scale): Tick[] {
+  const ticks: Tick[] = [];
+  let day = monthStart(scale.startDay, 0);
+  while (day <= scale.endDay) {
+    const next = monthStart(day, 1);
+    const d = new Date(day * MS_PER_DAY);
+    const from = Math.max(day, scale.startDay);
+    const to = Math.min(next - 1, scale.endDay);
+    ticks.push({ day: from, days: to - from + 1, label: MONTHS[d.getUTCMonth()] ?? "" });
+    day = next;
+  }
+  return ticks;
+}
+
+export function quarterTicks(scale: Scale): Tick[] {
+  const ticks: Tick[] = [];
+  const first = new Date(monthStart(scale.startDay, 0) * MS_PER_DAY);
+  let day = Math.round(
+    Date.UTC(first.getUTCFullYear(), Math.floor(first.getUTCMonth() / 3) * 3, 1) / MS_PER_DAY,
+  );
+  while (day <= scale.endDay) {
+    const d = new Date(day * MS_PER_DAY);
+    const next = Math.round(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 3, 1) / MS_PER_DAY);
+    const from = Math.max(day, scale.startDay);
+    const to = Math.min(next - 1, scale.endDay);
+    const q = Math.floor(d.getUTCMonth() / 3) + 1;
+    ticks.push({ day: from, days: to - from + 1, label: `Q${q} ${d.getUTCFullYear()}` });
+    day = next;
+  }
+  return ticks;
+}
+
+export function formatDay(day: number): string {
+  const d = new Date(day * MS_PER_DAY);
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+}
