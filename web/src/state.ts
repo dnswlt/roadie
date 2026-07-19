@@ -1,10 +1,15 @@
 import { DEFAULT_PX_PER_DAY } from "./timescale";
-import type { Item, ItemFull, LaneFull, Roadmap, RoadmapFull } from "./types";
+import type { Item, ItemFull, LaneFull, Milestone, Roadmap, RoadmapFull } from "./types";
 
 export interface ItemLocation {
   item: Item;
   lane: LaneFull;
   parent: ItemFull | null;
+}
+
+export interface MilestoneLocation {
+  milestone: Milestone;
+  lane: LaneFull;
 }
 
 // AppState is the single source of truth on the client. All views render
@@ -13,7 +18,9 @@ export interface ItemLocation {
 class AppState {
   roadmaps: Roadmap[] = [];
   current: RoadmapFull | null = null;
+  // At most one of these is set at a time (item vs. milestone editor).
   selectedItemId: number | null = null;
+  selectedMilestoneId: number | null = null;
   pxPerDay = DEFAULT_PX_PER_DAY;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
@@ -80,6 +87,35 @@ class AppState {
       }
     }
     return null;
+  }
+
+  findMilestone(id: number): MilestoneLocation | null {
+    if (!this.current) return null;
+    for (const lane of this.current.lanes) {
+      for (const milestone of lane.milestones) {
+        if (milestone.id === id) return { milestone, lane };
+      }
+    }
+    return null;
+  }
+
+  // Selection is exclusive: selecting an item clears any milestone selection
+  // and vice versa; the panel shows whichever is set.
+  selectItem(id: number | null): void {
+    this.selectedItemId = id;
+    this.selectedMilestoneId = null;
+  }
+
+  selectMilestone(id: number | null): void {
+    this.selectedMilestoneId = id;
+    this.selectedItemId = null;
+  }
+
+  clearSelection(): boolean {
+    if (this.selectedItemId === null && this.selectedMilestoneId === null) return false;
+    this.selectedItemId = null;
+    this.selectedMilestoneId = null;
+    return true;
   }
 
   snapshot(): RoadmapFull | null {

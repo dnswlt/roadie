@@ -207,6 +207,15 @@ select#rm-select:focus-visible {
   display: none;
 }
 
+/* Per-lane actions dropdown: appended to body and positioned via fixed
+   coordinates so the chart's scroll container can't clip it. */
+.lane-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 110;
+}
+
 .menu-item {
   font: inherit;
   display: flex;
@@ -655,6 +664,38 @@ select#rm-select:focus-visible {
 
 .drop-lane {
   background: color-mix(in oklab, var(--c) 4%, var(--surface));
+}
+
+/* Milestones: small diamonds in a band at the top of the lane, centered on
+   their date. The wrapper is translated so left/top mark the diamond center
+   and its padding gives a comfortable click target. */
+.milestone {
+  position: absolute;
+  top: 0;
+  /* Center on the date horizontally; nudge down so the rotated square's top
+     vertex sits flush on the lane's top border (no padding/margin above). */
+  transform: translate(-50%, 2.7px);
+  cursor: pointer;
+  z-index: 6;
+}
+
+.milestone-diamond {
+  width: 13px;
+  height: 13px;
+  background: var(--c);
+  border: 1px solid color-mix(in oklab, var(--c) 70%, black);
+  border-radius: 2px;
+  transform: rotate(45deg);
+  box-shadow: var(--shadow);
+}
+
+.milestone:hover .milestone-diamond {
+  background: color-mix(in oklab, var(--c) 88%, black);
+}
+
+.milestone.selected .milestone-diamond {
+  outline: 2px solid color-mix(in oklab, var(--c) 65%, black);
+  outline-offset: 2px;
 }
 
 /* Insertion indicator for vertical reordering during a drag. */

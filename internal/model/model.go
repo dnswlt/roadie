@@ -88,9 +88,21 @@ type ItemFull struct {
 	Children []Item `json:"children"`
 }
 
+// Milestone is a fixed date within a lane. Unlike items it has no duration
+// and no rank; it is positioned purely by its date.
+type Milestone struct {
+	ID          int64     `json:"id"`
+	LaneID      int64     `json:"laneId"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Date        Date      `json:"date"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 type LaneFull struct {
 	Lane
-	Items []ItemFull `json:"items"`
+	Items      []ItemFull  `json:"items"`
+	Milestones []Milestone `json:"milestones"`
 }
 
 // RoadmapFull is the complete payload the frontend works with.

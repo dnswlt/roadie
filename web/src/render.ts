@@ -8,13 +8,14 @@ import { state } from "./state";
 import {
   chartWidth,
   computeRange,
+  dayOf,
   monthTicks,
   quarterTicks,
   todayDay,
   xOf,
   type Scale,
 } from "./timescale";
-import type { LaneFull } from "./types";
+import type { LaneFull, Milestone } from "./types";
 
 let scale: Scale = { startDay: 0, endDay: 0, pxPerDay: 3 };
 
@@ -144,17 +145,11 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   add.className = "icon-btn lane-add";
   add.title = "Add item";
   add.append(icons.plus(14));
-  const color = document.createElement("button");
-  color.className = "icon-btn lane-color";
-  color.title = "Lane color";
-  const dot = document.createElement("span");
-  dot.className = "color-dot";
-  color.append(dot);
-  const del = document.createElement("button");
-  del.className = "icon-btn lane-del";
-  del.title = "Delete context";
-  del.append(icons.trash(14));
-  laneActions.append(add, color, del);
+  const menu = document.createElement("button");
+  menu.className = "icon-btn lane-menu-btn";
+  menu.title = "More actions";
+  menu.append(icons.dots(16));
+  laneActions.append(add, menu);
   label.append(grip, name, laneActions);
 
   const canvas = div("lane-canvas");
@@ -173,8 +168,23 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
     canvas.append(renderBlock(block));
   }
 
+  // Milestone diamonds live in a reserved band at the lane top.
+  for (const m of lane.milestones) {
+    canvas.append(renderMilestone(m));
+  }
+
   laneEl.append(label, canvas);
   return laneEl;
+}
+
+function renderMilestone(m: Milestone): HTMLElement {
+  const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
+  el.dataset.milestoneId = String(m.id);
+  el.title = m.title;
+  el.style.left = `${xOf(scale, dayOf(m.date))}px`;
+  const diamond = div("milestone-diamond");
+  el.append(diamond);
+  return el;
 }
 
 function renderBlock(block: PlacedBlock): HTMLElement {

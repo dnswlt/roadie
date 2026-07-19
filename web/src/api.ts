@@ -1,4 +1,15 @@
-import type { Item, ItemPatch, Lane, LanePatch, NewItem, Roadmap, RoadmapFull } from "./types";
+import type {
+  Item,
+  ItemPatch,
+  Lane,
+  LanePatch,
+  Milestone,
+  MilestonePatch,
+  NewItem,
+  NewMilestone,
+  Roadmap,
+  RoadmapFull,
+} from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -37,4 +48,10 @@ export const api = {
   createItem: (laneId: number, item: NewItem) => req<Item>("POST", `/api/lanes/${laneId}/items`, item),
   updateItem: (id: number, patch: ItemPatch) => req<Item>("PATCH", `/api/items/${id}`, patch),
   deleteItem: (id: number) => req<void>("DELETE", `/api/items/${id}`),
+
+  createMilestone: (laneId: number, milestone: NewMilestone) =>
+    req<Milestone>("POST", `/api/lanes/${laneId}/milestones`, milestone),
+  updateMilestone: (id: number, patch: MilestonePatch) =>
+    req<Milestone>("PATCH", `/api/milestones/${id}`, patch),
+  deleteMilestone: (id: number) => req<void>("DELETE", `/api/milestones/${id}`),
 };

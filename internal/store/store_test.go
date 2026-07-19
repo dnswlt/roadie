@@ -414,3 +414,77 @@ func TestItemUpdateFields(t *testing.T) {
 		t.Errorf("empty title: want validation error, got %v", err)
 	}
 }
+
+func TestMilestones(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
+
+	m, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
+		Title: "GA launch", Description: "Public release", Date: date("2026-06-01"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Title != "GA launch" || !m.Date.Equal(date("2026-06-01").Time) || m.LaneID != lane.ID {
+		t.Errorf("create result: %+v", m)
+	}
+
+	// Validation: empty title, missing date, missing lane.
+	if _, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{Date: date("2026-06-01")}); !isValidation(err) {
+		t.Errorf("empty title: want validation error, got %v", err)
+	}
+	if _, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{Title: "X"}); !isValidation(err) {
+		t.Errorf("missing date: want validation error, got %v", err)
+	}
+	if _, err := testStore.CreateMilestone(ctx, -1, NewMilestone{Title: "X", Date: date("2026-06-01")}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing lane: want ErrNotFound, got %v", err)
+	}
+
+	// Partial update leaves other fields intact.
+	upd, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		Date: model.Opt[model.Date]{Set: true, Value: date("2026-07-15")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd.Title != "GA launch" || !upd.Date.Equal(date("2026-07-15").Time) {
+		t.Errorf("update result: %+v", upd)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		Title: model.Opt[string]{Set: true, Value: ""},
+	}); !isValidation(err) {
+		t.Errorf("empty title update: want validation error, got %v", err)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, -1, MilestonePatch{
+		Title: model.Opt[string]{Set: true, Value: "X"},
+	}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("update missing milestone: want ErrNotFound, got %v", err)
+	}
+
+	// Milestones appear in the full roadmap, ordered by date, attached to the lane.
+	m2, _ := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{Title: "Beta", Date: date("2026-03-01")})
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := full.Lanes[0].Milestones
+	if len(ms) != 2 || ms[0].ID != m2.ID || ms[1].ID != m.ID {
+		t.Errorf("milestones order: %+v", ms)
+	}
+
+	if err := testStore.DeleteMilestone(ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := testStore.DeleteMilestone(ctx, m.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("delete missing: want ErrNotFound, got %v", err)
+	}
+
+	// Deleting the lane cascades to its milestones.
+	if err := testStore.DeleteLane(ctx, lane.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := testStore.DeleteMilestone(ctx, m2.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("cascade delete: want ErrNotFound, got %v", err)
+	}
+}

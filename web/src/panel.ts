@@ -6,27 +6,37 @@ import { actions } from "./actions";
 import { laneColorValue } from "./colors";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
-import { state } from "./state";
+import { state, type MilestoneLocation } from "./state";
 import type { ItemFull } from "./types";
 
-let renderedItemId: number | null = null;
+// Identifies what the panel currently shows, e.g. "item:5" or "ms:3", so a
+// re-render can skip rebuilding the panel under the user's cursor.
+let renderedKey: string | null = null;
 
 export function renderPanel(panel: HTMLElement): void {
+  const msId = state.selectedMilestoneId;
+  const msLoc = msId !== null ? state.findMilestone(msId) : null;
+  if (msLoc) {
+    renderMilestonePanel(panel, msLoc);
+    return;
+  }
+
   const id = state.selectedItemId;
   const loc = id !== null ? state.findItem(id) : null;
 
   if (!loc) {
     panel.classList.remove("open");
     panel.replaceChildren();
-    renderedItemId = null;
+    renderedKey = null;
     return;
   }
 
   // Don't rebuild under the user's cursor while they are typing.
-  if (renderedItemId === loc.item.id && panel.contains(document.activeElement)) {
+  const key = `item:${loc.item.id}`;
+  if (renderedKey === key && panel.contains(document.activeElement)) {
     return;
   }
-  renderedItemId = loc.item.id;
+  renderedKey = key;
   panel.classList.add("open");
   panel.replaceChildren();
 
@@ -44,7 +54,7 @@ export function renderPanel(panel: HTMLElement): void {
   close.title = "Close";
   close.append(icons.x());
   close.addEventListener("click", () => {
-    state.selectedItemId = null;
+    state.clearSelection();
     state.notify();
   });
   head.append(kind, close);
@@ -131,6 +141,74 @@ export function renderPanel(panel: HTMLElement): void {
   actionsRow.append(del);
 
   panel.append(head, crumb, title.wrap, desc.wrap, dates, prio, actionsRow);
+}
+
+function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void {
+  const { milestone, lane } = loc;
+  const key = `ms:${milestone.id}`;
+  // Don't rebuild under the user's cursor while they are typing.
+  if (renderedKey === key && panel.contains(document.activeElement)) {
+    return;
+  }
+  renderedKey = key;
+  panel.classList.add("open");
+  panel.replaceChildren();
+  panel.style.setProperty("--c", laneColorValue(lane.color));
+
+  const head = document.createElement("div");
+  head.className = "panel-head";
+  const kind = document.createElement("span");
+  kind.className = "panel-kind";
+  kind.textContent = "Milestone";
+  const close = document.createElement("button");
+  close.className = "icon-btn";
+  close.title = "Close";
+  close.append(icons.x());
+  close.addEventListener("click", () => {
+    state.clearSelection();
+    state.notify();
+  });
+  head.append(kind, close);
+
+  const crumb = document.createElement("div");
+  crumb.className = "panel-crumb";
+  crumb.textContent = lane.name;
+
+  const title = field("Title", "input");
+  (title.control as HTMLInputElement).value = milestone.title;
+  title.control.addEventListener("change", () => {
+    const v = (title.control as HTMLInputElement).value.trim();
+    if (v && v !== milestone.title) void actions.updateMilestone(milestone.id, { title: v });
+  });
+
+  const dateField = field("Date", "input");
+  (dateField.control as HTMLInputElement).type = "date";
+  (dateField.control as HTMLInputElement).value = milestone.date;
+  dateField.control.addEventListener("change", () => {
+    const v = (dateField.control as HTMLInputElement).value;
+    if (v && v !== milestone.date) void actions.updateMilestone(milestone.id, { date: v });
+  });
+
+  const desc = field("Description", "textarea");
+  (desc.control as HTMLTextAreaElement).value = milestone.description;
+  desc.control.addEventListener("change", () => {
+    const v = (desc.control as HTMLTextAreaElement).value;
+    if (v !== milestone.description) void actions.updateMilestone(milestone.id, { description: v });
+  });
+
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "panel-actions";
+  const del = document.createElement("button");
+  del.className = "btn btn-danger";
+  del.textContent = "Delete";
+  del.addEventListener("click", async () => {
+    if (await confirmDialog(`Delete milestone "${milestone.title}"?`)) {
+      void actions.deleteMilestone(milestone.id);
+    }
+  });
+  actionsRow.append(del);
+
+  panel.append(head, crumb, title.wrap, dateField.wrap, desc.wrap, actionsRow);
 }
 
 function field(

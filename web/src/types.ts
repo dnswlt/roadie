@@ -34,8 +34,17 @@ export interface ItemFull extends Item {
   children: Item[];
 }
 
+export interface Milestone {
+  id: number;
+  laneId: number;
+  title: string;
+  description: string;
+  date: string; // YYYY-MM-DD
+}
+
 export interface LaneFull extends Lane {
   items: ItemFull[];
+  milestones: Milestone[];
 }
 
 export interface RoadmapFull extends Roadmap {
@@ -61,4 +70,16 @@ export interface NewItem {
   startDate: string;
   endDate: string;
   parentId?: number | null;
+}
+
+export interface NewMilestone {
+  title: string;
+  description: string;
+  date: string;
+}
+
+export interface MilestonePatch {
+  title?: string;
+  description?: string;
+  date?: string;
 }

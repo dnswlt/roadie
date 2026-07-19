@@ -6,7 +6,7 @@ import { api } from "./api";
 import { state } from "./state";
 import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
-import type { Item, ItemFull, ItemPatch } from "./types";
+import type { Item, ItemFull, ItemPatch, MilestonePatch } from "./types";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -92,7 +92,7 @@ export const actions = {
   async selectRoadmap(id: number): Promise<void> {
     try {
       state.current = await api.getRoadmap(id);
-      state.selectedItemId = null;
+      state.clearSelection();
       state.loadHiddenLanes();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
@@ -132,7 +132,7 @@ export const actions = {
       await api.deleteRoadmap(id);
       state.roadmaps = state.roadmaps.filter((r) => r.id !== id);
       state.current = null;
-      state.selectedItemId = null;
+      state.clearSelection();
       const next = state.roadmaps[0];
       if (next) await this.selectRoadmap(next.id);
       else state.notify();
@@ -145,7 +145,7 @@ export const actions = {
     if (!state.current) return;
     try {
       const lane = await api.createLane(state.current.id, name);
-      state.current.lanes.push({ ...lane, items: [] });
+      state.current.lanes.push({ ...lane, items: [], milestones: [] });
       state.notify();
     } catch (e) {
       toast(errMsg(e), true);
@@ -220,7 +220,7 @@ export const actions = {
           lane.items.push({ ...item, children: [] });
         }
       }
-      state.selectedItemId = item.id;
+      state.selectItem(item.id);
       state.notify();
     } catch (e) {
       toast(errMsg(e), true);
@@ -275,6 +275,56 @@ export const actions = {
         if (state.selectedItemId === id) state.selectedItemId = null;
       },
       () => api.deleteItem(id),
+    );
+  },
+
+  // addMilestone creates a milestone dated today and selects it for editing.
+  // Not optimistic (the server assigns the ID).
+  async addMilestone(laneId: number): Promise<void> {
+    try {
+      const milestone = await api.createMilestone(laneId, {
+        title: "New milestone",
+        description: "",
+        date: isoOf(todayDay()),
+      });
+      const lane = state.findLane(milestone.laneId);
+      if (lane) {
+        lane.milestones.push(milestone);
+        lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
+      }
+      state.selectMilestone(milestone.id);
+      state.notify();
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
+  async updateMilestone(id: number, patch: MilestonePatch): Promise<void> {
+    await optimistic(
+      () => {
+        const loc = state.findMilestone(id);
+        if (!loc) return;
+        const { milestone } = loc;
+        if (patch.title !== undefined) milestone.title = patch.title;
+        if (patch.description !== undefined) milestone.description = patch.description;
+        if (patch.date !== undefined) {
+          milestone.date = patch.date;
+          loc.lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
+        }
+      },
+      () => api.updateMilestone(id, patch),
+    );
+  },
+
+  async deleteMilestone(id: number): Promise<void> {
+    await optimistic(
+      () => {
+        const loc = state.findMilestone(id);
+        if (!loc) return;
+        loc.lane.milestones = loc.lane.milestones.filter((m) => m.id !== id);
+        if (state.selectedMilestoneId === id) state.selectedMilestoneId = null;
+      },
+      () => api.deleteMilestone(id),
     );
   },
 };

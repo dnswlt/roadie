@@ -36,9 +36,15 @@ func (s *Store) Seed(ctx context.Context) error {
 		start, end model.Date
 		children   []seedItem
 	}
+	type seedMilestone struct {
+		title string
+		desc  string
+		date  model.Date
+	}
 	lanes := []struct {
-		name  string
-		items []seedItem
+		name       string
+		items      []seedItem
+		milestones []seedMilestone
 	}{
 		{"Core Platform", []seedItem{
 			{title: "API Gateway v2", desc: "Replace the legacy gateway with the new routing layer.",
@@ -49,6 +55,8 @@ func (s *Store) Seed(ctx context.Context) error {
 				}},
 			{title: "Observability stack", desc: "Tracing and unified dashboards.",
 				start: d(1, 1), end: d(4, 15)},
+		}, []seedMilestone{
+			{title: "Gateway cutover", desc: "All traffic on the new gateway.", date: d(2, 1)},
 		}},
 		{"Product", []seedItem{
 			{title: "Self-service onboarding", desc: "Reduce time-to-first-value to under 10 minutes.",
@@ -57,12 +65,15 @@ func (s *Store) Seed(ctx context.Context) error {
 					{title: "Guided setup", start: d(1, 10), end: d(3, 20)},
 				}},
 			{title: "Enterprise SSO", start: d(3, 1), end: d(5, 30)},
+		}, []seedMilestone{
+			{title: "Public beta", date: d(1, 15)},
+			{title: "GA launch", desc: "General availability.", date: d(4, 1)},
 		}},
 		{"Team & Enablement", []seedItem{
 			{title: "Kubernetes upskilling", desc: "Continuous learning track for all backend teams.",
 				start: d(-1, 1), end: d(6, 28)},
 			{title: "Hiring: 2 senior engineers", start: d(0, 1), end: d(2, 28)},
-		}},
+		}, nil},
 	}
 
 	for _, ln := range lanes {
@@ -86,6 +97,13 @@ func (s *Store) Seed(ctx context.Context) error {
 				}); err != nil {
 					return err
 				}
+			}
+		}
+		for _, ms := range ln.milestones {
+			if _, err := s.CreateMilestone(ctx, lane.ID, NewMilestone{
+				Title: ms.title, Description: ms.desc, Date: ms.date,
+			}); err != nil {
+				return err
 			}
 		}
 	}

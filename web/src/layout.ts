@@ -13,6 +13,10 @@ export const CHILD_GAP = 0;
 export const BLOCK_GAP = 8;
 export const LANE_PAD = 10;
 export const MIN_LANE_H = 56;
+// Vertical strip reserved at the top of a lane for milestone diamonds; only
+// present when the lane has milestones. Diamonds hang from the lane's top
+// border, so this just keeps the first item clear of them.
+export const MILESTONE_BAND = 16;
 
 export interface PlacedChild {
   item: Item;
@@ -55,7 +59,7 @@ export function blockHeight(numChildren: number): number {
 }
 
 export function layoutLane(lane: LaneFull, scale: Scale): LaneLayout {
-  let y = LANE_PAD;
+  let y = LANE_PAD + (lane.milestones.length > 0 ? MILESTONE_BAND : 0);
   const blocks: PlacedBlock[] = lane.items.map((item) => {
     const span = spanOf(item, scale);
     const children: PlacedChild[] = item.children.map((c, i) => {

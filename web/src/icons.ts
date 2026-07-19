@@ -29,6 +29,8 @@ export const icons = {
       size,
     ),
   plus: (size = 16) => svg(`<path d="M12 5v14"/><path d="M5 12h14"/>`, size),
+  flag: (size = 16) =>
+    svg(`<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>`, size),
   dots: (size = 16) =>
     svg(
       `<circle cx="5" cy="12" r="0.8"/><circle cx="12" cy="12" r="0.8"/><circle cx="19" cy="12" r="0.8"/>`,

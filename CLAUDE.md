@@ -25,8 +25,8 @@ Environment quirks (this machine):
 
 Single-page roadmap editor. Guiding principle: **radically simple data model; all views are derived from it.**
 
-Model (3 entities, see internal/store/migrations/001_init.sql):
-`roadmaps` → `lanes` ("contexts", the swimlanes, ordered by `position`) → `items` (start/end DATE, nullable `parent_id`).
+Model (4 entities, see internal/store/migrations/001_init.sql):
+`roadmaps` → `lanes` ("contexts", the swimlanes, ordered by `position`) → `items` (start/end DATE, nullable `parent_id`). Lanes also hold `milestones` (single DATE, title, description — see 005_milestones.sql): fixed points in time, no duration, no rank, not nested, not draggable.
 
 Invariants are enforced in **internal/store** (not triggers, not handlers):
 
@@ -36,6 +36,7 @@ Invariants are enforced in **internal/store** (not triggers, not handlers):
 - Items carry an explicit `rank`: their position within their container (lane for top-level items, parent for children), kept **dense 0..n-1 per container** by the store on every create/move/delete. `PATCH /api/items/{id}` with `rank` means "insert at this index after removing me" (clamped; omitted rank on a container move = append). The frontend relies on rank == array index.
 - Lanes have a `color` theme (blue/green/red/orange/purple — validated in the store, auto-assigned round-robin by position on create). The frontend maps the name to a hex in web/src/colors.ts and sets it as `--c` on the lane element; **all** bar/tint/border shades derive from `--c` via CSS `color-mix` in styles.css — never hard-code per-color CSS.
 - Vertical layout is one row per item (top-level and children alike), stacked in rank order (web/src/layout.ts) — pixel positions are never stored, only the order is.
+- Milestones have no invariants beyond non-empty title + required date; the store keeps no ordering (they're read back ordered by date). They render as diamonds in a band at the lane top (web/src/render.ts) and share the item edit panel — selection is exclusive (`state.selectItem`/`selectMilestone`/`clearSelection`). CRUD is a separate REST surface: `POST /api/lanes/{id}/milestones`, `PATCH`/`DELETE /api/milestones/{id}`.
 
 Backend: stdlib `net/http` (Go 1.22 method routing) + pgx, hand-written SQL. internal/server is a thin JSON layer: it maps `store.ErrNotFound` → 404 and `*store.ValidationError` → 400 via `writeErr`. All item moves (dates, lane change, reparent) go through a single `PATCH /api/items/{id}`; `model.Opt[T]` distinguishes absent JSON fields from explicit `null` (used for `parentId`). Migrations: numbered SQL files in internal/store/migrations, embedded, applied at startup by store.Migrate — add a new `00N_*.sql` file, never edit applied ones.
 

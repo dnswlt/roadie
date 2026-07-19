@@ -377,7 +377,7 @@ function onPointerUp(e: PointerEvent): void {
 
   if (!d.started) {
     // Plain click: select the item and show the edit panel.
-    state.selectedItemId = d.id;
+    state.selectItem(d.id);
     state.notify();
     return;
   }

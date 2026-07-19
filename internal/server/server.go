@@ -38,6 +38,9 @@ func New(st *store.Store, static fs.FS) *Server {
 	s.mux.HandleFunc("POST /api/lanes/{id}/items", s.createItem)
 	s.mux.HandleFunc("PATCH /api/items/{id}", s.patchItem)
 	s.mux.HandleFunc("DELETE /api/items/{id}", s.deleteItem)
+	s.mux.HandleFunc("POST /api/lanes/{id}/milestones", s.createMilestone)
+	s.mux.HandleFunc("PATCH /api/milestones/{id}", s.patchMilestone)
+	s.mux.HandleFunc("DELETE /api/milestones/{id}", s.deleteMilestone)
 
 	s.mux.Handle("/", http.FileServerFS(static))
 	return s
@@ -289,6 +292,59 @@ func (s *Server) deleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.DeleteItem(r.Context(), id); err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Milestones
+
+func (s *Server) createMilestone(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var req store.NewMilestone
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	m, err := s.store.CreateMilestone(r.Context(), id, req)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) patchMilestone(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var patch store.MilestonePatch
+	if err := readJSON(w, r, &patch); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	m, err := s.store.UpdateMilestone(r.Context(), id, patch)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+func (s *Server) deleteMilestone(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	if err := s.store.DeleteMilestone(r.Context(), id); err != nil {
 		s.writeErr(w, err)
 		return
 	}

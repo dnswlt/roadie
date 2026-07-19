@@ -51,6 +51,11 @@ export function computeRange(rm: RoadmapFull | null, today: number): { startDay:
           max = Math.max(max, dayOf(c.endDate));
         }
       }
+      for (const m of lane.milestones) {
+        const d = dayOf(m.date);
+        min = Math.min(min, d);
+        max = Math.max(max, d);
+      }
     }
   }
   return { startDay: monthStart(min, -1), endDay: monthStart(max, 3) - 1 };

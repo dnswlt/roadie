@@ -98,6 +98,18 @@ func scanItem(r rowScanner) (model.Item, error) {
 	return it, nil
 }
 
+const milestoneCols = "id, lane_id, title, description, date, updated_at"
+
+func scanMilestone(r rowScanner) (model.Milestone, error) {
+	var m model.Milestone
+	var date time.Time
+	if err := r.Scan(&m.ID, &m.LaneID, &m.Title, &m.Description, &date, &m.UpdatedAt); err != nil {
+		return model.Milestone{}, err
+	}
+	m.Date = model.NewDate(date)
+	return m, nil
+}
+
 // Roadmaps
 
 func (s *Store) ListRoadmaps(ctx context.Context) ([]model.Roadmap, error) {
@@ -183,7 +195,8 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 			return full, err
 		}
 		laneIdx[l.ID] = len(full.Lanes)
-		full.Lanes = append(full.Lanes, model.LaneFull{Lane: l, Items: []model.ItemFull{}})
+		full.Lanes = append(full.Lanes, model.LaneFull{
+			Lane: l, Items: []model.ItemFull{}, Milestones: []model.Milestone{}})
 	}
 	if err := laneRows.Err(); err != nil {
 		return full, err
@@ -230,6 +243,29 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 		}
 		parent := &full.Lanes[pos[0]].Items[pos[1]]
 		parent.Children = append(parent.Children, it)
+	}
+
+	msRows, err := s.pool.Query(ctx,
+		`SELECT `+milestoneCols+` FROM milestones
+		 WHERE lane_id IN (SELECT id FROM lanes WHERE roadmap_id = $1)
+		 ORDER BY date, id`, id)
+	if err != nil {
+		return full, err
+	}
+	defer msRows.Close()
+	for msRows.Next() {
+		m, err := scanMilestone(msRows)
+		if err != nil {
+			return full, err
+		}
+		li, ok := laneIdx[m.LaneID]
+		if !ok {
+			return full, fmt.Errorf("milestone %d references missing lane %d", m.ID, m.LaneID)
+		}
+		full.Lanes[li].Milestones = append(full.Lanes[li].Milestones, m)
+	}
+	if err := msRows.Err(); err != nil {
+		return full, err
 	}
 	return full, nil
 }
@@ -677,4 +713,74 @@ func (s *Store) DeleteItem(ctx context.Context, id int64) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// Milestones
+
+type NewMilestone struct {
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Date        model.Date `json:"date"`
+}
+
+func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMilestone) (model.Milestone, error) {
+	if n.Title == "" {
+		return model.Milestone{}, invalidf("milestone title must not be empty")
+	}
+	if n.Date.IsZero() {
+		return model.Milestone{}, invalidf("milestone date is required")
+	}
+	var exists bool
+	if err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM lanes WHERE id = $1)`, laneID).Scan(&exists); err != nil {
+		return model.Milestone{}, err
+	}
+	if !exists {
+		return model.Milestone{}, ErrNotFound
+	}
+	row := s.pool.QueryRow(ctx,
+		`INSERT INTO milestones (lane_id, title, description, date)
+		 VALUES ($1, $2, $3, $4) RETURNING `+milestoneCols,
+		laneID, n.Title, n.Description, n.Date.Time)
+	return scanMilestone(row)
+}
+
+type MilestonePatch struct {
+	Title       model.Opt[string]     `json:"title"`
+	Description model.Opt[string]     `json:"description"`
+	Date        model.Opt[model.Date] `json:"date"`
+}
+
+func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch) (model.Milestone, error) {
+	if p.Title.Set && p.Title.Value == "" {
+		return model.Milestone{}, invalidf("milestone title must not be empty")
+	}
+	if p.Date.Set && p.Date.Value.IsZero() {
+		return model.Milestone{}, invalidf("milestone date must not be null")
+	}
+	row := s.pool.QueryRow(ctx,
+		`UPDATE milestones SET title = CASE WHEN $2 THEN $3 ELSE title END,
+		        description = CASE WHEN $4 THEN $5 ELSE description END,
+		        date = CASE WHEN $6 THEN $7 ELSE date END,
+		        updated_at = now()
+		 WHERE id = $1
+		 RETURNING `+milestoneCols,
+		id, p.Title.Set, p.Title.Value, p.Description.Set, p.Description.Value,
+		p.Date.Set, p.Date.Value.Time)
+	m, err := scanMilestone(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Milestone{}, ErrNotFound
+	}
+	return m, err
+}
+
+func (s *Store) DeleteMilestone(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM milestones WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

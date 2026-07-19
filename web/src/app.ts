@@ -86,6 +86,7 @@ function wireTopbar(): void {
       visPop.classList.add("hidden");
     }
     closeColorPop(e.target as HTMLElement);
+    closeLaneMenu(e.target as HTMLElement);
   });
 
   rmSelect.addEventListener("change", () => {
@@ -139,6 +140,13 @@ function wireChart(): void {
       })();
       return;
     }
+    const milestoneEl = t.closest<HTMLElement>(".milestone");
+    if (milestoneEl) {
+      state.selectMilestone(Number(milestoneEl.dataset.milestoneId));
+      state.notify();
+      return;
+    }
+
     const laneEl = t.closest<HTMLElement>(".lane");
     if (laneEl) {
       const laneId = Number(laneEl.dataset.laneId);
@@ -146,29 +154,16 @@ function wireChart(): void {
         void actions.addItem(laneId, null);
         return;
       }
-      const colorBtn = t.closest<HTMLElement>(".lane-color");
-      if (colorBtn) {
+      const menuBtn = t.closest<HTMLElement>(".lane-menu-btn");
+      if (menuBtn) {
         // Keep this click away from the document-level close handler.
         e.stopPropagation();
-        toggleColorPop(colorBtn, laneId);
-        return;
-      }
-      if (t.closest(".lane-del")) {
-        const lane = state.findLane(laneId);
-        if (!lane) return;
-        void (async () => {
-          const n = lane.items.length;
-          const suffix = n > 0 ? ` and its ${n} item(s)` : "";
-          if (await confirmDialog(`Delete context "${lane.name}"${suffix}?`)) {
-            void actions.deleteLane(laneId);
-          }
-        })();
+        toggleLaneMenu(menuBtn, laneId);
         return;
       }
     }
     // Click on empty chart space clears the selection.
-    if (!t.closest(".bar, .child-bar, .lane-label") && state.selectedItemId !== null) {
-      state.selectedItemId = null;
+    if (!t.closest(".bar, .child-bar, .milestone, .lane-label") && state.clearSelection()) {
       state.notify();
     }
   });
@@ -234,6 +229,76 @@ function buildLaneVisMenu(pop: HTMLElement): void {
   }
 }
 
+// Lane actions dropdown: a fixed-position menu anchored to the lane's dots
+// button (appended to body so it isn't clipped by the chart's scroll area).
+// Holds the less-frequent per-lane actions to keep the lane toolbar short.
+
+function closeLaneMenu(target?: HTMLElement): void {
+  const menu = document.querySelector<HTMLElement>(".lane-menu");
+  if (menu && (!target || !target.closest(".lane-menu"))) menu.remove();
+}
+
+function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
+  const existing = document.querySelector<HTMLElement>(".lane-menu");
+  const wasOpenHere = existing?.dataset.laneId === String(laneId);
+  closeLaneMenu();
+  closeColorPop();
+  if (wasOpenHere) return;
+
+  const lane = state.findLane(laneId);
+  if (!lane) return;
+  const menu = document.createElement("div");
+  menu.className = "menu lane-menu";
+  menu.dataset.laneId = String(laneId);
+
+  const addMs = document.createElement("button");
+  addMs.className = "menu-item";
+  addMs.append(icons.flag(16), text("Add milestone"));
+  addMs.addEventListener("click", () => {
+    closeLaneMenu();
+    void actions.addMilestone(laneId);
+  });
+
+  const color = document.createElement("button");
+  color.className = "menu-item";
+  const dot = document.createElement("span");
+  dot.className = "color-dot";
+  dot.style.background = laneColorValue(lane.color);
+  color.append(dot, text("Lane color"));
+  color.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeLaneMenu();
+    toggleColorPop(anchor, laneId);
+  });
+
+  const del = document.createElement("button");
+  del.className = "menu-item menu-danger";
+  del.append(icons.trash(16), text("Delete context"));
+  del.addEventListener("click", () => {
+    closeLaneMenu();
+    void (async () => {
+      const n = lane.items.length;
+      const suffix = n > 0 ? ` and its ${n} item(s)` : "";
+      if (await confirmDialog(`Delete context "${lane.name}"${suffix}?`)) {
+        void actions.deleteLane(laneId);
+      }
+    })();
+  });
+
+  menu.append(addMs, color, del);
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  // Right-align the menu under the button so it doesn't run off-screen.
+  menu.style.left = `${Math.max(8, r.right - menu.offsetWidth)}px`;
+  menu.style.top = `${r.bottom + 6}px`;
+}
+
+function text(s: string): HTMLElement {
+  const span = document.createElement("span");
+  span.textContent = s;
+  return span;
+}
+
 // Lane color picker popover: a row of swatches anchored to the color button.
 
 function closeColorPop(target?: HTMLElement): void {
@@ -277,8 +342,7 @@ async function boot(): Promise<void> {
   wireChart();
   initDnd(chart);
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && state.selectedItemId !== null) {
-      state.selectedItemId = null;
+    if (e.key === "Escape" && state.clearSelection()) {
       state.notify();
     }
   });
