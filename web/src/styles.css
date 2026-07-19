@@ -695,6 +695,18 @@ select#rm-select:focus-visible {
   background: color-mix(in oklab, var(--c) 4%, var(--surface));
 }
 
+/* Dashed drop-line from a milestone down through the lane. Rendered behind the
+   bars (see render.ts) so items hide it; only visible in the gaps. */
+.milestone-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  margin-left: -0.75px;
+  border-left: 1.5px dashed color-mix(in oklab, var(--c) 50%, var(--surface));
+  pointer-events: none;
+}
+
 /* Milestones: small diamonds in a band at the top of the lane, centered on
    their date. The wrapper is translated so left/top mark the diamond center
    and its padding gives a comfortable click target. */
@@ -1080,7 +1092,8 @@ dialog input:focus {
    matching ones pop. Grayscale drops their lane color too, not just opacity. */
 .bar.dimmed,
 .child-bar.dimmed,
-.milestone.dimmed {
+.milestone.dimmed,
+.milestone-line.dimmed {
   opacity: 0.12;
   filter: grayscale(0.85);
 }

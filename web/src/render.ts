@@ -165,6 +165,12 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
     canvas.append(gl);
   }
 
+  // Milestone drop-lines go in behind the bars (appended before the blocks, so
+  // items paint over and hide them); the diamonds go on top afterwards.
+  for (const m of lane.milestones) {
+    canvas.append(renderMilestoneLine(m));
+  }
+
   for (const block of layout.blocks) {
     canvas.append(renderBlock(block));
   }
@@ -176,6 +182,13 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
 
   laneEl.append(label, canvas);
   return laneEl;
+}
+
+function renderMilestoneLine(m: Milestone): HTMLElement {
+  const line = div("milestone-line");
+  if (state.isDimmed([])) line.classList.add("dimmed");
+  line.style.left = `${xOf(scale, dayOf(m.date))}px`;
+  return line;
 }
 
 function renderMilestone(m: Milestone): HTMLElement {
