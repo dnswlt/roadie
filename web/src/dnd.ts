@@ -8,10 +8,15 @@ import { actions } from "./actions";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
 import { state } from "./state";
 import { currentScale } from "./render";
-import { dayOf, formatDay, isoOf } from "./timescale";
-import type { ItemFull, ItemPatch } from "./types";
+import { dayOf, formatDay, isoOf, todayDay, xOf } from "./timescale";
+import type { ItemFull, ItemPatch, LaneFull } from "./types";
 
 type Mode = "move" | "resize-l" | "resize-r";
+
+// Magnetic snap radius in screen pixels: a resized edge snaps to a nearby
+// item edge (or today) when within this distance. Small enough to keep fine
+// control; hold Alt to bypass entirely.
+const SNAP_PX = 7;
 
 interface ItemDrag {
   kind: "item";
@@ -35,6 +40,7 @@ interface ItemDrag {
   dropLaneId: number;
   dropParentId: number | null;
   dropRank: number | null; // insertion index in the drop container; null = keep/append
+  snapDays: number[]; // candidate day numbers a resized edge snaps to
 }
 
 interface LaneDrag {
@@ -118,9 +124,64 @@ function onPointerDown(e: PointerEvent): void {
     dropLaneId: loc.item.laneId,
     dropParentId: loc.item.parentId,
     dropRank: null,
+    snapDays: collectSnapDays(loc.lane, id),
   };
   chartEl.setPointerCapture(e.pointerId);
   e.preventDefault();
+}
+
+// collectSnapDays gathers the edge dates a resized handle can snap to: the
+// start/end of every other item in the same lane (top-level items, their
+// children, and — when resizing a parent — the parent's own children), plus
+// today. Only the dragged bar's own edges are excluded.
+function collectSnapDays(lane: LaneFull, selfId: number): number[] {
+  const days = new Set<number>();
+  for (const it of lane.items) {
+    if (it.id !== selfId) {
+      days.add(dayOf(it.startDate));
+      days.add(dayOf(it.endDate));
+    }
+    for (const c of it.children) {
+      if (c.id !== selfId) {
+        days.add(dayOf(c.startDate));
+        days.add(dayOf(c.endDate));
+      }
+    }
+  }
+  days.add(todayDay());
+  return [...days];
+}
+
+// snapEdge returns the candidate day nearest `day` within SNAP_PX pixels, or
+// `day` unchanged when nothing is close enough.
+function snapEdge(day: number, cands: number[], px: number): number {
+  let best = day;
+  let bestDist = SNAP_PX + 1;
+  for (const c of cands) {
+    const dist = Math.abs(day - c) * px;
+    if (dist <= SNAP_PX && dist < bestDist) {
+      best = c;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+// snapMoveDelta adjusts a move's day-offset so that whichever of the two
+// (rigidly shifted) edges is closest to a candidate lands exactly on it.
+function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number): number {
+  let best = dayDelta;
+  let bestDist = SNAP_PX + 1;
+  for (const edge of [d.startDay + dayDelta, d.endDay + dayDelta]) {
+    for (const c of d.snapDays) {
+      const dist = Math.abs(edge - c) * px;
+      if (dist <= SNAP_PX && dist < bestDist) {
+        bestDist = dist;
+        best = dayDelta + (c - edge);
+      }
+    }
+  }
+  return best;
 }
 
 function onPointerMove(e: PointerEvent): void {
@@ -129,6 +190,7 @@ function onPointerMove(e: PointerEvent): void {
     laneDragMove(e);
     return;
   }
+  const bypass = e.altKey; // hold Alt/Option to suppress snapping
   const d = drag;
   const dx = e.clientX - d.px;
   const dy = e.clientY - d.py;
@@ -147,24 +209,32 @@ function onPointerMove(e: PointerEvent): void {
 
   switch (d.mode) {
     case "move": {
-      d.newStart = d.startDay + dayDelta;
-      d.newEnd = d.endDay + dayDelta;
-      d.el.style.transform = `translate(${dayDelta * px}px, ${dy}px)`;
+      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px);
+      d.newStart = d.startDay + md;
+      d.newEnd = d.endDay + md;
+      d.el.style.transform = `translate(${md * px}px, ${dy}px)`;
       updateDropTarget(d, e);
+      updateSnapGuide(d, bypass, d.newStart, d.newEnd);
       break;
     }
     case "resize-l": {
-      d.newStart = Math.min(d.startDay + dayDelta, d.endDay);
+      let s = d.startDay + dayDelta;
+      if (!bypass) s = snapEdge(s, d.snapDays, px);
+      d.newStart = Math.min(s, d.endDay);
       d.newEnd = d.endDay;
       const shift = (d.newStart - d.startDay) * px;
       d.barEl.style.left = `${d.origLeft + shift}px`;
       d.barEl.style.width = `${d.origWidth - shift}px`;
+      updateSnapGuide(d, bypass, d.newStart);
       break;
     }
     case "resize-r": {
+      let en = d.endDay + dayDelta;
+      if (!bypass) en = snapEdge(en, d.snapDays, px);
       d.newStart = d.startDay;
-      d.newEnd = Math.max(d.endDay + dayDelta, d.startDay);
+      d.newEnd = Math.max(en, d.startDay);
       d.barEl.style.width = `${d.origWidth + (d.newEnd - d.endDay) * px}px`;
+      updateSnapGuide(d, bypass, d.newEnd);
       break;
     }
   }
@@ -266,12 +336,33 @@ function removeInsertLine(): void {
   document.querySelector(".item-insert")?.remove();
 }
 
+// updateSnapGuide draws a full-height guide line at the first of `edges` that
+// has landed exactly on a snap candidate; otherwise it clears the guide. When
+// snapping is bypassed the guide is always cleared — no alignment assistance.
+function updateSnapGuide(d: ItemDrag, bypass: boolean, ...edges: number[]): void {
+  removeSnapGuide();
+  if (bypass) return;
+  const edge = edges.find((day) => d.snapDays.includes(day));
+  if (edge === undefined) return;
+  const canvas = d.barEl.closest<HTMLElement>(".lane-canvas");
+  if (!canvas) return;
+  const line = document.createElement("div");
+  line.className = "snap-guide";
+  line.style.left = `${xOf(currentScale(), edge)}px`;
+  canvas.append(line);
+}
+
+function removeSnapGuide(): void {
+  document.querySelector(".snap-guide")?.remove();
+}
+
 function clearHighlights(): void {
   if (!chartEl) return;
   for (const el of chartEl.querySelectorAll(".drop-target, .drop-lane")) {
     el.classList.remove("drop-target", "drop-lane");
   }
   removeInsertLine();
+  removeSnapGuide();
 }
 
 function onPointerUp(e: PointerEvent): void {

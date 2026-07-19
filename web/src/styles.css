@@ -668,6 +668,19 @@ select#rm-select:focus-visible {
   pointer-events: none;
 }
 
+/* Alignment guide shown while a resized edge snaps to another item's edge. */
+.snap-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  opacity: 0.45;
+  z-index: 24;
+  pointer-events: none;
+}
+
 .drag-tooltip {
   position: fixed;
   z-index: 100;
