@@ -4,7 +4,7 @@
 
 import { api } from "./api";
 import { state } from "./state";
-import { isoOf, todayDay } from "./timescale";
+import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
 import type { Item, ItemFull, ItemPatch } from "./types";
 
@@ -229,6 +229,32 @@ export const actions = {
     await optimistic(
       () => applyItemPatch(id, patch),
       () => api.updateItem(id, patch),
+    );
+  },
+
+  // moveItemWithChildren patches a parent item and shifts each child's dates
+  // by the same number of days, so children follow a dragged parent instead
+  // of snapping back to their stored dates.
+  async moveItemWithChildren(id: number, patch: ItemPatch, dayDelta: number): Promise<void> {
+    const loc = state.findItem(id);
+    const children = loc ? (loc.item as ItemFull).children : [];
+    const childPatches = children.map((c) => ({
+      id: c.id,
+      patch: {
+        startDate: isoOf(dayOf(c.startDate) + dayDelta),
+        endDate: isoOf(dayOf(c.endDate) + dayDelta),
+      } satisfies ItemPatch,
+    }));
+    await optimistic(
+      () => {
+        applyItemPatch(id, patch);
+        for (const cp of childPatches) applyItemPatch(cp.id, cp.patch);
+      },
+      () =>
+        Promise.all([
+          api.updateItem(id, patch),
+          ...childPatches.map((cp) => api.updateItem(cp.id, cp.patch)),
+        ]),
     );
   },
 

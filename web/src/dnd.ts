@@ -5,7 +5,7 @@
 // All previews are visual only; the model is updated once on drop.
 
 import { actions } from "./actions";
-import { LANE_PAD, PARENT_BAR_H } from "./layout";
+import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
 import { state } from "./state";
 import { currentScale } from "./render";
 import { dayOf, formatDay, isoOf } from "./timescale";
@@ -210,7 +210,7 @@ function updateDropTarget(d: ItemDrag, e: PointerEvent): void {
     d.dropParentId = d.origParentId;
     d.dropLaneId = d.origLaneId;
     d.dropRank = indexFromY(siblings, e.clientY);
-    showInsertLine(blockUnder, siblings, d.dropRank, PARENT_BAR_H + 2);
+    showInsertLine(blockUnder, siblings, d.dropRank, PARENT_BAR_H + CHILD_GAP / 2);
     return;
   }
 
@@ -245,13 +245,14 @@ function showInsertLine(container: HTMLElement, els: HTMLElement[], idx: number,
   const line = document.createElement("div");
   line.className = "item-insert";
   const cr = container.getBoundingClientRect();
+  const gap = container.classList.contains("block") ? CHILD_GAP : BLOCK_GAP;
   let y: number;
   if (els.length === 0) {
     y = emptyY;
   } else if (idx <= 0) {
-    y = els[0]!.getBoundingClientRect().top - cr.top - 4;
+    y = els[0]!.getBoundingClientRect().top - cr.top - gap / 2;
   } else if (idx >= els.length) {
-    y = els[els.length - 1]!.getBoundingClientRect().bottom - cr.top + 3;
+    y = els[els.length - 1]!.getBoundingClientRect().bottom - cr.top + gap / 2;
   } else {
     const above = els[idx - 1]!.getBoundingClientRect().bottom;
     const below = els[idx]!.getBoundingClientRect().top;
@@ -302,7 +303,12 @@ function onPointerUp(e: PointerEvent): void {
     }
   }
   if (Object.keys(patch).length > 0) {
-    void actions.updateItem(d.id, patch);
+    const dayDelta = d.newStart - d.startDay;
+    if (d.mode === "move" && d.hasChildren && dayDelta !== 0) {
+      void actions.moveItemWithChildren(d.id, patch, dayDelta);
+    } else {
+      void actions.updateItem(d.id, patch);
+    }
   }
 }
 
