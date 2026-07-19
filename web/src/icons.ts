@@ -29,6 +29,13 @@ export const icons = {
       size,
     ),
   plus: (size = 16) => svg(`<path d="M12 5v14"/><path d="M5 12h14"/>`, size),
+  tag: (size = 16) =>
+    svg(
+      `<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414` +
+        `l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>` +
+        `<circle cx="7.5" cy="7.5" r="1.2"/>`,
+      size,
+    ),
   externalLink: (size = 16) =>
     svg(
       `<path d="M15 3h6v6"/><path d="M10 14 21 3"/>` +

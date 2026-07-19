@@ -124,6 +124,8 @@ export function renderPanel(panel: HTMLElement): void {
   }
   prio.append(prioLabel, chips);
 
+  const labels = labelsField(item);
+
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
   if (!parent) {
@@ -145,7 +147,85 @@ export function renderPanel(panel: HTMLElement): void {
   });
   actionsRow.append(del);
 
-  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, dates, prio, actionsRow);
+  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, dates, prio, labels, actionsRow);
+}
+
+// labelsField is a tag editor: removable chips for the item's labels plus an
+// input to add more (Enter/comma commits; a datalist autocompletes existing
+// labels). Like the priority chips, it mutates its own DOM on add/remove and
+// commits through actions — the panel skips its own rebuild while focused.
+function labelsField(item: { id: number; labels: string[] }): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "panel-field";
+  const label = document.createElement("span");
+  label.textContent = "Labels";
+
+  const editor = document.createElement("div");
+  editor.className = "label-editor";
+  const chips = document.createElement("div");
+  chips.className = "label-chips";
+  const input = document.createElement("input");
+  input.className = "label-input";
+  input.placeholder = "Add label…";
+  input.setAttribute("list", "label-suggestions");
+
+  const datalist = document.createElement("datalist");
+  datalist.id = "label-suggestions";
+  for (const l of state.allLabels()) {
+    const opt = document.createElement("option");
+    opt.value = l;
+    datalist.append(opt);
+  }
+
+  let labels = [...item.labels];
+  const commit = () => void actions.updateItem(item.id, { labels: [...labels] });
+
+  const renderChips = () => {
+    chips.replaceChildren();
+    for (const l of labels) {
+      const chip = document.createElement("span");
+      chip.className = "label-chip";
+      const text = document.createElement("span");
+      text.textContent = l;
+      const x = document.createElement("button");
+      x.className = "label-x";
+      x.title = "Remove";
+      x.append(icons.x(12));
+      x.addEventListener("click", () => {
+        labels = labels.filter((v) => v !== l);
+        renderChips();
+        commit();
+      });
+      chip.append(text, x);
+      chips.append(chip);
+    }
+  };
+
+  const add = () => {
+    const v = input.value.trim();
+    input.value = "";
+    if (!v || labels.includes(v)) return;
+    labels.push(v);
+    renderChips();
+    commit();
+  };
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      add();
+    } else if (e.key === "Backspace" && input.value === "" && labels.length > 0) {
+      labels.pop();
+      renderChips();
+      commit();
+    }
+  });
+  input.addEventListener("blur", add); // commit a typed-but-unentered label
+
+  renderChips();
+  editor.append(chips, input, datalist);
+  wrap.append(label, editor);
+  return wrap;
 }
 
 function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void {

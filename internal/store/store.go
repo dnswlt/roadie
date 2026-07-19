@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -83,19 +84,39 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, updated_at"
+const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, updated_at"
 
 func scanItem(r rowScanner) (model.Item, error) {
 	var it model.Item
 	var start, end time.Time
 	err := r.Scan(&it.ID, &it.LaneID, &it.ParentID, &it.Title, &it.Description,
-		&start, &end, &it.Rank, &it.Priority, &it.UpdatedAt)
+		&start, &end, &it.Rank, &it.Priority, &it.Labels, &it.UpdatedAt)
 	if err != nil {
 		return model.Item{}, err
 	}
 	it.StartDate = model.NewDate(start)
 	it.EndDate = model.NewDate(end)
+	if it.Labels == nil {
+		it.Labels = []string{}
+	}
 	return it, nil
+}
+
+// normalizeLabels trims, drops empties, and de-duplicates a label set while
+// preserving first-seen order, so the stored set stays clean regardless of
+// what the client sends.
+func normalizeLabels(labels []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, l := range labels {
+		l = strings.TrimSpace(l)
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		out = append(out, l)
+	}
+	return out
 }
 
 const milestoneCols = "id, lane_id, title, description, date, updated_at"
@@ -513,6 +534,7 @@ type ItemPatch struct {
 	ParentID    model.Opt[*int64]     `json:"parentId"`
 	Rank        model.Opt[int]        `json:"rank"`
 	Priority    model.Opt[*int]       `json:"priority"`
+	Labels      model.Opt[[]string]   `json:"labels"`
 }
 
 func ptrEq(a, b *int64) bool {
@@ -566,6 +588,9 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 	}
 	if p.Priority.Set {
 		next.Priority = p.Priority.Value
+	}
+	if p.Labels.Set {
+		next.Labels = normalizeLabels(p.Labels.Value)
 	}
 
 	if next.Title == "" {
@@ -663,11 +688,12 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 
 	row = tx.QueryRow(ctx,
 		`UPDATE items SET lane_id = $2, parent_id = $3, title = $4, description = $5,
-		        start_date = $6, end_date = $7, rank = $8, priority = $9, updated_at = now()
+		        start_date = $6, end_date = $7, rank = $8, priority = $9, labels = $10,
+		        updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+itemCols,
 		id, next.LaneID, next.ParentID, next.Title, next.Description,
-		next.StartDate.Time, next.EndDate.Time, next.Rank, next.Priority)
+		next.StartDate.Time, next.EndDate.Time, next.Rank, next.Priority, next.Labels)
 	updated, err := scanItem(row)
 	if err != nil {
 		return model.Item{}, err

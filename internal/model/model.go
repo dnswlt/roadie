@@ -79,6 +79,7 @@ type Item struct {
 	EndDate     Date      `json:"endDate"`
 	Rank        int       `json:"rank"`
 	Priority    *int      `json:"priority"` // 1..4 (1 = highest); nil = unprioritized
+	Labels      []string  `json:"labels"`   // free-form tags, shared across the roadmap
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 

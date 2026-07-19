@@ -45,6 +45,7 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
   if (patch.startDate !== undefined) item.startDate = patch.startDate;
   if (patch.endDate !== undefined) item.endDate = patch.endDate;
   if (patch.priority !== undefined) item.priority = patch.priority;
+  if (patch.labels !== undefined) item.labels = patch.labels;
 
   const newParentId = patch.parentId !== undefined ? patch.parentId : item.parentId;
   let newLaneId = patch.laneId !== undefined ? patch.laneId : item.laneId;
@@ -93,6 +94,7 @@ export const actions = {
     try {
       state.current = await api.getRoadmap(id);
       state.clearSelection();
+      state.focusLabel = null; // labels are per-roadmap; don't carry focus across
       state.loadHiddenLanes();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));

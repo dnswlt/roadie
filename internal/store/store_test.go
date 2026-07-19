@@ -415,6 +415,69 @@ func TestItemUpdateFields(t *testing.T) {
 	}
 }
 
+func TestItemLabels(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
+	it, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "T", StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// New items start with an empty (non-nil) label set.
+	if it.Labels == nil || len(it.Labels) != 0 {
+		t.Errorf("new item labels: want empty non-nil, got %#v", it.Labels)
+	}
+
+	// Setting labels normalizes: trims, drops empties, de-dupes, keeps order.
+	upd, err := testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Labels: model.Opt[[]string]{Set: true, Value: []string{" Needs discussion ", "backend", "", "backend", "Needs discussion"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upd.Labels) != 2 || upd.Labels[0] != "Needs discussion" || upd.Labels[1] != "backend" {
+		t.Errorf("normalized labels: %#v", upd.Labels)
+	}
+
+	// A patch that omits labels leaves them intact.
+	upd2, err := testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Title: model.Opt[string]{Set: true, Value: "T2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upd2.Labels) != 2 {
+		t.Errorf("labels not preserved across unrelated patch: %#v", upd2.Labels)
+	}
+
+	// Clearing labels with an explicit empty set.
+	upd3, err := testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Labels: model.Opt[[]string]{Set: true, Value: []string{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upd3.Labels) != 0 {
+		t.Errorf("cleared labels: %#v", upd3.Labels)
+	}
+
+	// Labels survive the full-roadmap read path.
+	if _, err := testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Labels: model.Opt[[]string]{Set: true, Value: []string{"x"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := full.Lanes[0].Items[0].Labels; len(got) != 1 || got[0] != "x" {
+		t.Errorf("labels from GetRoadmapFull: %#v", got)
+	}
+}
+
 func TestMilestones(t *testing.T) {
 	ctx := context.Background()
 	rm := newRoadmap(t)

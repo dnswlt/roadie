@@ -29,6 +29,9 @@ class AppState {
   selectedMilestoneId: number | null = null;
   pxPerDay = DEFAULT_PX_PER_DAY;
   panelWidth = DEFAULT_PANEL_WIDTH;
+  // Focus mode: when set, items lacking this label are dimmed. A transient
+  // "what's relevant right now" view, not persisted.
+  focusLabel: string | null = null;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
   // Lanes hidden from the chart. Purely a view preference (not part of the
@@ -94,6 +97,25 @@ class AppState {
       }
     }
     return null;
+  }
+
+  // allLabels returns the distinct labels in use across the current roadmap,
+  // sorted — the source for the focus dropdown and the editor's autocomplete.
+  allLabels(): string[] {
+    const set = new Set<string>();
+    for (const lane of this.current?.lanes ?? []) {
+      for (const item of lane.items) {
+        for (const l of item.labels) set.add(l);
+        for (const child of item.children) for (const l of child.labels) set.add(l);
+      }
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }
+
+  // isDimmed reports whether an item should be grayed out under the current
+  // focus label (false when no focus is active).
+  isDimmed(labels: string[]): boolean {
+    return this.focusLabel !== null && !labels.includes(this.focusLabel);
   }
 
   findMilestone(id: number): MilestoneLocation | null {

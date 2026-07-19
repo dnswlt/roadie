@@ -34,6 +34,7 @@ func (s *Store) Seed(ctx context.Context) error {
 		title      string
 		desc       string
 		start, end model.Date
+		labels     []string
 		children   []seedItem
 	}
 	type seedMilestone struct {
@@ -49,7 +50,8 @@ func (s *Store) Seed(ctx context.Context) error {
 		{"Core Platform", []seedItem{
 			{title: "API Gateway v2",
 				desc:  "Replace the legacy gateway with the new routing layer. Spec: https://wiki.example.com/gateway-v2",
-				start: d(-1, 1), end: d(2, 28), children: []seedItem{
+				start: d(-1, 1), end: d(2, 28), labels: []string{"Needs discussion", "platform"},
+				children: []seedItem{
 					{title: "Design & spike", start: d(-1, 1), end: d(-1, 21)},
 					{title: "Migration", start: d(0, 1), end: d(1, 28)},
 					{title: "Decommission legacy", start: d(2, 1), end: d(2, 28)},
@@ -66,7 +68,7 @@ func (s *Store) Seed(ctx context.Context) error {
 					{title: "Signup flow", start: d(0, 10), end: d(1, 15)},
 					{title: "Guided setup", start: d(1, 10), end: d(3, 20)},
 				}},
-			{title: "Enterprise SSO", start: d(3, 1), end: d(5, 30)},
+			{title: "Enterprise SSO", start: d(3, 1), end: d(5, 30), labels: []string{"Needs discussion"}},
 		}, []seedMilestone{
 			{title: "Public beta", date: d(1, 15)},
 			{title: "GA launch", desc: "General availability.", date: d(4, 1)},
@@ -90,6 +92,13 @@ func (s *Store) Seed(ctx context.Context) error {
 			})
 			if err != nil {
 				return err
+			}
+			if len(si.labels) > 0 {
+				if _, err := s.UpdateItem(ctx, parent.ID, ItemPatch{
+					Labels: model.Opt[[]string]{Set: true, Value: si.labels},
+				}); err != nil {
+					return err
+				}
 			}
 			for _, ci := range si.children {
 				if _, err := s.CreateItem(ctx, lane.ID, NewItem{

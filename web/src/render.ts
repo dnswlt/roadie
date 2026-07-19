@@ -180,6 +180,8 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
 
 function renderMilestone(m: Milestone): HTMLElement {
   const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
+  // Milestones carry no labels, so any active focus dims them all.
+  if (state.isDimmed([])) el.classList.add("dimmed");
   el.dataset.milestoneId = String(m.id);
   el.title = m.title;
   el.style.left = `${xOf(scale, dayOf(m.date))}px`;
@@ -202,6 +204,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   el.style.height = `${block.h}px`;
 
   const bar = div("bar");
+  if (state.isDimmed(item.labels)) bar.classList.add("dimmed");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
   bar.append(
@@ -214,6 +217,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
 
   for (const child of block.children) {
     const c = div(state.selectedItemId === child.item.id ? "child-bar selected" : "child-bar");
+    if (state.isDimmed(child.item.labels)) c.classList.add("dimmed");
     c.dataset.itemId = String(child.item.id);
     c.title = child.item.title;
     c.style.left = `${child.x}px`;

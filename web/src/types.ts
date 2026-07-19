@@ -28,6 +28,7 @@ export interface Item {
   endDate: string; // YYYY-MM-DD
   rank: number; // position within the container (lane / parent), dense 0..n-1
   priority: number | null; // 1..4 (1 = highest); null = unprioritized
+  labels: string[]; // free-form tags, shared across the roadmap
 }
 
 export interface ItemFull extends Item {
@@ -62,6 +63,7 @@ export interface ItemPatch {
   parentId?: number | null;
   rank?: number;
   priority?: number | null;
+  labels?: string[];
 }
 
 export interface NewItem {

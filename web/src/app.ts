@@ -39,6 +39,9 @@ function renderTopbar(): void {
   rmSelect.disabled = state.roadmaps.length === 0;
   ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
+  // Surface active focus even while the dropdown is closed.
+  $("focus-menu").classList.toggle("active", state.focusLabel !== null);
+  $("focus-menu").title = state.focusLabel ? `Focus: ${state.focusLabel}` : "Focus on a label";
 }
 
 // setZoom keeps the date under the viewport center fixed while zooming.
@@ -87,6 +90,7 @@ function injectIcons(): void {
   $("rm-new").prepend(icons.plus(14));
   $("rm-menu").append(icons.dots(18));
   $("lane-vis-menu").append(icons.eye(18));
+  $("focus-menu").append(icons.tag(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-delete").prepend(icons.trash(14));
   $("zoom-in").append(icons.zoomIn());
@@ -96,16 +100,26 @@ function injectIcons(): void {
 function wireTopbar(): void {
   const menuPop = $("rm-menu-pop");
   const visPop = $("lane-vis-pop");
+  const focusPop = $("focus-pop");
   $("rm-menu").addEventListener("click", (e) => {
     e.stopPropagation();
     visPop.classList.add("hidden");
+    focusPop.classList.add("hidden");
     menuPop.classList.toggle("hidden");
   });
   $("lane-vis-menu").addEventListener("click", (e) => {
     e.stopPropagation();
     menuPop.classList.add("hidden");
+    focusPop.classList.add("hidden");
     if (visPop.classList.contains("hidden")) buildLaneVisMenu(visPop);
     visPop.classList.toggle("hidden");
+  });
+  $("focus-menu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    menuPop.classList.add("hidden");
+    visPop.classList.add("hidden");
+    if (focusPop.classList.contains("hidden")) buildFocusMenu(focusPop);
+    focusPop.classList.toggle("hidden");
   });
   document.addEventListener("click", (e) => {
     // Close each popup unless the click landed inside its own menu wrap.
@@ -115,6 +129,9 @@ function wireTopbar(): void {
     }
     if (!visPop.classList.contains("hidden") && !wrap?.contains(visPop)) {
       visPop.classList.add("hidden");
+    }
+    if (!focusPop.classList.contains("hidden") && !wrap?.contains(focusPop)) {
+      focusPop.classList.add("hidden");
     }
     closeColorPop(e.target as HTMLElement);
     closeLaneMenu(e.target as HTMLElement);
@@ -328,6 +345,53 @@ function text(s: string): HTMLElement {
   const span = document.createElement("span");
   span.textContent = s;
   return span;
+}
+
+// Focus menu: pick a label to spotlight. Selecting one dims every item that
+// lacks it (see state.isDimmed / render.ts); "Show all items" clears the
+// focus. Rebuilt after each pick so the active row stays checked while open.
+function buildFocusMenu(pop: HTMLElement): void {
+  pop.replaceChildren();
+  const labels = state.allLabels();
+  if (labels.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "menu-empty";
+    empty.textContent = "No labels yet — add some to an item.";
+    pop.append(empty);
+    return;
+  }
+
+  const row = (labelText: string, active: boolean, onPick: () => void): HTMLButtonElement => {
+    const b = document.createElement("button");
+    b.className = active ? "menu-item is-active" : "menu-item";
+    const mark = document.createElement("span");
+    mark.className = "menu-check";
+    if (active) mark.append(icons.check(14));
+    const name = document.createElement("span");
+    name.className = "focus-label-name";
+    name.textContent = labelText;
+    b.append(mark, name);
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onPick();
+      state.notify();
+      buildFocusMenu(pop);
+    });
+    return b;
+  };
+
+  pop.append(
+    row("Show all items", state.focusLabel === null, () => {
+      state.focusLabel = null;
+    }),
+  );
+  for (const l of labels) {
+    pop.append(
+      row(l, state.focusLabel === l, () => {
+        state.focusLabel = state.focusLabel === l ? null : l;
+      }),
+    );
+  }
 }
 
 // Lane color picker popover: a row of swatches anchored to the color button.

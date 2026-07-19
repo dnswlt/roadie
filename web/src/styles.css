@@ -983,6 +983,106 @@ dialog input:focus {
   opacity: 0;
 }
 
+/* Labels */
+
+/* Tag editor in the panel: chips and the add-input share one bordered box and
+   flow together (the chips container is display:contents so its chips join the
+   editor's flex line). */
+.label-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.label-editor:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
+}
+
+.label-chips {
+  display: contents;
+}
+
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 3px 2px 9px;
+  background: var(--grid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.label-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 1px;
+  border-radius: 50%;
+}
+
+.label-x:hover {
+  color: var(--ink);
+  background: var(--border-strong);
+}
+
+.label-input {
+  flex: 1;
+  min-width: 90px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  padding: 2px;
+  color: var(--ink);
+}
+
+/* Focus dropdown rows: a fixed-width check column keeps labels aligned whether
+   or not a row is the active one. */
+.menu-check {
+  flex: none;
+  width: 14px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-2);
+}
+
+.menu-item.is-active {
+  font-weight: 600;
+}
+
+.focus-label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The focus (tag) topbar button, lit while a focus label is active. */
+.icon-btn.active {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--focus) 26%, transparent);
+}
+
+/* Items not carrying the focused label recede hard into the background so the
+   matching ones pop. Grayscale drops their lane color too, not just opacity. */
+.bar.dimmed,
+.child-bar.dimmed,
+.milestone.dimmed {
+  opacity: 0.12;
+  filter: grayscale(0.85);
+}
+
 .links-section {
   margin-bottom: 12px;
 }
