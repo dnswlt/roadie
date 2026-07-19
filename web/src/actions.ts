@@ -44,6 +44,7 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
   if (patch.description !== undefined) item.description = patch.description;
   if (patch.startDate !== undefined) item.startDate = patch.startDate;
   if (patch.endDate !== undefined) item.endDate = patch.endDate;
+  if (patch.priority !== undefined) item.priority = patch.priority;
 
   const newParentId = patch.parentId !== undefined ? patch.parentId : item.parentId;
   let newLaneId = patch.laneId !== undefined ? patch.laneId : item.laneId;

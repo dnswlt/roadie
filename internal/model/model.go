@@ -78,6 +78,7 @@ type Item struct {
 	StartDate   Date      `json:"startDate"`
 	EndDate     Date      `json:"endDate"`
 	Rank        int       `json:"rank"`
+	Priority    *int      `json:"priority"` // 1..4 (1 = highest); nil = unprioritized
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 

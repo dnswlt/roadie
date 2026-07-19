@@ -83,13 +83,13 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, updated_at"
+const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, updated_at"
 
 func scanItem(r rowScanner) (model.Item, error) {
 	var it model.Item
 	var start, end time.Time
 	err := r.Scan(&it.ID, &it.LaneID, &it.ParentID, &it.Title, &it.Description,
-		&start, &end, &it.Rank, &it.UpdatedAt)
+		&start, &end, &it.Rank, &it.Priority, &it.UpdatedAt)
 	if err != nil {
 		return model.Item{}, err
 	}
@@ -476,6 +476,7 @@ type ItemPatch struct {
 	LaneID      model.Opt[int64]      `json:"laneId"`
 	ParentID    model.Opt[*int64]     `json:"parentId"`
 	Rank        model.Opt[int]        `json:"rank"`
+	Priority    model.Opt[*int]       `json:"priority"`
 }
 
 func ptrEq(a, b *int64) bool {
@@ -527,9 +528,15 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 	if p.LaneID.Set {
 		next.LaneID = p.LaneID.Value
 	}
+	if p.Priority.Set {
+		next.Priority = p.Priority.Value
+	}
 
 	if next.Title == "" {
 		return model.Item{}, invalidf("item title must not be empty")
+	}
+	if next.Priority != nil && (*next.Priority < 1 || *next.Priority > 4) {
+		return model.Item{}, invalidf("priority must be between 1 and 4")
 	}
 	if next.StartDate.IsZero() || next.EndDate.IsZero() {
 		return model.Item{}, invalidf("item start and end dates must not be null")
@@ -620,11 +627,11 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 
 	row = tx.QueryRow(ctx,
 		`UPDATE items SET lane_id = $2, parent_id = $3, title = $4, description = $5,
-		        start_date = $6, end_date = $7, rank = $8, updated_at = now()
+		        start_date = $6, end_date = $7, rank = $8, priority = $9, updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+itemCols,
 		id, next.LaneID, next.ParentID, next.Title, next.Description,
-		next.StartDate.Time, next.EndDate.Time, next.Rank)
+		next.StartDate.Time, next.EndDate.Time, next.Rank, next.Priority)
 	updated, err := scanItem(row)
 	if err != nil {
 		return model.Item{}, err

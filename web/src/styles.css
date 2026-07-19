@@ -578,6 +578,56 @@ select#rm-select:focus-visible {
   border-radius: 4px;
 }
 
+/* Priority badge on a bar. Derived from the lane's --c so it fits every
+   swimlane's palette; the P-label (not color) carries the level. A light
+   chip with lane-tinted text + border reads on both solid bars and the
+   paler child bars. */
+.prio-pill {
+  flex: none;
+  margin: 0 3px 0 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  background: var(--surface);
+  color: color-mix(in oklab, var(--c) 70%, black);
+  border: 1px solid color-mix(in oklab, var(--c) 35%, var(--surface));
+}
+
+/* Priority chips in the edit panel. */
+.prio-chips {
+  display: flex;
+  gap: 6px;
+}
+
+.prio-chip {
+  flex: 1;
+  padding: 6px 0;
+  font: inherit;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.prio-chip:hover {
+  background: var(--grid);
+}
+
+/* Active chip uses the selected item's lane color (--c is set on the
+   panel in renderPanel) so the picker matches the lane and the bar pill. */
+.prio-chip.active {
+  color: #fff;
+  border-color: transparent;
+  background: var(--c);
+}
+
 .bar .rh:hover {
   background: rgba(255, 255, 255, 0.35);
 }

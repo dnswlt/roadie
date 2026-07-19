@@ -27,6 +27,7 @@ export interface Item {
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   rank: number; // position within the container (lane / parent), dense 0..n-1
+  priority: number | null; // 1..4 (1 = highest); null = unprioritized
 }
 
 export interface ItemFull extends Item {
@@ -51,6 +52,7 @@ export interface ItemPatch {
   laneId?: number;
   parentId?: number | null;
   rank?: number;
+  priority?: number | null;
 }
 
 export interface NewItem {

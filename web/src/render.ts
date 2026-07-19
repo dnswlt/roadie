@@ -193,7 +193,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   const bar = div("bar");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
-  bar.append(handle("rh rh-l"), barTitle(item.title), handle("rh rh-r"));
+  bar.append(handle("rh rh-l"), barTitle(item.title), prioPill(item.priority), handle("rh rh-r"));
   el.append(bar);
 
   for (const child of block.children) {
@@ -204,9 +204,19 @@ function renderBlock(block: PlacedBlock): HTMLElement {
     c.style.top = `${child.y}px`;
     c.style.width = `${child.w}px`;
     c.style.height = `${child.h}px`;
-    c.append(handle("rh rh-l"), barTitle(child.item.title), handle("rh rh-r"));
+    c.append(handle("rh rh-l"), barTitle(child.item.title), prioPill(child.item.priority), handle("rh rh-r"));
     el.append(c);
   }
+  return el;
+}
+
+// A small P1..P4 badge shown at the right end of a bar. Non-interactive
+// (pointer-events: none) so it never interferes with drag/drop hit-testing.
+function prioPill(priority: number | null): Node {
+  if (!priority) return document.createTextNode("");
+  const el = document.createElement("span");
+  el.className = `prio-pill p${priority}`;
+  el.textContent = `P${priority}`;
   return el;
 }
 

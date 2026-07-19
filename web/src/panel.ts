@@ -3,6 +3,7 @@
 // delete) go through actions.ts.
 
 import { actions } from "./actions";
+import { laneColorValue } from "./colors";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { state } from "./state";
@@ -30,6 +31,8 @@ export function renderPanel(panel: HTMLElement): void {
   panel.replaceChildren();
 
   const { item, lane, parent } = loc;
+  // Tie the panel's accent (priority chips) to the item's lane color.
+  panel.style.setProperty("--c", laneColorValue(lane.color));
 
   const head = document.createElement("div");
   head.className = "panel-head";
@@ -82,6 +85,30 @@ export function renderPanel(panel: HTMLElement): void {
   });
   dates.append(start.wrap, end.wrap);
 
+  // Priority: four chips (P1 highest .. P4 lowest). Clicking the active chip
+  // clears the priority back to unset. Chip classes are toggled directly
+  // because the panel skips its own rebuild while a chip holds focus.
+  const prio = document.createElement("div");
+  prio.className = "panel-field";
+  const prioLabel = document.createElement("span");
+  prioLabel.textContent = "Priority";
+  const chips = document.createElement("div");
+  chips.className = "prio-chips";
+  for (let p = 1; p <= 4; p++) {
+    const chip = document.createElement("button");
+    chip.className = `prio-chip p${p}`;
+    chip.textContent = `P${p}`;
+    if (item.priority === p) chip.classList.add("active");
+    chip.addEventListener("click", () => {
+      const next = item.priority === p ? null : p;
+      for (const c of chips.children) c.classList.remove("active");
+      if (next !== null) chip.classList.add("active");
+      void actions.updateItem(item.id, { priority: next });
+    });
+    chips.append(chip);
+  }
+  prio.append(prioLabel, chips);
+
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
   if (!parent) {
@@ -103,7 +130,7 @@ export function renderPanel(panel: HTMLElement): void {
   });
   actionsRow.append(del);
 
-  panel.append(head, crumb, title.wrap, desc.wrap, dates, actionsRow);
+  panel.append(head, crumb, title.wrap, desc.wrap, dates, prio, actionsRow);
 }
 
 function field(
