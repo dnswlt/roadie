@@ -47,6 +47,7 @@ function setZoom(pxPerDay: number): void {
   const ratio = px / state.pxPerDay;
   const centerX = chart.scrollLeft + chart.clientWidth / 2 - LABEL_W;
   state.pxPerDay = px;
+  localStorage.setItem("roadie.zoom", String(px));
   state.notify();
   chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
 }
@@ -281,6 +282,11 @@ async function boot(): Promise<void> {
       state.notify();
     }
   });
+
+  const storedZoom = Number(localStorage.getItem("roadie.zoom"));
+  if (storedZoom) {
+    state.pxPerDay = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, storedZoom));
+  }
 
   await actions.loadRoadmaps();
   const stored = Number(localStorage.getItem("roadie.roadmap"));
