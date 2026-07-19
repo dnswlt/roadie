@@ -6,6 +6,7 @@ import { actions } from "./actions";
 import { laneColorValue } from "./colors";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
+import { extractUrls, linkLabel } from "./links";
 import { state, type MilestoneLocation } from "./state";
 import type { ItemFull } from "./types";
 
@@ -77,6 +78,8 @@ export function renderPanel(panel: HTMLElement): void {
     if (v !== item.description) void actions.updateItem(item.id, { description: v });
   });
 
+  const linksSection = createLinksSection(desc.control as HTMLTextAreaElement);
+
   const dates = document.createElement("div");
   dates.className = "panel-row";
   const start = field("Start", "input");
@@ -140,7 +143,7 @@ export function renderPanel(panel: HTMLElement): void {
   });
   actionsRow.append(del);
 
-  panel.append(head, crumb, title.wrap, desc.wrap, dates, prio, actionsRow);
+  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, dates, prio, actionsRow);
 }
 
 function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void {
@@ -196,6 +199,8 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
     if (v !== milestone.description) void actions.updateMilestone(milestone.id, { description: v });
   });
 
+  const linksSection = createLinksSection(desc.control as HTMLTextAreaElement);
+
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
   const del = document.createElement("button");
@@ -208,7 +213,7 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
   });
   actionsRow.append(del);
 
-  panel.append(head, crumb, title.wrap, dateField.wrap, desc.wrap, actionsRow);
+  panel.append(head, crumb, title.wrap, dateField.wrap, desc.wrap, linksSection, actionsRow);
 }
 
 function field(
@@ -222,4 +227,41 @@ function field(
   const control = document.createElement(tag) as HTMLInputElement | HTMLTextAreaElement;
   wrap.append(span, control);
   return { wrap, control };
+}
+
+// createLinksSection shows the URLs found in a description as clickable chips.
+// It reads the live textarea and re-renders on input, so links track edits
+// before they are committed.
+function createLinksSection(descControl: HTMLTextAreaElement): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "links-section";
+
+  const render = () => {
+    wrap.replaceChildren();
+    const urls = extractUrls(descControl.value);
+    wrap.style.display = urls.length === 0 ? "none" : "block";
+    if (urls.length === 0) return;
+
+    const label = document.createElement("span");
+    label.className = "panel-field-label";
+    label.textContent = "External links";
+
+    const chips = document.createElement("div");
+    chips.className = "links-chips";
+    for (const url of urls) {
+      const chip = document.createElement("a");
+      chip.className = "link-chip";
+      chip.href = url;
+      chip.target = "_blank";
+      chip.rel = "noopener noreferrer";
+      chip.textContent = linkLabel(url);
+      chip.title = url;
+      chips.append(chip);
+    }
+    wrap.append(label, chips);
+  };
+
+  render();
+  descControl.addEventListener("input", render);
+  return wrap;
 }

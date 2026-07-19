@@ -7,13 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```sh
 make db-up                # start dev Postgres (container, port 5433 — see below)
 make dev                  # esbuild watch + Go server (-dev -seed) on http://localhost:8080
-make test                 # Go tests; store tests need the compose DB and skip if DATABASE_URL is unset
+make test                 # Go tests (store tests need the compose DB, skip if DATABASE_URL unset) + frontend tests
 make check                # go vet + tsc --noEmit
 make build                # production binary (embedded frontend) -> bin/roadie
 npm run --prefix web build   # rebuild frontend only (also copies index.html to dist)
+npm run --prefix web test    # frontend unit tests only
 ```
 
 Single Go test: `DATABASE_URL=postgres://roadie:roadie@localhost:5433/roadie go test ./internal/store -run TestItemInvariants`
+
+Frontend tests use Node's built-in runner (`node --test`): `*.test.ts` files live next to their source, are transpiled by esbuild into `web/test-out/` (gitignored), and use `node:test` + `node:assert`. There is no browser/DOM test runner — test pure logic by extracting it into a DOM-free module (e.g. web/src/links.ts ← links.test.ts); exercise DOM/render code in a real browser instead.
 
 Environment quirks (this machine):
 

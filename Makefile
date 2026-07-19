@@ -36,6 +36,7 @@ dev:
 
 test:
 	DATABASE_URL=$(DATABASE_URL) go test ./...
+	npm run --prefix web test
 
 check:
 	go vet ./...
