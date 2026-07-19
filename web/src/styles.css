@@ -240,6 +240,23 @@ select#rm-select:focus-visible {
   background: var(--danger-soft);
 }
 
+.menu-empty {
+  padding: 7px 10px;
+  color: var(--ink-2);
+}
+
+.lane-vis-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A hidden context reads as muted; its eye-off icon keeps normal weight. */
+.lane-vis-item.is-hidden .lane-vis-name,
+.lane-vis-item.is-hidden .color-dot {
+  opacity: 0.45;
+}
+
 /* Layout */
 
 .main {

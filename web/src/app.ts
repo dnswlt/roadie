@@ -54,6 +54,7 @@ function setZoom(pxPerDay: number): void {
 function injectIcons(): void {
   $("rm-new").prepend(icons.plus(14));
   $("rm-menu").append(icons.dots(18));
+  $("lane-vis-menu").append(icons.eye(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-delete").prepend(icons.trash(14));
   $("zoom-in").append(icons.zoomIn());
@@ -62,13 +63,26 @@ function injectIcons(): void {
 
 function wireTopbar(): void {
   const menuPop = $("rm-menu-pop");
+  const visPop = $("lane-vis-pop");
   $("rm-menu").addEventListener("click", (e) => {
     e.stopPropagation();
+    visPop.classList.add("hidden");
     menuPop.classList.toggle("hidden");
   });
+  $("lane-vis-menu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    menuPop.classList.add("hidden");
+    if (visPop.classList.contains("hidden")) buildLaneVisMenu(visPop);
+    visPop.classList.toggle("hidden");
+  });
   document.addEventListener("click", (e) => {
-    if (!menuPop.classList.contains("hidden") && !(e.target as HTMLElement).closest(".menu-wrap")) {
+    // Close each popup unless the click landed inside its own menu wrap.
+    const wrap = (e.target as HTMLElement).closest(".menu-wrap");
+    if (!menuPop.classList.contains("hidden") && !wrap?.contains(menuPop)) {
       menuPop.classList.add("hidden");
+    }
+    if (!visPop.classList.contains("hidden") && !wrap?.contains(visPop)) {
+      visPop.classList.add("hidden");
     }
     closeColorPop(e.target as HTMLElement);
   });
@@ -183,6 +197,40 @@ function wireChart(): void {
       if (ev.key === "Escape") commit(false);
     });
   });
+}
+
+// Lane visibility menu: one toggle row per context. Visibility is a view
+// preference held in state (persisted per roadmap), not a data mutation, so
+// toggling doesn't go through actions. The menu is rebuilt after each toggle
+// to reflect the new eye state while staying open.
+function buildLaneVisMenu(pop: HTMLElement): void {
+  pop.replaceChildren();
+  const lanes = state.current?.lanes ?? [];
+  if (lanes.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "menu-empty";
+    empty.textContent = "No contexts yet.";
+    pop.append(empty);
+    return;
+  }
+  for (const lane of lanes) {
+    const hidden = state.isLaneHidden(lane.id);
+    const row = document.createElement("button");
+    row.className = hidden ? "menu-item lane-vis-item is-hidden" : "menu-item lane-vis-item";
+    const dot = document.createElement("span");
+    dot.className = "color-dot";
+    dot.style.background = laneColorValue(lane.color);
+    const name = document.createElement("span");
+    name.className = "lane-vis-name";
+    name.textContent = lane.name;
+    row.append(hidden ? icons.eyeOff(16) : icons.eye(16), dot, name);
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.setLaneHidden(lane.id, !state.isLaneHidden(lane.id));
+      buildLaneVisMenu(pop);
+    });
+    pop.append(row);
+  }
 }
 
 // Lane color picker popover: a row of swatches anchored to the color button.

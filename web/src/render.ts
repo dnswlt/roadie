@@ -87,14 +87,19 @@ export function renderChart(container: HTMLElement): void {
   thRows.append(qRow, mRow);
   thead.append(corner, thRows);
 
-  // Lanes.
+  // Lanes (hidden ones are skipped — see the eye menu in the topbar).
   const lanesEl = div("lanes");
-  for (const lane of rm.lanes) {
+  const visibleLanes = rm.lanes.filter((l) => !state.isLaneHidden(l.id));
+  for (const lane of visibleLanes) {
     lanesEl.append(renderLane(lane, w));
   }
   if (rm.lanes.length === 0) {
     const hint = div("lanes-hint");
     hint.textContent = "This roadmap has no contexts yet — add one below.";
+    lanesEl.append(hint);
+  } else if (visibleLanes.length === 0) {
+    const hint = div("lanes-hint");
+    hint.textContent = "All contexts are hidden — use the eye menu to show them.";
     lanesEl.append(hint);
   }
 

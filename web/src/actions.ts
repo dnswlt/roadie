@@ -92,6 +92,7 @@ export const actions = {
     try {
       state.current = await api.getRoadmap(id);
       state.selectedItemId = null;
+      state.loadHiddenLanes();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
       state.notify();

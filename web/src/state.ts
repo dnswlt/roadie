@@ -17,6 +17,9 @@ class AppState {
   pxPerDay = DEFAULT_PX_PER_DAY;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
+  // Lanes hidden from the chart. Purely a view preference (not part of the
+  // data model), persisted per roadmap in localStorage.
+  hiddenLanes = new Set<number>();
 
   private listeners: Array<() => void> = [];
 
@@ -30,6 +33,40 @@ class AppState {
 
   findLane(id: number): LaneFull | null {
     return this.current?.lanes.find((l) => l.id === id) ?? null;
+  }
+
+  isLaneHidden(id: number): boolean {
+    return this.hiddenLanes.has(id);
+  }
+
+  private hiddenKey(): string | null {
+    return this.current ? `roadie.hidden.${this.current.id}` : null;
+  }
+
+  // Loads the hidden-lane set for the current roadmap from localStorage.
+  // Call after `current` is set. Prunes ids for lanes that no longer exist.
+  loadHiddenLanes(): void {
+    this.hiddenLanes = new Set();
+    const key = this.hiddenKey();
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const ids = JSON.parse(raw) as number[];
+      for (const id of ids) {
+        if (this.current?.lanes.some((l) => l.id === id)) this.hiddenLanes.add(id);
+      }
+    } catch {
+      // Corrupt entry — ignore and treat all lanes as visible.
+    }
+  }
+
+  setLaneHidden(id: number, hidden: boolean): void {
+    if (hidden) this.hiddenLanes.add(id);
+    else this.hiddenLanes.delete(id);
+    const key = this.hiddenKey();
+    if (key) localStorage.setItem(key, JSON.stringify([...this.hiddenLanes]));
+    this.notify();
   }
 
   findItem(id: number): ItemLocation | null {
