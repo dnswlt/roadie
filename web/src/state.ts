@@ -1,6 +1,12 @@
 import { DEFAULT_PX_PER_DAY } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone, Roadmap, RoadmapFull } from "./types";
 
+// Edit-panel width (px). A global view preference, persisted in localStorage
+// and adjustable by dragging the panel's left edge.
+export const DEFAULT_PANEL_WIDTH = 420;
+export const MIN_PANEL_WIDTH = 300;
+export const MAX_PANEL_WIDTH = 760;
+
 export interface ItemLocation {
   item: Item;
   lane: LaneFull;
@@ -22,6 +28,7 @@ class AppState {
   selectedItemId: number | null = null;
   selectedMilestoneId: number | null = null;
   pxPerDay = DEFAULT_PX_PER_DAY;
+  panelWidth = DEFAULT_PANEL_WIDTH;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
   // Lanes hidden from the chart. Purely a view preference (not part of the

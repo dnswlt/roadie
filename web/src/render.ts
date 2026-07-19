@@ -4,6 +4,7 @@
 import { laneColorValue } from "./colors";
 import { icons } from "./icons";
 import { LABEL_W, layoutLane, type PlacedBlock } from "./layout";
+import { extractUrls } from "./links";
 import { state } from "./state";
 import {
   chartWidth,
@@ -203,7 +204,12 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   const bar = div("bar");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
-  bar.append(handle("rh rh-l"), barTitle(item.title), prioPill(item.priority), handle("rh rh-r"));
+  bar.append(
+    handle("rh rh-l"),
+    barMain(item.title, item.description),
+    prioPill(item.priority),
+    handle("rh rh-r"),
+  );
   el.append(bar);
 
   for (const child of block.children) {
@@ -214,7 +220,12 @@ function renderBlock(block: PlacedBlock): HTMLElement {
     c.style.top = `${child.y}px`;
     c.style.width = `${child.w}px`;
     c.style.height = `${child.h}px`;
-    c.append(handle("rh rh-l"), barTitle(child.item.title), prioPill(child.item.priority), handle("rh rh-r"));
+    c.append(
+      handle("rh rh-l"),
+      barMain(child.item.title, child.item.description),
+      prioPill(child.item.priority),
+      handle("rh rh-r"),
+    );
     el.append(c);
   }
   return el;
@@ -228,6 +239,32 @@ function prioPill(priority: number | null): Node {
   el.className = `prio-pill p${priority}`;
   el.textContent = `P${priority}`;
   return el;
+}
+
+// The left group of a bar: title text plus (optionally) its link icon. Kept
+// in one flex:1 box so the icon hugs the end of the (possibly truncated)
+// title while the priority pill stays pinned to the bar's right edge.
+function barMain(title: string, description: string): HTMLElement {
+  const main = div("bar-main");
+  main.append(barTitle(title), barLink(description));
+  return main;
+}
+
+// A small external-link icon following the bar's title, opening the first URL
+// found in the item's description in a new tab. First link only — an item can
+// reference many, but the card stays uncluttered and the rule is memorable.
+// dnd.ts skips drag-start on `.bar-link` so the click navigates instead.
+function barLink(description: string): Node {
+  const url = extractUrls(description)[0];
+  if (!url) return document.createTextNode("");
+  const a = document.createElement("a");
+  a.className = "bar-link";
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.title = url;
+  a.append(icons.externalLink(13));
+  return a;
 }
 
 function barTitle(text: string): HTMLElement {

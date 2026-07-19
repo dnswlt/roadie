@@ -47,7 +47,8 @@ func (s *Store) Seed(ctx context.Context) error {
 		milestones []seedMilestone
 	}{
 		{"Core Platform", []seedItem{
-			{title: "API Gateway v2", desc: "Replace the legacy gateway with the new routing layer.",
+			{title: "API Gateway v2",
+				desc:  "Replace the legacy gateway with the new routing layer. Spec: https://wiki.example.com/gateway-v2",
 				start: d(-1, 1), end: d(2, 28), children: []seedItem{
 					{title: "Design & spike", start: d(-1, 1), end: d(-1, 21)},
 					{title: "Migration", start: d(0, 1), end: d(1, 28)},
@@ -59,7 +60,8 @@ func (s *Store) Seed(ctx context.Context) error {
 			{title: "Gateway cutover", desc: "All traffic on the new gateway.", date: d(2, 1)},
 		}},
 		{"Product", []seedItem{
-			{title: "Self-service onboarding", desc: "Reduce time-to-first-value to under 10 minutes.",
+			{title: "Self-service onboarding",
+				desc:  "Reduce time-to-first-value to under 10 minutes. Tracking: https://issues.example.com/browse/PLAT-142",
 				start: d(0, 10), end: d(3, 20), children: []seedItem{
 					{title: "Signup flow", start: d(0, 10), end: d(1, 15)},
 					{title: "Guided setup", start: d(1, 10), end: d(3, 20)},

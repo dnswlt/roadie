@@ -27,6 +27,7 @@ export function renderPanel(panel: HTMLElement): void {
 
   if (!loc) {
     panel.classList.remove("open");
+    panel.style.width = "";
     panel.replaceChildren();
     renderedKey = null;
     return;
@@ -39,6 +40,7 @@ export function renderPanel(panel: HTMLElement): void {
   }
   renderedKey = key;
   panel.classList.add("open");
+  panel.style.width = `${state.panelWidth}px`;
   panel.replaceChildren();
 
   const { item, lane, parent } = loc;
@@ -155,6 +157,7 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
   }
   renderedKey = key;
   panel.classList.add("open");
+  panel.style.width = `${state.panelWidth}px`;
   panel.replaceChildren();
   panel.style.setProperty("--c", laneColorValue(lane.color));
 

@@ -568,8 +568,19 @@ select#rm-select:focus-visible {
   background: color-mix(in oklab, var(--c) 35%, var(--surface));
 }
 
-.bar-title {
+/* Title + link icon group. flex:1 so the priority pill is pushed to the bar's
+   right edge; its own contents stay left-aligned. */
+.bar-main {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.bar-title {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -585,6 +596,23 @@ select#rm-select:focus-visible {
   align-self: stretch;
   cursor: ew-resize;
   border-radius: 4px;
+}
+
+/* External-link icon following a bar's title. Inherits the bar's text color;
+   opens the description's first link in a new tab. */
+.bar-link {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 2px;
+  color: inherit;
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+.bar-link:hover {
+  opacity: 1;
 }
 
 /* Priority badge on a bar. Derived from the lane's --c so it fits every
@@ -613,8 +641,7 @@ select#rm-select:focus-visible {
 }
 
 .prio-chip {
-  flex: 1;
-  padding: 6px 0;
+  padding: 6px 14px;
   font: inherit;
   font-weight: 600;
   font-size: 12.5px;
@@ -761,10 +788,38 @@ select#rm-select:focus-visible {
   transition: width 0.15s ease;
 }
 
+/* Open width comes from an inline style (state.panelWidth); the value here is
+   only a fallback. Dragging the resize handle adds .resizing to skip the
+   open/close transition so the panel tracks the pointer instantly. */
 .panel.open {
-  width: 320px;
+  width: 420px;
   padding: 16px;
   overflow-y: auto;
+}
+
+.panel.resizing {
+  transition: none;
+}
+
+/* Drag handle between the chart and the panel; only shown when the panel is
+   open. It straddles the panel's left border for a comfortable grab target. */
+#panel-resize {
+  display: none;
+  flex: none;
+  width: 7px;
+  margin-right: -4px;
+  z-index: 5;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.main:has(#panel.open) #panel-resize {
+  display: block;
+}
+
+#panel-resize:hover,
+#panel-resize.dragging {
+  background: color-mix(in oklab, var(--focus) 60%, transparent);
 }
 
 .panel-head {
@@ -814,7 +869,7 @@ select#rm-select:focus-visible {
 }
 
 .panel-field textarea {
-  min-height: 90px;
+  min-height: 160px;
   resize: vertical;
 }
 

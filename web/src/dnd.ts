@@ -74,6 +74,10 @@ function onPointerDown(e: PointerEvent): void {
   if (e.button !== 0 || drag || !chartEl) return;
   const t = e.target as HTMLElement;
 
+  // The bar's external-link icon is a real anchor: let its click through
+  // rather than starting a drag or selecting the item.
+  if (t.closest(".bar-link")) return;
+
   const grip = t.closest(".lane-grip");
   if (grip) {
     const laneEl = grip.closest<HTMLElement>(".lane");

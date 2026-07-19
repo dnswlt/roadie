@@ -7,7 +7,7 @@ import { icons } from "./icons";
 import { LABEL_W } from "./layout";
 import { renderChart } from "./render";
 import { renderPanel } from "./panel";
-import { state } from "./state";
+import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { MAX_PX_PER_DAY, MIN_PX_PER_DAY } from "./timescale";
 
 function $(id: string): HTMLElement {
@@ -18,6 +18,7 @@ function $(id: string): HTMLElement {
 
 const chart = $("chart");
 const panel = $("panel");
+const panelResize = $("panel-resize");
 const rmSelect = $("rm-select") as HTMLSelectElement;
 
 function render(): void {
@@ -50,6 +51,36 @@ function setZoom(pxPerDay: number): void {
   localStorage.setItem("roadie.zoom", String(px));
   state.notify();
   chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
+}
+
+// wirePanelResize lets the user drag the panel's left edge to set its width.
+// The chart is flex:1, so widening the panel just reflows it — no re-render.
+// The chosen width is clamped and persisted (globally, like zoom).
+function wirePanelResize(): void {
+  panelResize.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    panelResize.setPointerCapture(e.pointerId);
+    panelResize.classList.add("dragging");
+    panel.classList.add("resizing"); // suppress the width transition while dragging
+    const startX = e.clientX;
+    const startW = panel.offsetWidth;
+    const onMove = (ev: PointerEvent) => {
+      // Dragging left (toward the chart) widens the panel.
+      const w = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, startW + (startX - ev.clientX)));
+      panel.style.width = `${w}px`;
+    };
+    const onUp = (ev: PointerEvent) => {
+      panelResize.releasePointerCapture(ev.pointerId);
+      panelResize.classList.remove("dragging");
+      panel.classList.remove("resizing");
+      panelResize.removeEventListener("pointermove", onMove);
+      panelResize.removeEventListener("pointerup", onUp);
+      state.panelWidth = panel.offsetWidth;
+      localStorage.setItem("roadie.panelWidth", String(state.panelWidth));
+    };
+    panelResize.addEventListener("pointermove", onMove);
+    panelResize.addEventListener("pointerup", onUp);
+  });
 }
 
 function injectIcons(): void {
@@ -340,6 +371,7 @@ async function boot(): Promise<void> {
   injectIcons();
   wireTopbar();
   wireChart();
+  wirePanelResize();
   initDnd(chart);
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && state.clearSelection()) {
@@ -350,6 +382,10 @@ async function boot(): Promise<void> {
   const storedZoom = Number(localStorage.getItem("roadie.zoom"));
   if (storedZoom) {
     state.pxPerDay = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, storedZoom));
+  }
+  const storedWidth = Number(localStorage.getItem("roadie.panelWidth"));
+  if (storedWidth) {
+    state.panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, storedWidth));
   }
 
   await actions.loadRoadmaps();
