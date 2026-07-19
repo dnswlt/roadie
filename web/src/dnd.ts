@@ -400,6 +400,12 @@ function onPointerUp(e: PointerEvent): void {
     } else {
       void actions.updateItem(d.id, patch);
     }
+  } else {
+    // Drag ended with no net change, so no mutation re-renders the chart.
+    // Re-render from the model anyway to discard the drag preview: resetting
+    // a child bar's inline left/width alone would leave it mispositioned
+    // (its layout comes from those inline styles, not CSS).
+    state.notify();
   }
 }
 
