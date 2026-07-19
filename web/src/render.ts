@@ -175,14 +175,17 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
 function renderBlock(block: PlacedBlock): HTMLElement {
   const { item } = block;
   const hasChildren = block.children.length > 0;
-  const el = div(hasChildren ? "block has-children" : "block");
+  const isSelected = state.selectedItemId === item.id;
+  let blockClass = hasChildren ? "block has-children" : "block";
+  if (isSelected) blockClass += " selected";
+  const el = div(blockClass);
   el.dataset.itemId = String(item.id);
   el.style.left = `${block.x}px`;
   el.style.top = `${block.y}px`;
   el.style.width = `${block.w}px`;
   el.style.height = `${block.h}px`;
 
-  const bar = div(state.selectedItemId === item.id ? "bar selected" : "bar");
+  const bar = div("bar");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
   bar.append(handle("rh rh-l"), barTitle(item.title), handle("rh rh-r"));

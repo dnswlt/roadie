@@ -8,8 +8,8 @@ import type { Item, ItemFull, LaneFull } from "./types";
 
 export const LABEL_W = 220;
 export const PARENT_BAR_H = 30;
-export const CHILD_H = 24;
-export const CHILD_GAP = 6;
+export const CHILD_H = 30;
+export const CHILD_GAP = 0;
 export const BLOCK_GAP = 8;
 export const LANE_PAD = 10;
 export const MIN_LANE_H = 56;

@@ -502,13 +502,10 @@ select#rm-select:focus-visible {
 
 .block {
   position: absolute;
-  border-radius: 6px;
 }
 
 .block.has-children {
   background: color-mix(in oklab, var(--c) 6%, var(--surface));
-  border: 1px solid color-mix(in oklab, var(--c) 28%, var(--surface));
-  border-radius: 8px;
   overflow: visible;
 }
 
@@ -522,14 +519,9 @@ select#rm-select:focus-visible {
   align-items: center;
   background: var(--c);
   color: #fff;
-  border-radius: 6px;
   cursor: grab;
   box-shadow: var(--shadow);
   user-select: none;
-}
-
-.block.has-children .bar {
-  border-radius: 7px 7px 4px 4px;
 }
 
 .bar:hover {
@@ -540,16 +532,14 @@ select#rm-select:focus-visible {
   position: absolute;
   display: flex;
   align-items: center;
-  background: color-mix(in oklab, var(--c) 13%, var(--surface));
+  background: color-mix(in oklab, var(--c) 25%, var(--surface));
   color: color-mix(in oklab, var(--c) 65%, black);
-  border: 1px solid color-mix(in oklab, var(--c) 32%, var(--surface));
-  border-radius: 4px;
   cursor: grab;
   user-select: none;
 }
 
 .child-bar:hover {
-  background: color-mix(in oklab, var(--c) 20%, var(--surface));
+  background: color-mix(in oklab, var(--c) 35%, var(--surface));
 }
 
 .bar-title {
@@ -579,10 +569,11 @@ select#rm-select:focus-visible {
   background: color-mix(in oklab, var(--c) 30%, transparent);
 }
 
-.bar.selected,
+.block.selected,
 .child-bar.selected {
-  outline: 2px solid var(--ink);
-  outline-offset: 1px;
+  outline: 2px solid color-mix(in oklab, var(--c) 65%, black);
+  outline-offset: 0;
+  z-index: 10;
 }
 
 .dragging {
