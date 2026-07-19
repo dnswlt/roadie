@@ -353,7 +353,9 @@ select#rm-select:focus-visible {
 .lane-label {
   position: sticky;
   left: 0;
-  z-index: 10;
+  /* Above item content (bars are auto; a selected block/child-bar is 10) so
+     horizontally-scrolled items pass behind the sticky Contexts column. */
+  z-index: 12;
   width: 220px;
   flex: none;
   display: flex;
