@@ -130,10 +130,11 @@ function onPointerDown(e: PointerEvent): void {
   e.preventDefault();
 }
 
-// collectSnapDays gathers the edge dates a resized handle can snap to: the
-// start/end of every other item in the same lane (top-level items, their
-// children, and — when resizing a parent — the parent's own children), plus
-// today. Only the dragged bar's own edges are excluded.
+// collectSnapDays gathers the dates a moved bar or resized handle can snap to:
+// the start/end of every other item in the same lane (top-level items, their
+// children, and — when resizing a parent — the parent's own children), every
+// milestone in the lane, plus today. Only the dragged bar's own edges are
+// excluded.
 function collectSnapDays(lane: LaneFull, selfId: number): number[] {
   const days = new Set<number>();
   for (const it of lane.items) {
@@ -147,6 +148,9 @@ function collectSnapDays(lane: LaneFull, selfId: number): number[] {
         days.add(dayOf(c.endDate));
       }
     }
+  }
+  for (const m of lane.milestones) {
+    days.add(dayOf(m.date));
   }
   days.add(todayDay());
   return [...days];
