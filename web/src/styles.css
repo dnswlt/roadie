@@ -203,6 +203,12 @@ select#rm-select:focus-visible {
   padding: 5px;
 }
 
+/* The snap button sits near the right edge, so its popover grows leftward. */
+#snap-pop {
+  left: auto;
+  right: 0;
+}
+
 .menu.hidden {
   display: none;
 }

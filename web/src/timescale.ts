@@ -32,6 +32,51 @@ export function xOf(scale: Scale, day: number): number {
   return (day - scale.startDay) * scale.pxPerDay;
 }
 
+// SnapMode is the calendar grid a dragged/resized edge snaps to when it isn't
+// caught by a nearby item edge. "day" = no grid (free per-day placement). See
+// snapToGrid and dnd.ts. This is a user-chosen view preference, not zoom-derived:
+// the right grain for a roadmap depends on how you're planning, not how far
+// you've zoomed.
+export type SnapMode = "day" | "week" | "month" | "quarter";
+
+// weekStart returns the day number of the Monday on or before `day`. Day 0
+// (1970-01-01) is a Thursday, so the ISO weekday (Mon=0..Sun=6) is (day+3) mod 7.
+export function weekStart(day: number): number {
+  return day - ((((day + 3) % 7) + 7) % 7);
+}
+
+// quarterStart returns the day number of the first day of the quarter (Jan/Apr/
+// Jul/Oct 1) containing `day`.
+export function quarterStart(day: number): number {
+  const d = new Date(day * MS_PER_DAY);
+  const q = Math.floor(d.getUTCMonth() / 3) * 3;
+  return Math.round(Date.UTC(d.getUTCFullYear(), q, 1) / MS_PER_DAY);
+}
+
+// snapToGrid rounds `day` to the nearest boundary of the given calendar grid
+// (ties round down, to the earlier boundary). "day" mode is the identity.
+export function snapToGrid(day: number, mode: SnapMode): number {
+  let lo: number;
+  let hi: number;
+  switch (mode) {
+    case "week":
+      lo = weekStart(day);
+      hi = lo + 7;
+      break;
+    case "month":
+      lo = monthStart(day, 0);
+      hi = monthStart(day, 1);
+      break;
+    case "quarter":
+      lo = quarterStart(day);
+      hi = quarterStart(lo + 100); // +100d lands in the next quarter (max 92d)
+      break;
+    default:
+      return day;
+  }
+  return day - lo <= hi - day ? lo : hi;
+}
+
 export function chartWidth(scale: Scale): number {
   return (scale.endDay - scale.startDay + 1) * scale.pxPerDay;
 }

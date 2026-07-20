@@ -69,6 +69,12 @@ export const icons = {
     ),
   x: (size = 16) => svg(`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`, size),
   check: (size = 12) => svg(`<path d="M20 6 9 17l-5-5"/>`, size),
+  magnet: (size = 16) =>
+    svg(
+      `<path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15"/>` +
+        `<path d="m5 8 4 4"/><path d="m12 15 4 4"/>`,
+      size,
+    ),
   zoomIn: (size = 16) =>
     svg(
       `<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/><path d="M11 8v6"/>`,

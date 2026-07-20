@@ -8,7 +8,8 @@ import { actions } from "./actions";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
 import { state } from "./state";
 import { currentScale } from "./render";
-import { dayOf, formatDay, isoOf, todayDay, xOf } from "./timescale";
+import { dayOf, formatDay, isoOf, snapToGrid, todayDay, xOf } from "./timescale";
+import type { SnapMode } from "./timescale";
 import type { ItemFull, ItemPatch, LaneFull } from "./types";
 
 type Mode = "move" | "resize-l" | "resize-r";
@@ -175,9 +176,21 @@ function snapEdge(day: number, cands: number[], px: number): number {
   return best;
 }
 
-// snapMoveDelta adjusts a move's day-offset so that whichever of the two
-// (rigidly shifted) edges is closest to a candidate lands exactly on it.
-function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number): number {
+// snapEdgeValue resolves a single dragged/resized edge. Item-edge snapping
+// (radius-limited) takes priority — aligning to a real item is the strongest
+// intent — and only when no item edge is close does the edge fall to the
+// calendar grid. In "day" mode the grid is the identity, so this is pure
+// item snapping (the original behavior).
+function snapEdgeValue(day: number, cands: number[], px: number, mode: SnapMode): number {
+  const item = snapEdge(day, cands, px);
+  if (item !== day) return item;
+  return snapToGrid(day, mode);
+}
+
+// snapMoveToItems adjusts a move's day-offset so that whichever of the two
+// (rigidly shifted) edges is closest to an item candidate lands exactly on it,
+// within SNAP_PX. Returns dayDelta unchanged when nothing is close enough.
+function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number): number {
   let best = dayDelta;
   let bestDist = SNAP_PX + 1;
   for (const edge of [d.startDay + dayDelta, d.endDay + dayDelta]) {
@@ -192,13 +205,34 @@ function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number): number {
   return best;
 }
 
+// snapMoveDelta resolves a move. Item snapping wins when an edge is within
+// SNAP_PX of a real item edge; otherwise the offset is nudged so whichever of
+// the two edges is nearest a calendar-grid line lands exactly on it (duration
+// preserved). The move rides the grid but "clicks" onto neighbouring items.
+function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, mode: SnapMode): number {
+  const item = snapMoveToItems(d, dayDelta, px);
+  if (item !== dayDelta) return item;
+  if (mode === "day") return dayDelta;
+  let best = dayDelta;
+  let bestDist = Infinity;
+  for (const edge of [d.startDay + dayDelta, d.endDay + dayDelta]) {
+    const g = snapToGrid(edge, mode);
+    const dist = Math.abs(g - edge);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = dayDelta + (g - edge);
+    }
+  }
+  return best;
+}
+
 function onPointerMove(e: PointerEvent): void {
   if (!drag) return;
   if (drag.kind === "lane") {
     laneDragMove(e);
     return;
   }
-  const bypass = e.altKey; // hold Alt/Option to suppress snapping
+  const bypass = e.altKey; // hold Alt/Option to suppress snapping and coarse stepping
   const d = drag;
   const dx = e.clientX - d.px;
   const dy = e.clientY - d.py;
@@ -213,11 +247,12 @@ function onPointerMove(e: PointerEvent): void {
   }
 
   const px = currentScale().pxPerDay;
+  const mode: SnapMode = bypass ? "day" : state.snapMode;
   const dayDelta = Math.round(dx / px);
 
   switch (d.mode) {
     case "move": {
-      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px);
+      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px, mode);
       d.newStart = d.startDay + md;
       d.newEnd = d.endDay + md;
       d.el.style.transform = `translate(${md * px}px, ${dy}px)`;
@@ -227,7 +262,7 @@ function onPointerMove(e: PointerEvent): void {
     }
     case "resize-l": {
       let s = d.startDay + dayDelta;
-      if (!bypass) s = snapEdge(s, d.snapDays, px);
+      if (!bypass) s = snapEdgeValue(s, d.snapDays, px, mode);
       d.newStart = Math.min(s, d.endDay);
       d.newEnd = d.endDay;
       const shift = (d.newStart - d.startDay) * px;
@@ -238,7 +273,7 @@ function onPointerMove(e: PointerEvent): void {
     }
     case "resize-r": {
       let en = d.endDay + dayDelta;
-      if (!bypass) en = snapEdge(en, d.snapDays, px);
+      if (!bypass) en = snapEdgeValue(en, d.snapDays, px, mode);
       d.newStart = d.startDay;
       d.newEnd = Math.max(en, d.startDay);
       d.barEl.style.width = `${d.origWidth + (d.newEnd - d.endDay) * px}px`;

@@ -1,4 +1,4 @@
-import { DEFAULT_PX_PER_DAY } from "./timescale";
+import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone, Roadmap, RoadmapFull } from "./types";
 
 // Edit-panel width (px). A global view preference, persisted in localStorage
@@ -28,6 +28,9 @@ class AppState {
   selectedItemId: number | null = null;
   selectedMilestoneId: number | null = null;
   pxPerDay = DEFAULT_PX_PER_DAY;
+  // Calendar grid a dragged/resized edge snaps to (in addition to always-on
+  // item-edge snapping). A global view preference, persisted in localStorage.
+  snapMode: SnapMode = "week";
   panelWidth = DEFAULT_PANEL_WIDTH;
   // Focus mode: when set, items lacking this label are dimmed. A transient
   // "what's relevant right now" view, not persisted.

@@ -8,7 +8,7 @@ import { LABEL_W } from "./layout";
 import { renderChart } from "./render";
 import { renderPanel } from "./panel";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
-import { MAX_PX_PER_DAY, MIN_PX_PER_DAY } from "./timescale";
+import { MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode } from "./timescale";
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -20,6 +20,14 @@ const chart = $("chart");
 const panel = $("panel");
 const panelResize = $("panel-resize");
 const rmSelect = $("rm-select") as HTMLSelectElement;
+
+// Human labels for the drag-snap grids, in menu order.
+const SNAP_LABELS: Record<SnapMode, string> = {
+  day: "Day",
+  week: "Week (Mon)",
+  month: "Month (1st)",
+  quarter: "Quarter",
+};
 
 function render(): void {
   renderTopbar();
@@ -43,6 +51,9 @@ function renderTopbar(): void {
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focusLabel !== null);
   $("focus-menu").title = state.focusLabel ? `Focus: ${state.focusLabel}` : "Focus on a label";
+  // Highlight the snap button when a calendar grid (not plain Day) is engaged.
+  $("snap-menu").classList.toggle("active", state.snapMode !== "day");
+  $("snap-menu").title = `Snap to ${SNAP_LABELS[state.snapMode]} (hold Alt to bypass)`;
 }
 
 // setZoom keeps the date under the viewport center fixed while zooming.
@@ -55,6 +66,38 @@ function setZoom(pxPerDay: number): void {
   localStorage.setItem("roadie.zoom", String(px));
   state.notify();
   chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
+}
+
+// buildSnapMenu (re)populates the snap-grid popover: one row per mode, the
+// active one check-marked. Picking a mode applies it and closes the menu.
+function buildSnapMenu(pop: HTMLElement): void {
+  pop.replaceChildren();
+  const modes: SnapMode[] = ["day", "week", "month", "quarter"];
+  for (const mode of modes) {
+    const active = state.snapMode === mode;
+    const b = document.createElement("button");
+    b.className = active ? "menu-item is-active" : "menu-item";
+    const mark = document.createElement("span");
+    mark.className = "menu-check";
+    if (active) mark.append(icons.check(14));
+    const name = document.createElement("span");
+    name.textContent = SNAP_LABELS[mode];
+    b.append(mark, name);
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setSnapMode(mode);
+      pop.classList.add("hidden");
+      renderTopbar();
+    });
+    pop.append(b);
+  }
+}
+
+// setSnapMode records the drag-snap grid and persists it globally (like zoom).
+// No chart re-render needed: nothing on screen changes until the next drag.
+function setSnapMode(mode: SnapMode): void {
+  state.snapMode = mode;
+  localStorage.setItem("roadie.snap", mode);
 }
 
 // wirePanelResize lets the user drag the panel's left edge to set its width.
@@ -96,6 +139,7 @@ function injectIcons(): void {
   $("rm-export").prepend(icons.download(14));
   $("rm-import").prepend(icons.upload(14));
   $("rm-delete").prepend(icons.trash(14));
+  $("snap-menu").append(icons.magnet(18));
   $("zoom-in").append(icons.zoomIn());
   $("zoom-out").append(icons.zoomOut());
 }
@@ -104,37 +148,40 @@ function wireTopbar(): void {
   const menuPop = $("rm-menu-pop");
   const visPop = $("lane-vis-pop");
   const focusPop = $("focus-pop");
+  const snapPop = $("snap-pop");
+  const allPops = [menuPop, visPop, focusPop, snapPop];
+  // Close every top-bar popover except the one being opened.
+  const closeOthers = (keep: HTMLElement): void => {
+    for (const p of allPops) if (p !== keep) p.classList.add("hidden");
+  };
   $("rm-menu").addEventListener("click", (e) => {
     e.stopPropagation();
-    visPop.classList.add("hidden");
-    focusPop.classList.add("hidden");
+    closeOthers(menuPop);
     menuPop.classList.toggle("hidden");
   });
   $("lane-vis-menu").addEventListener("click", (e) => {
     e.stopPropagation();
-    menuPop.classList.add("hidden");
-    focusPop.classList.add("hidden");
+    closeOthers(visPop);
     if (visPop.classList.contains("hidden")) buildLaneVisMenu(visPop);
     visPop.classList.toggle("hidden");
   });
   $("focus-menu").addEventListener("click", (e) => {
     e.stopPropagation();
-    menuPop.classList.add("hidden");
-    visPop.classList.add("hidden");
+    closeOthers(focusPop);
     if (focusPop.classList.contains("hidden")) buildFocusMenu(focusPop);
     focusPop.classList.toggle("hidden");
+  });
+  $("snap-menu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeOthers(snapPop);
+    if (snapPop.classList.contains("hidden")) buildSnapMenu(snapPop);
+    snapPop.classList.toggle("hidden");
   });
   document.addEventListener("click", (e) => {
     // Close each popup unless the click landed inside its own menu wrap.
     const wrap = (e.target as HTMLElement).closest(".menu-wrap");
-    if (!menuPop.classList.contains("hidden") && !wrap?.contains(menuPop)) {
-      menuPop.classList.add("hidden");
-    }
-    if (!visPop.classList.contains("hidden") && !wrap?.contains(visPop)) {
-      visPop.classList.add("hidden");
-    }
-    if (!focusPop.classList.contains("hidden") && !wrap?.contains(focusPop)) {
-      focusPop.classList.add("hidden");
+    for (const p of allPops) {
+      if (!p.classList.contains("hidden") && !wrap?.contains(p)) p.classList.add("hidden");
     }
     closeColorPop(e.target as HTMLElement);
     closeLaneMenu(e.target as HTMLElement);
@@ -463,6 +510,10 @@ async function boot(): Promise<void> {
   const storedZoom = Number(localStorage.getItem("roadie.zoom"));
   if (storedZoom) {
     state.pxPerDay = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, storedZoom));
+  }
+  const storedSnap = localStorage.getItem("roadie.snap");
+  if (storedSnap === "day" || storedSnap === "week" || storedSnap === "month" || storedSnap === "quarter") {
+    state.snapMode = storedSnap;
   }
   const storedWidth = Number(localStorage.getItem("roadie.panelWidth"));
   if (storedWidth) {
