@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/dnswlt/roadie/internal/model"
 	"github.com/dnswlt/roadie/internal/store"
 )
 
@@ -28,6 +30,8 @@ func New(st *store.Store, static fs.FS) *Server {
 
 	s.mux.HandleFunc("GET /api/roadmaps", s.listRoadmaps)
 	s.mux.HandleFunc("POST /api/roadmaps", s.createRoadmap)
+	s.mux.HandleFunc("POST /api/roadmaps/import", s.importRoadmap)
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/export", s.exportRoadmap)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}", s.getRoadmap)
 	s.mux.HandleFunc("PATCH /api/roadmaps/{id}", s.patchRoadmap)
 	s.mux.HandleFunc("DELETE /api/roadmaps/{id}", s.deleteRoadmap)
@@ -124,6 +128,77 @@ func (s *Server) createRoadmap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, rm)
+}
+
+// exportRoadmap streams the roadmap as a downloadable JSON file (the
+// RoadmapExport envelope), named after the roadmap.
+func (s *Server) exportRoadmap(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	full, err := s.store.GetRoadmapFull(r.Context(), id)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	exp := model.RoadmapExport{
+		Format:  model.ExportFormat,
+		Version: model.ExportVersion,
+		Roadmap: full,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf("attachment; filename=%q", exportFilename(full.Name)))
+	if err := json.NewEncoder(w).Encode(exp); err != nil {
+		log.Printf("write export: %v", err)
+	}
+}
+
+// importRoadmap creates a new roadmap from an uploaded export file. The body
+// limit is larger than the shared readJSON limit since a whole roadmap can be
+// sizable; unknown fields are tolerated for forward compatibility.
+func (s *Server) importRoadmap(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+	var exp model.RoadmapExport
+	if err := json.NewDecoder(r.Body).Decode(&exp); err != nil {
+		writeClientErr(w, fmt.Errorf("invalid import file: %w", err))
+		return
+	}
+	if exp.Format != model.ExportFormat {
+		writeClientErr(w, fmt.Errorf("unrecognized file (not a Roadie export)"))
+		return
+	}
+	if exp.Version > model.ExportVersion {
+		writeClientErr(w, fmt.Errorf("import file version %d is newer than supported (%d)", exp.Version, model.ExportVersion))
+		return
+	}
+	rm, err := s.store.ImportRoadmap(r.Context(), exp.Roadmap)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, rm)
+}
+
+// exportFilename turns a roadmap name into a safe download filename, keeping
+// letters/digits and collapsing everything else to underscores.
+func exportFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	base := strings.Trim(b.String(), "_")
+	if base == "" {
+		base = "roadmap"
+	}
+	return base + ".roadie.json"
 }
 
 func (s *Server) getRoadmap(w http.ResponseWriter, r *http.Request) {

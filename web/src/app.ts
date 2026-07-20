@@ -38,6 +38,7 @@ function renderTopbar(): void {
   }
   rmSelect.disabled = state.roadmaps.length === 0;
   ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
+  ($("rm-export") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focusLabel !== null);
@@ -92,6 +93,8 @@ function injectIcons(): void {
   $("lane-vis-menu").append(icons.eye(18));
   $("focus-menu").append(icons.tag(18));
   $("rm-rename").prepend(icons.pencil(14));
+  $("rm-export").prepend(icons.download(14));
+  $("rm-import").prepend(icons.upload(14));
   $("rm-delete").prepend(icons.trash(14));
   $("zoom-in").append(icons.zoomIn());
   $("zoom-out").append(icons.zoomOut());
@@ -149,6 +152,20 @@ function wireTopbar(): void {
     if (!state.current) return;
     const name = await promptDialog("Rename roadmap", state.current.name, "Rename");
     if (name) void actions.renameRoadmap(name);
+  });
+  $("rm-export").addEventListener("click", () => {
+    menuPop.classList.add("hidden");
+    actions.exportRoadmap();
+  });
+  const importFile = $("rm-import-file") as HTMLInputElement;
+  $("rm-import").addEventListener("click", () => {
+    menuPop.classList.add("hidden");
+    importFile.click();
+  });
+  importFile.addEventListener("change", () => {
+    const file = importFile.files?.[0];
+    importFile.value = ""; // allow re-selecting the same file later
+    if (file) void actions.importRoadmap(file);
   });
   $("rm-delete").addEventListener("click", async () => {
     menuPop.classList.add("hidden");

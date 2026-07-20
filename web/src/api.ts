@@ -37,6 +37,8 @@ export const api = {
   getRoadmap: (id: number) => req<RoadmapFull>("GET", `/api/roadmaps/${id}`),
   renameRoadmap: (id: number, name: string) => req<Roadmap>("PATCH", `/api/roadmaps/${id}`, { name }),
   deleteRoadmap: (id: number) => req<void>("DELETE", `/api/roadmaps/${id}`),
+  exportRoadmapUrl: (id: number) => `/api/roadmaps/${id}/export`,
+  importRoadmap: (data: unknown) => req<Roadmap>("POST", "/api/roadmaps/import", data),
 
   createLane: (roadmapId: number, name: string) =>
     req<Lane>("POST", `/api/roadmaps/${roadmapId}/lanes`, { name }),

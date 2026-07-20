@@ -111,3 +111,20 @@ type RoadmapFull struct {
 	Roadmap
 	Lanes []LaneFull `json:"lanes"`
 }
+
+// Export format markers. The on-disk file is a small envelope around a
+// RoadmapFull so imports can recognize the file and reject unrelated JSON.
+// Bump ExportVersion only on incompatible changes to the payload shape.
+const (
+	ExportFormat  = "roadie.roadmap"
+	ExportVersion = 1
+)
+
+// RoadmapExport is the download/upload envelope. On import the embedded
+// roadmap's IDs and timestamps are ignored; the store assigns fresh ones and
+// reconstructs the item hierarchy from the nesting, not from parentId.
+type RoadmapExport struct {
+	Format  string      `json:"format"`
+	Version int         `json:"version"`
+	Roadmap RoadmapFull `json:"roadmap"`
+}

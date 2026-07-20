@@ -55,6 +55,18 @@ export const icons = {
         `<circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>`,
       size,
     ),
+  download: (size = 16) =>
+    svg(
+      `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>` +
+        `<path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>`,
+      size,
+    ),
+  upload: (size = 16) =>
+    svg(
+      `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>` +
+        `<path d="M7 8l5-5 5 5"/><path d="M12 3v12"/>`,
+      size,
+    ),
   x: (size = 16) => svg(`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`, size),
   check: (size = 12) => svg(`<path d="M20 6 9 17l-5-5"/>`, size),
   zoomIn: (size = 16) =>

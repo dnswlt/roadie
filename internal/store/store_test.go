@@ -551,3 +551,97 @@ func TestMilestones(t *testing.T) {
 		t.Errorf("cascade delete: want ErrNotFound, got %v", err)
 	}
 }
+
+func TestImportRoadmap(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+
+	lane1, _ := testStore.CreateLane(ctx, rm.ID, "L1")
+	lane2, _ := testStore.CreateLane(ctx, rm.ID, "L2")
+	parent, err := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "Parent", StartDate: date("2026-01-01"), EndDate: date("2026-02-01")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.CreateItem(ctx, lane1.ID, NewItem{
+		Title: "Child", StartDate: date("2026-01-05"), EndDate: date("2026-01-10"), ParentID: &parent.ID}); err != nil {
+		t.Fatal(err)
+	}
+	p3 := 3
+	if _, err := testStore.UpdateItem(ctx, parent.ID, ItemPatch{
+		Priority: model.Opt[*int]{Set: true, Value: &p3},
+		Labels:   model.Opt[[]string]{Set: true, Value: []string{"alpha", "beta"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.CreateMilestone(ctx, lane2.ID, NewMilestone{
+		Title: "Launch", Date: date("2026-03-01")}); err != nil {
+		t.Fatal(err)
+	}
+
+	src, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	imported, err := testStore.ImportRoadmap(ctx, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), imported.ID) })
+
+	// Same name already exists, so the import must be disambiguated.
+	if imported.Name != src.Name+" (2)" {
+		t.Errorf("import name: want %q, got %q", src.Name+" (2)", imported.Name)
+	}
+	// Fresh roadmap ID.
+	if imported.ID == rm.ID {
+		t.Errorf("import reused source roadmap ID")
+	}
+
+	got, err := testStore.GetRoadmapFull(ctx, imported.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Lanes) != 2 {
+		t.Fatalf("lanes: want 2, got %d", len(got.Lanes))
+	}
+	gl1, gl2 := got.Lanes[0], got.Lanes[1]
+	if gl1.Name != "L1" || gl2.Name != "L2" {
+		t.Errorf("lane names/order: %q, %q", gl1.Name, gl2.Name)
+	}
+	if gl1.Color != lane1.Color || gl2.Color != lane2.Color {
+		t.Errorf("lane colors not preserved: %q/%q vs %q/%q", gl1.Color, gl2.Color, lane1.Color, lane2.Color)
+	}
+	// All IDs must be reassigned.
+	if gl1.ID == lane1.ID {
+		t.Errorf("import reused source lane ID")
+	}
+	if len(gl1.Items) != 1 || len(gl1.Items[0].Children) != 1 {
+		t.Fatalf("item hierarchy not preserved: %+v", gl1.Items)
+	}
+	gp := gl1.Items[0]
+	if gp.Title != "Parent" || gp.ID == parent.ID {
+		t.Errorf("parent item: title=%q id=%d", gp.Title, gp.ID)
+	}
+	if gp.Priority == nil || *gp.Priority != 3 {
+		t.Errorf("priority not preserved: %v", gp.Priority)
+	}
+	if len(gp.Labels) != 2 || gp.Labels[0] != "alpha" || gp.Labels[1] != "beta" {
+		t.Errorf("labels not preserved: %v", gp.Labels)
+	}
+	gc := gl1.Items[0].Children[0]
+	if gc.Title != "Child" || gc.ParentID == nil || *gc.ParentID != gp.ID {
+		t.Errorf("child linkage: title=%q parent=%v", gc.Title, gc.ParentID)
+	}
+	if gc.LaneID != gl1.ID {
+		t.Errorf("child lane: want %d, got %d", gl1.ID, gc.LaneID)
+	}
+	if len(gl2.Milestones) != 1 || gl2.Milestones[0].Title != "Launch" {
+		t.Errorf("milestones not preserved: %+v", gl2.Milestones)
+	}
+
+	// Empty name is rejected.
+	if _, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{}); !isValidation(err) {
+		t.Errorf("empty name: want validation error, got %v", err)
+	}
+}

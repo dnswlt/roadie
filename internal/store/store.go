@@ -291,6 +291,120 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 	return full, nil
 }
 
+// uniqueRoadmapName returns base, or base with a " (n)" suffix (n starting at
+// 2) if a roadmap of that name already exists. Roadmap names are not unique in
+// the schema; this only avoids collisions at import time.
+func (s *Store) uniqueRoadmapName(ctx context.Context, tx pgx.Tx, base string) (string, error) {
+	name := base
+	for n := 2; ; n++ {
+		var exists bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM roadmaps WHERE name = $1)`, name).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return name, nil
+		}
+		name = fmt.Sprintf("%s (%d)", base, n)
+	}
+}
+
+// ImportRoadmap creates a brand-new roadmap from an exported RoadmapFull,
+// assigning fresh IDs throughout. The source's lane order (position) and item
+// order (rank) are taken from the array order — not the stored fields — so the
+// result is dense and consistent regardless of what the file contained. If the
+// name collides with an existing roadmap it is disambiguated with a " (n)"
+// suffix. The whole import runs in one transaction.
+func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull) (model.Roadmap, error) {
+	name := strings.TrimSpace(src.Name)
+	if name == "" {
+		return model.Roadmap{}, invalidf("roadmap name must not be empty")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	name, err = s.uniqueRoadmapName(ctx, tx, name)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+
+	var rm model.Roadmap
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO roadmaps (name) VALUES ($1) RETURNING id, name, created_at, updated_at`,
+		name).Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt); err != nil {
+		return model.Roadmap{}, err
+	}
+
+	// insertItem writes one item and returns its new ID. parentID is nil for
+	// top-level items; rank is the caller-supplied dense index.
+	insertItem := func(it model.Item, laneID int64, parentID *int64, rank int) (int64, error) {
+		if strings.TrimSpace(it.Title) == "" {
+			return 0, invalidf("item title must not be empty")
+		}
+		if it.StartDate.IsZero() || it.EndDate.IsZero() {
+			return 0, invalidf("item %q is missing a start or end date", it.Title)
+		}
+		if it.EndDate.Before(it.StartDate.Time) {
+			return 0, invalidf("item %q end date must not be before start date", it.Title)
+		}
+		if it.Priority != nil && (*it.Priority < 1 || *it.Priority > 4) {
+			return 0, invalidf("item %q priority must be between 1 and 4", it.Title)
+		}
+		var id int64
+		err := tx.QueryRow(ctx,
+			`INSERT INTO items (lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+			laneID, parentID, it.Title, it.Description, it.StartDate.Time, it.EndDate.Time,
+			rank, it.Priority, normalizeLabels(it.Labels)).Scan(&id)
+		return id, err
+	}
+
+	for pos, lane := range src.Lanes {
+		laneName := strings.TrimSpace(lane.Name)
+		if laneName == "" {
+			return model.Roadmap{}, invalidf("lane name must not be empty")
+		}
+		color := lane.Color
+		if !validLaneColor(color) {
+			color = laneColors[pos%len(laneColors)]
+		}
+		var laneID int64
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO lanes (roadmap_id, name, position, color) VALUES ($1, $2, $3, $4) RETURNING id`,
+			rm.ID, laneName, pos, color).Scan(&laneID); err != nil {
+			return model.Roadmap{}, err
+		}
+		for rank, item := range lane.Items {
+			parentID, err := insertItem(item.Item, laneID, nil, rank)
+			if err != nil {
+				return model.Roadmap{}, err
+			}
+			for crank, child := range item.Children {
+				if _, err := insertItem(child, laneID, &parentID, crank); err != nil {
+					return model.Roadmap{}, err
+				}
+			}
+		}
+		for _, ms := range lane.Milestones {
+			if strings.TrimSpace(ms.Title) == "" {
+				return model.Roadmap{}, invalidf("milestone title must not be empty")
+			}
+			if ms.Date.IsZero() {
+				return model.Roadmap{}, invalidf("milestone %q is missing a date", ms.Title)
+			}
+			if _, err := tx.Exec(ctx,
+				`INSERT INTO milestones (lane_id, title, description, date) VALUES ($1, $2, $3, $4)`,
+				laneID, ms.Title, ms.Description, ms.Date.Time); err != nil {
+				return model.Roadmap{}, err
+			}
+		}
+	}
+	return rm, tx.Commit(ctx)
+}
+
 // Lanes
 
 // laneColors are the color themes a swimlane can use; they are also

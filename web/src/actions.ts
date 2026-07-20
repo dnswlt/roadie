@@ -143,6 +143,33 @@ export const actions = {
     }
   },
 
+  // exportRoadmap triggers a file download via the server's export endpoint.
+  // The browser handles the download; the server's Content-Disposition names
+  // the file.
+  exportRoadmap(): void {
+    if (!state.current) return;
+    const a = document.createElement("a");
+    a.href = api.exportRoadmapUrl(state.current.id);
+    a.download = ""; // let the server's Content-Disposition set the filename
+    document.body.append(a);
+    a.click();
+    a.remove();
+  },
+
+  // importRoadmap uploads a previously exported file as a new roadmap and
+  // switches to it. Name collisions are resolved server-side (" (2)" suffix).
+  async importRoadmap(file: File): Promise<void> {
+    try {
+      const data: unknown = JSON.parse(await file.text());
+      const rm = await api.importRoadmap(data);
+      await this.loadRoadmaps();
+      await this.selectRoadmap(rm.id);
+      toast(`Imported "${rm.name}"`);
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
   async addLane(name: string): Promise<void> {
     if (!state.current) return;
     try {
