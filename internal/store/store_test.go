@@ -3,9 +3,13 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"reflect"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/dnswlt/roadie/internal/model"
 )
@@ -643,5 +647,126 @@ func TestImportRoadmap(t *testing.T) {
 	// Empty name is rejected.
 	if _, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{}); !isValidation(err) {
 		t.Errorf("empty name: want validation error, got %v", err)
+	}
+}
+
+// TestSchemaMatchesMigrations guards against schema.sql drifting from the
+// migrations: it builds the schema both ways in a throwaway namespace and
+// compares the resulting tables/columns. Both builds are rolled back.
+func TestSchemaMatchesMigrations(t *testing.T) {
+	ctx := context.Background()
+
+	migs, err := migrationEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fromMigrations := describeBuild(t, func(tx pgx.Tx) error {
+		for _, m := range migs {
+			sql, err := migrationFS.ReadFile("migrations/" + m.name)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, string(sql)); err != nil {
+				return fmt.Errorf("migration %s: %w", m.name, err)
+			}
+		}
+		return nil
+	})
+	fromSchema := describeBuild(t, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, schemaSQL)
+		return err
+	})
+
+	if !reflect.DeepEqual(fromMigrations, fromSchema) {
+		t.Errorf("schema.sql and migrations diverge\n  from migrations: %v\n  from schema.sql: %v",
+			fromMigrations, fromSchema)
+	}
+}
+
+// describeBuild runs build in an isolated, rolled-back schema and returns a
+// "table.column -> datatype|nullable" description of the tables it created.
+func describeBuild(t *testing.T, build func(pgx.Tx) error) map[string]string {
+	t.Helper()
+	ctx := context.Background()
+	const ns = "roadie_schema_check"
+
+	tx, err := testStore.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DROP SCHEMA IF EXISTS `+ns+` CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `CREATE SCHEMA `+ns); err != nil {
+		t.Fatal(err)
+	}
+	// New tables (and unqualified FK/index references) resolve into ns.
+	if _, err := tx.Exec(ctx, `SET LOCAL search_path TO `+ns); err != nil {
+		t.Fatal(err)
+	}
+	if err := build(tx); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := tx.Query(ctx,
+		`SELECT table_name, column_name, data_type, is_nullable
+		 FROM information_schema.columns WHERE table_schema = $1`, ns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	desc := map[string]string{}
+	for rows.Next() {
+		var table, col, typ, nullable string
+		if err := rows.Scan(&table, &col, &typ, &nullable); err != nil {
+			t.Fatal(err)
+		}
+		desc[table+"."+col] = typ + "|" + nullable
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return desc
+}
+
+func TestCheckNoPrunedGap(t *testing.T) {
+	migsFrom := func(vs ...int) []migration {
+		out := make([]migration, len(vs))
+		for i, v := range vs {
+			out[i] = migration{version: v, name: fmt.Sprintf("%03d_x.sql", v)}
+		}
+		return out
+	}
+	appliedSet := func(vs ...int) map[int]bool {
+		m := map[int]bool{}
+		for _, v := range vs {
+			m[v] = true
+		}
+		return m
+	}
+
+	cases := []struct {
+		name    string
+		applied []int
+		migs    []int
+		wantErr bool
+	}{
+		{"fully migrated, files pruned", []int{1, 2, 3, 4, 5, 6}, []int{4, 5, 6}, false},
+		{"at last pruned version", []int{1, 2, 3, 4}, []int{5, 6}, false},
+		{"normal pending, no pruning", []int{1, 2, 3}, []int{1, 2, 3, 4, 5, 6}, false},
+		{"too old after pruning", []int{1, 2}, []int{5, 6}, true},
+		{"one past the gap", []int{1, 2, 3}, []int{5, 6}, true},
+		{"nothing applied yet, all present", []int{}, []int{1, 2, 3}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkNoPrunedGap(appliedSet(tc.applied...), migsFrom(tc.migs...))
+			if tc.wantErr != (err != nil) {
+				t.Errorf("checkNoPrunedGap: wantErr=%v, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
