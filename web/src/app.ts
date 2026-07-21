@@ -19,7 +19,7 @@ function $(id: string): HTMLElement {
 const chart = $("chart");
 const panel = $("panel");
 const panelResize = $("panel-resize");
-const rmSelect = $("rm-select") as HTMLSelectElement;
+const rmPicker = $("rm-picker") as HTMLButtonElement;
 
 // Human labels for the drag-snap grids, in menu order.
 const SNAP_LABELS: Record<SnapMode, string> = {
@@ -36,15 +36,14 @@ function render(): void {
 }
 
 function renderTopbar(): void {
-  rmSelect.replaceChildren();
-  for (const rm of state.roadmaps) {
-    const opt = document.createElement("option");
-    opt.value = String(rm.id);
-    opt.textContent = rm.name;
-    if (state.current?.id === rm.id) opt.selected = true;
-    rmSelect.append(opt);
-  }
-  rmSelect.disabled = state.roadmaps.length === 0;
+  // The picker is a button + popover (like every other menu here), so its
+  // label is drawn by hand; the list itself is built lazily on open.
+  const name = document.createElement("span");
+  name.className = "rm-trigger-name";
+  name.textContent = state.current?.name ?? "No roadmap";
+  rmPicker.replaceChildren(name, icons.chevronDown(14));
+  rmPicker.title = state.current?.name ?? "";
+  rmPicker.disabled = state.roadmaps.length === 0;
   ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
   ($("rm-duplicate") as HTMLButtonElement).disabled = !state.current;
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
@@ -67,6 +66,38 @@ function setZoom(pxPerDay: number): void {
   localStorage.setItem("roadie.zoom", String(px));
   state.notify();
   chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
+}
+
+// buildRoadmapMenu (re)populates the roadmap picker: one row per roadmap, the
+// current one check-marked. Rebuilt on open so it always reflects the list.
+function buildRoadmapMenu(pop: HTMLElement): void {
+  pop.replaceChildren();
+  if (state.roadmaps.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "menu-empty";
+    empty.textContent = "No roadmaps yet.";
+    pop.append(empty);
+    return;
+  }
+  for (const rm of state.roadmaps) {
+    const active = state.current?.id === rm.id;
+    const b = document.createElement("button");
+    b.className = active ? "menu-item is-active" : "menu-item";
+    const mark = document.createElement("span");
+    mark.className = "menu-check";
+    if (active) mark.append(icons.check(14));
+    const name = document.createElement("span");
+    name.className = "rm-item-name";
+    name.textContent = rm.name;
+    name.title = rm.name;
+    b.append(mark, name);
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      pop.classList.add("hidden");
+      if (!active) void actions.selectRoadmap(rm.id);
+    });
+    pop.append(b);
+  }
 }
 
 // buildSnapMenu (re)populates the snap-grid popover: one row per mode, the
@@ -147,15 +178,22 @@ function injectIcons(): void {
 }
 
 function wireTopbar(): void {
+  const rmPop = $("rm-pop");
   const menuPop = $("rm-menu-pop");
   const visPop = $("lane-vis-pop");
   const focusPop = $("focus-pop");
   const snapPop = $("snap-pop");
-  const allPops = [menuPop, visPop, focusPop, snapPop];
+  const allPops = [rmPop, menuPop, visPop, focusPop, snapPop];
   // Close every top-bar popover except the one being opened.
   const closeOthers = (keep: HTMLElement): void => {
     for (const p of allPops) if (p !== keep) p.classList.add("hidden");
   };
+  rmPicker.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeOthers(rmPop);
+    if (rmPop.classList.contains("hidden")) buildRoadmapMenu(rmPop);
+    rmPop.classList.toggle("hidden");
+  });
   $("rm-menu").addEventListener("click", (e) => {
     e.stopPropagation();
     closeOthers(menuPop);
@@ -189,9 +227,6 @@ function wireTopbar(): void {
     closeLaneMenu(e.target as HTMLElement);
   });
 
-  rmSelect.addEventListener("change", () => {
-    void actions.selectRoadmap(Number(rmSelect.value));
-  });
   $("rm-new").addEventListener("click", async () => {
     const name = await promptDialog("New roadmap", "", "Create");
     if (name) void actions.createRoadmap(name);

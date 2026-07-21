@@ -11,7 +11,10 @@
   <div id="app">
     <header class="topbar">
       <span class="brand">Roadie</span>
-      <select id="rm-select" aria-label="Roadmap"></select>
+      <div class="menu-wrap">
+        <button id="rm-picker" class="rm-trigger" aria-label="Roadmap"></button>
+        <div id="rm-pop" class="menu hidden"></div>
+      </div>
       <div class="menu-wrap">
         <button id="rm-menu" class="icon-btn" title="Roadmap actions"></button>
         <div id="rm-menu-pop" class="menu hidden">
