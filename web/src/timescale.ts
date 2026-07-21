@@ -1,7 +1,7 @@
 // Date <-> pixel math. Dates are handled as integer day numbers
 // (days since the Unix epoch, UTC) to keep arithmetic trivial.
 
-import type { RoadmapFull } from "./types";
+import type { LaneFull, RoadmapFull } from "./types";
 
 export const MS_PER_DAY = 86_400_000;
 
@@ -104,6 +104,29 @@ export function computeRange(rm: RoadmapFull | null, today: number): { startDay:
     }
   }
   return { startDay: monthStart(min, -1), endDay: monthStart(max, 3) - 1 };
+}
+
+// contentRange returns the span actually occupied by items and milestones, or
+// null when the given lanes hold nothing. Unlike computeRange it excludes today
+// and adds no padding: it is what "zoom to fit" should frame, so a roadmap that
+// lives entirely in the future doesn't spend half the viewport on empty months
+// between today and the work.
+export function contentRange(lanes: LaneFull[]): { startDay: number; endDay: number } | null {
+  let min = Infinity;
+  let max = -Infinity;
+  const cover = (startIso: string, endIso: string): void => {
+    min = Math.min(min, dayOf(startIso));
+    max = Math.max(max, dayOf(endIso));
+  };
+  for (const lane of lanes) {
+    for (const item of lane.items) {
+      cover(item.startDate, item.endDate);
+      // Children can extend past their parent, so they count too.
+      for (const c of item.children) cover(c.startDate, c.endDate);
+    }
+    for (const m of lane.milestones) cover(m.date, m.date);
+  }
+  return min === Infinity ? null : { startDay: min, endDay: max };
 }
 
 // monthStart returns the day number of the first day of the month `offset`

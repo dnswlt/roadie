@@ -89,6 +89,13 @@ export const icons = {
     ),
   zoomOut: (size = 16) =>
     svg(`<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/>`, size),
+  // Two walls with arrows pushing outward: fit the span to the width.
+  zoomFit: (size = 16) =>
+    svg(
+      `<path d="M4 5v14"/><path d="M20 5v14"/>` +
+        `<path d="m10 9-3 3 3 3"/><path d="m14 9 3 3-3 3"/><path d="M7 12h10"/>`,
+      size,
+    ),
   eye: (size = 16) =>
     svg(
       `<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>`,

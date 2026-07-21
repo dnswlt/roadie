@@ -5,10 +5,10 @@ import { confirmDialog, promptDialog } from "./dialogs";
 import { initDnd } from "./dnd";
 import { icons } from "./icons";
 import { LABEL_W } from "./layout";
-import { renderChart } from "./render";
+import { currentScale, renderChart } from "./render";
 import { renderPanel } from "./panel";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
-import { MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode } from "./timescale";
+import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -66,6 +66,35 @@ function setZoom(pxPerDay: number): void {
   localStorage.setItem("roadie.zoom", String(px));
   state.notify();
   chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
+}
+
+// Breathing room left on either side of the framed span by zoomToFit, so the
+// first and last bars don't sit flush against the viewport edges.
+const FIT_GUTTER_PX = 32;
+
+// zoomToFit frames the items and milestones of the *visible* lanes: it picks
+// the largest pxPerDay at which their span fits the viewport, then scrolls to
+// the span's start. It deliberately ignores today (unlike the chart's own
+// range, which pads out to include it), so a roadmap that lives entirely in
+// the future is framed on the work rather than on empty months. MIN_PX_PER_DAY
+// still clamps, so a very long roadmap fits as much as it can and no more.
+function zoomToFit(): void {
+  const lanes = (state.current?.lanes ?? []).filter((l) => !state.isLaneHidden(l.id));
+  const range = contentRange(lanes);
+  if (!range) return;
+  const days = range.endDay - range.startDay + 1; // end dates are inclusive
+  const avail = chart.clientWidth - LABEL_W - FIT_GUTTER_PX;
+  if (avail <= 0) return;
+  const px = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, avail / days));
+  state.pxPerDay = px;
+  localStorage.setItem("roadie.zoom", String(px));
+  // Not setZoom: fitting must re-scroll even when the zoom level is unchanged,
+  // so that a second click still recentres after panning away.
+  state.notify();
+  // Scroll so the span's start lands just right of the lane labels. They are
+  // sticky at left: 0 and so overlay the first LABEL_W pixels of the viewport;
+  // scrolling to the span's own x would tuck its first bars underneath them.
+  chart.scrollLeft = Math.max(0, xOf(currentScale(), range.startDay) - FIT_GUTTER_PX / 2);
 }
 
 // buildRoadmapMenu (re)populates the roadmap picker: one row per roadmap, the
@@ -173,6 +202,7 @@ function injectIcons(): void {
   $("rm-import").prepend(icons.upload(14));
   $("rm-delete").prepend(icons.trash(14));
   $("snap-menu").append(icons.magnet(18));
+  $("zoom-fit").append(icons.zoomFit());
   $("zoom-in").append(icons.zoomIn());
   $("zoom-out").append(icons.zoomOut());
 }
@@ -265,6 +295,7 @@ function wireTopbar(): void {
       void actions.deleteRoadmap();
     }
   });
+  $("zoom-fit").addEventListener("click", () => zoomToFit());
   $("zoom-in").addEventListener("click", () => setZoom(state.pxPerDay * 1.4));
   $("zoom-out").addEventListener("click", () => setZoom(state.pxPerDay / 1.4));
   chart.addEventListener(
