@@ -110,6 +110,7 @@ function onPointerDown(e: PointerEvent): void {
   const el = isChild ? barEl : (barEl.closest<HTMLElement>(".block") ?? barEl);
   const children = (loc.item as ItemFull).children;
   const container = loc.parent ? loc.parent.children : loc.lane.items;
+  const hasChildren = !isChild && children.length > 0;
   drag = {
     kind: "item",
     mode,
@@ -121,7 +122,7 @@ function onPointerDown(e: PointerEvent): void {
     origParentId: loc.item.parentId,
     origLaneId: loc.item.laneId,
     origIndex: container.findIndex((i) => i.id === id),
-    hasChildren: !isChild && children.length > 0,
+    hasChildren,
     startDay: dayOf(loc.item.startDate),
     endDay: dayOf(loc.item.endDate),
     px: e.clientX,
@@ -132,7 +133,7 @@ function onPointerDown(e: PointerEvent): void {
     dropLaneId: loc.item.laneId,
     dropParentId: loc.item.parentId,
     dropRank: null,
-    snapBounds: collectSnapBounds(loc.lane, id),
+    snapBounds: collectSnapBounds(loc.lane, id, mode === "move" && hasChildren),
   };
   chartEl.setPointerCapture(e.pointerId);
   e.preventDefault();
@@ -143,15 +144,24 @@ function onPointerDown(e: PointerEvent): void {
 // edges live on the boundary grid: an item contributes `start` (its left edge)
 // and `end + 1` (its right edge). Snapping edges in this domain makes "A's end
 // meets B's start" come out flush instead of overlapping by the shared day.
-// Included: every other item in the lane (top-level and children), every
-// milestone (a point, so a single boundary), and today. The dragged bar's own
-// edges are excluded, and so are the children of a folded parent: a bar that
-// sticks to an edge the user cannot see reads as a broken snap, and folding is
-// a view operation, so it takes those edges off the grid with them.
-function collectSnapBounds(lane: LaneFull, selfId: number): number[] {
+//
+// Targets are the lane's other items (top-level and children alike), its
+// milestones (a point in time, so one boundary each), and today. Three kinds
+// of edge are deliberately left off the grid:
+//
+//  - the dragged bar's own — it cannot snap to itself
+//  - the children of a folded parent, which are not on screen; a bar sticking
+//    to an edge the user cannot see reads as a broken snap
+//  - the dragged item's own children, when `movesChildren` says they travel
+//    with it: a move shifts them by the same delta, so those edges run away as
+//    fast as the parent chases them. A resize leaves them put, and there they
+//    stay valid targets.
+function collectSnapBounds(lane: LaneFull, selfId: number, movesChildren: boolean): number[] {
   const bounds = new Set<number>();
   for (const it of lane.items) {
-    if (it.id !== selfId) {
+    if (it.id === selfId) {
+      if (movesChildren) continue; // travels with the drag: neither edge is a fixed target
+    } else {
       bounds.add(dayOf(it.startDate));
       bounds.add(dayOf(it.endDate) + 1);
     }
