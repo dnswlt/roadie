@@ -185,6 +185,96 @@ func TestImportRejectsBadInput(t *testing.T) {
 	}
 }
 
+func TestDuplicateRoadmap(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+
+	w := do(t, "POST", "/api/roadmaps/"+itoa(id)+"/duplicate", map[string]string{"name": "test-dup-" + t.Name()})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("duplicate status: want 201, got %d (%s)", w.Code, w.Body.String())
+	}
+	var copyRM model.Roadmap
+	if err := json.Unmarshal(w.Body.Bytes(), &copyRM); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), copyRM.ID) })
+	if copyRM.ID == id {
+		t.Errorf("duplicate reused source roadmap id")
+	}
+	if copyRM.Name != "test-dup-"+t.Name() {
+		t.Errorf("duplicate name: got %q", copyRM.Name)
+	}
+
+	// The copy has the same structure but shares no IDs with the source.
+	src := getFull(t, id)
+	dup := getFull(t, copyRM.ID)
+	if len(dup.Lanes) != 1 || len(dup.Lanes[0].Items) != 1 ||
+		len(dup.Lanes[0].Items[0].Children) != 1 || len(dup.Lanes[0].Milestones) != 1 {
+		t.Fatalf("duplicate structure not preserved: %+v", dup.Lanes)
+	}
+	if dup.Lanes[0].ID == src.Lanes[0].ID {
+		t.Errorf("duplicate reused lane id %d", dup.Lanes[0].ID)
+	}
+	if dup.Lanes[0].Items[0].ID == src.Lanes[0].Items[0].ID {
+		t.Errorf("duplicate reused item id %d", dup.Lanes[0].Items[0].ID)
+	}
+	if dup.Lanes[0].Milestones[0].ID == src.Lanes[0].Milestones[0].ID {
+		t.Errorf("duplicate reused milestone id %d", dup.Lanes[0].Milestones[0].ID)
+	}
+	// The child must hang off the copy's parent, not the source's.
+	if pid := dup.Lanes[0].Items[0].Children[0].ParentID; pid == nil || *pid != dup.Lanes[0].Items[0].ID {
+		t.Errorf("duplicate child parentId: got %v, want %d", pid, dup.Lanes[0].Items[0].ID)
+	}
+
+	// Editing the copy must not touch the source.
+	w = do(t, "PATCH", "/api/items/"+itoa(dup.Lanes[0].Items[0].ID), map[string]string{"title": "Renamed"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch copy item: %d (%s)", w.Code, w.Body.String())
+	}
+	if got := getFull(t, id).Lanes[0].Items[0].Title; got != "Parent" {
+		t.Errorf("source item changed with the copy: %q", got)
+	}
+}
+
+// TestDuplicateRoadmapDefaultName checks that an omitted name falls back to the
+// source's, disambiguated by the store's " (n)" suffix.
+func TestDuplicateRoadmapDefaultName(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+
+	w := do(t, "POST", "/api/roadmaps/"+itoa(id)+"/duplicate", map[string]string{})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d (%s)", w.Code, w.Body.String())
+	}
+	var copyRM model.Roadmap
+	if err := json.Unmarshal(w.Body.Bytes(), &copyRM); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), copyRM.ID) })
+	if copyRM.Name != "test-"+t.Name()+" (2)" {
+		t.Errorf("default duplicate name: got %q", copyRM.Name)
+	}
+}
+
+func TestDuplicateMissingRoadmap(t *testing.T) {
+	w := do(t, "POST", "/api/roadmaps/999999999/duplicate", map[string]string{})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("want 404, got %d", w.Code)
+	}
+}
+
+// getFull fetches a roadmap through the API and decodes it.
+func getFull(t *testing.T, id int64) model.RoadmapFull {
+	t.Helper()
+	w := do(t, "GET", "/api/roadmaps/"+itoa(id), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get roadmap %d: %d (%s)", id, w.Code, w.Body.String())
+	}
+	var full model.RoadmapFull
+	if err := json.Unmarshal(w.Body.Bytes(), &full); err != nil {
+		t.Fatal(err)
+	}
+	return full
+}
+
 func TestExportMissingRoadmap(t *testing.T) {
 	w := do(t, "GET", "/api/roadmaps/999999999/export", nil)
 	if w.Code != http.StatusNotFound {

@@ -291,6 +291,25 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 	return full, nil
 }
 
+// DuplicateRoadmap deep-copies a roadmap under a new name. It is exactly
+// "export then import" without the file: the copy gets fresh IDs throughout
+// and dense lane positions / item ranks. An empty name reuses the source's,
+// which uniqueRoadmapName then disambiguates with a " (n)" suffix.
+//
+// The read and the write are separate transactions, so a concurrent edit
+// between them lands in the copy or doesn't; the same is true of export, and a
+// roadmap has a single editor in practice.
+func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name string) (model.Roadmap, error) {
+	src, err := s.GetRoadmapFull(ctx, id)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+	if n := strings.TrimSpace(name); n != "" {
+		src.Name = n
+	}
+	return s.ImportRoadmap(ctx, src)
+}
+
 // uniqueRoadmapName returns base, or base with a " (n)" suffix (n starting at
 // 2) if a roadmap of that name already exists. Roadmap names are not unique in
 // the schema; this only avoids collisions at import time.

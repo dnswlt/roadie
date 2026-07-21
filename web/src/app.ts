@@ -46,6 +46,7 @@ function renderTopbar(): void {
   }
   rmSelect.disabled = state.roadmaps.length === 0;
   ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
+  ($("rm-duplicate") as HTMLButtonElement).disabled = !state.current;
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
   // Surface active focus even while the dropdown is closed.
@@ -136,6 +137,7 @@ function injectIcons(): void {
   $("lane-vis-menu").append(icons.eye(18));
   $("focus-menu").append(icons.tag(18));
   $("rm-rename").prepend(icons.pencil(14));
+  $("rm-duplicate").prepend(icons.copy(14));
   $("rm-export").prepend(icons.download(14));
   $("rm-import").prepend(icons.upload(14));
   $("rm-delete").prepend(icons.trash(14));
@@ -199,6 +201,13 @@ function wireTopbar(): void {
     if (!state.current) return;
     const name = await promptDialog("Rename roadmap", state.current.name, "Rename");
     if (name) void actions.renameRoadmap(name);
+  });
+  $("rm-duplicate").addEventListener("click", async () => {
+    menuPop.classList.add("hidden");
+    if (!state.current) return;
+    // Prefill a distinct name so the copy is deliberately named, not "(2)".
+    const name = await promptDialog("Duplicate roadmap", `${state.current.name} (copy)`, "Duplicate");
+    if (name) void actions.duplicateRoadmap(name);
   });
   $("rm-export").addEventListener("click", () => {
     menuPop.classList.add("hidden");

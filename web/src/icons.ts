@@ -67,6 +67,12 @@ export const icons = {
         `<path d="M7 8l5-5 5 5"/><path d="M12 3v12"/>`,
       size,
     ),
+  copy: (size = 16) =>
+    svg(
+      `<rect x="9" y="9" width="12" height="12" rx="2"/>` +
+        `<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>`,
+      size,
+    ),
   x: (size = 16) => svg(`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`, size),
   check: (size = 12) => svg(`<path d="M20 6 9 17l-5-5"/>`, size),
   magnet: (size = 16) =>

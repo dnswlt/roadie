@@ -119,6 +119,20 @@ export const actions = {
     }
   },
 
+  // duplicateRoadmap deep-copies the current roadmap and switches to the copy.
+  // Not optimistic: the server assigns the IDs and may adjust the name.
+  async duplicateRoadmap(name: string): Promise<void> {
+    if (!state.current) return;
+    try {
+      const rm = await api.duplicateRoadmap(state.current.id, name);
+      await this.loadRoadmaps();
+      await this.selectRoadmap(rm.id);
+      toast(`Duplicated as "${rm.name}"`);
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
   async renameRoadmap(name: string): Promise<void> {
     if (!state.current) return;
     const id = state.current.id;

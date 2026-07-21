@@ -31,6 +31,7 @@ func New(st *store.Store, static fs.FS) *Server {
 	s.mux.HandleFunc("GET /api/roadmaps", s.listRoadmaps)
 	s.mux.HandleFunc("POST /api/roadmaps", s.createRoadmap)
 	s.mux.HandleFunc("POST /api/roadmaps/import", s.importRoadmap)
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/duplicate", s.duplicateRoadmap)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/export", s.exportRoadmap)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}", s.getRoadmap)
 	s.mux.HandleFunc("PATCH /api/roadmaps/{id}", s.patchRoadmap)
@@ -123,6 +124,27 @@ func (s *Server) createRoadmap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rm, err := s.store.CreateRoadmap(r.Context(), req.Name)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, rm)
+}
+
+// duplicateRoadmap deep-copies a roadmap. An omitted or empty name reuses the
+// source's, which the store disambiguates with a " (n)" suffix.
+func (s *Server) duplicateRoadmap(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var req nameReq
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	rm, err := s.store.DuplicateRoadmap(r.Context(), id, req.Name)
 	if err != nil {
 		s.writeErr(w, err)
 		return
