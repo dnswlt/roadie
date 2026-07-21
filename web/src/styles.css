@@ -54,10 +54,20 @@ body {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.2px;
   margin-right: 12px;
+}
+
+/* The same file the browser uses as the favicon — one source of artwork. */
+.brand-logo {
+  flex: none;
+  width: 20px;
+  height: 20px;
 }
 
 .spacer {

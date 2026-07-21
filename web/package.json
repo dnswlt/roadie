@@ -2,8 +2,8 @@
   "name": "roadie-web",
   "private": true,
   "scripts": {
-    "build": "cp index.html dist/ && esbuild src/app.ts --bundle --outdir=dist --sourcemap",
-    "watch": "cp index.html dist/ && esbuild src/app.ts --bundle --outdir=dist --sourcemap --watch=forever",
+    "build": "cp index.html favicon.svg dist/ && esbuild src/app.ts --bundle --outdir=dist --sourcemap",
+    "watch": "cp index.html favicon.svg dist/ && esbuild src/app.ts --bundle --outdir=dist --sourcemap --watch=forever",
     "check": "tsc --noEmit",
     "test": "rm -rf test-out && esbuild src/*.test.ts --bundle --platform=node --format=cjs --outdir=test-out --log-level=warning && node --test 'test-out/*.test.js'"
   },

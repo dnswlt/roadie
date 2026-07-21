@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Three staggered bars on a rounded tile: a roadmap in miniature. Pure
+       white throughout: offset and length carry the structure, and at 16px the
+       bars land about 2.5px tall, where any drop in contrast costs edge
+       definition — a second shade, or an off-white, just reads as mush.
+
+       The bars are inset 5 on every side, matching the horizontal margin (x=5
+       on the left, bar 2 ending 5 short of the right). That leaves 7 units for
+       the two gaps, so 3.5 apiece — wide enough that they survive antialiasing
+       at tab size, without thinning the bars themselves.
+
+       Square bar ends, like the real thing: .bar and .child-bar carry no
+       border-radius, because a bar's edge is a date and rounding it blurs
+       which day that is. The tile keeps rx=7, which matches .icon-btn (28px
+       square, 7px radius) — a rounded surface holding hard-edged bars is
+       exactly what a lane looks like. -->
+  <rect width="32" height="32" rx="7" fill="#4f46e5"/>
+  <rect x="5" y="5" width="18" height="5" fill="#fff"/>
+  <rect x="9" y="13.5" width="18" height="5" fill="#fff"/>
+  <rect x="5" y="22" width="12" height="5" fill="#fff"/>
+</svg>
