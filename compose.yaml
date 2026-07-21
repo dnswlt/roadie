@@ -1,4 +1,24 @@
 services:
+  # Roadie itself, built from the multi-stage Dockerfile. Behind the "app"
+  # profile, so `make db-up` and a bare `docker compose up` bring up only the
+  # db — the dev loop (`make dev`) runs the server on the host and would clash
+  # with this on port 8080. `make docker-up` activates the profile.
+  app:
+    profiles: ["app"]
+    build: .
+    image: roadie:dev
+    # localhost inside the container is the container; Postgres is the sibling
+    # `db` service, reached by name on compose's network at its internal 5432
+    # (the 5433 host mapping below is only for tools running on the host).
+    environment:
+      DATABASE_URL: postgres://roadie:roadie@db:5432/roadie
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   db:
     image: postgres:17-alpine
     environment:

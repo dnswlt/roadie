@@ -15,24 +15,12 @@ The data model is deliberately simple; all views are derived from it.
 - **Item** — anything that is being done, with a title, description, and a
   planned start/end date. Items can have child items (one level deep, no
   further nesting). A child always lives in its parent's lane.
+- **Milestone** — a fixed point in time in a lane (a single date, title, and
+  description): no duration, not ordered, not nested.
 
 Items have an explicit order within their lane (and children within their
 parent); every item gets its own row in that order. Only the order is
 stored — pixel positions never are.
-
-## UI
-
-- Drag a bar to move it in time. Drag it up/down to reorder within the lane
-  (an insertion line shows where it will land), into another lane to move it
-  there, or onto a top-level item's header bar to make it a child. Drop a
-  child on empty lane space to detach it.
-- Drag a bar's left/right edge to adjust start/end (snaps to days).
-- Drag a lane's grip (⠿) to reorder swimlanes.
-- Click an item to edit title, description, and dates in the side panel.
-- Double-click a lane name to rename it; the color dot in the lane header
-  picks one of five lane color themes (blue, green, red, orange, purple).
-- Zoom with the +/− buttons or Ctrl/Cmd + scroll. The red line marks today.
-- Escape cancels a drag or closes the panel.
 
 ## Stack
 
@@ -43,7 +31,7 @@ stored — pixel positions never are.
 
 ## Development
 
-Prerequisites: Go ≥ 1.22, Node.js, Docker (Compose).
+Prerequisites: Go ≥ 1.25, Node.js, Docker (Compose).
 
 ```sh
 make db-up      # start Postgres 17 in a container on port 5433
@@ -57,18 +45,17 @@ The dev database listens on **5433** to avoid clashing with a locally
 installed Postgres. Override with `DATABASE_URL` (default
 `postgres://roadie:roadie@localhost:5433/roadie`).
 
-## API
+## Docker
 
-```text
-GET/POST            /api/roadmaps
-GET/PATCH/DELETE    /api/roadmaps/{id}         GET returns the full payload (lanes + items)
-POST                /api/roadmaps/{id}/lanes
-PUT                 /api/roadmaps/{id}/lane-order
-PATCH/DELETE        /api/lanes/{id}
-POST                /api/lanes/{id}/items
-PATCH/DELETE        /api/items/{id}            PATCH handles all moves (dates, lane, parent)
+The `Dockerfile` builds a small (~20 MB) distroless image with the frontend
+embedded, running as non-root on `:8080`. Run the full stack locally with
+Compose:
+
+```sh
+make docker-build   # build the image
+make docker-up      # start db + app -> http://localhost:8080
+make docker-down    # stop both
 ```
 
-Errors are returned as `{"error": "..."}` with appropriate status codes.
-There is no authentication (v1 targets localhost / trusted networks);
-concurrent edits are last-write-wins.
+The app needs `DATABASE_URL` and passes `-addr=:8080` so it listens on all
+interfaces inside the container.

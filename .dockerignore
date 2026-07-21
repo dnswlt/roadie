@@ -1,0 +1,17 @@
+# Keep the build context small: node_modules alone dwarfs the source tree.
+.git
+.gitignore
+.dockerignore
+Dockerfile
+
+bin/
+web/node_modules/
+web/dist/
+web/test-out/
+
+# Not build inputs.
+compose.yaml
+Makefile
+CLAUDE.md
+README.md
+LICENSE

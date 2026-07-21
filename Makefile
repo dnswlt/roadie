@@ -10,13 +10,29 @@ else
     DC_CMD := docker compose
 endif
 
-.PHONY: dev build test check db-up db-down frontend frontend-watch
+.PHONY: dev build test check db-up db-down frontend frontend-watch \
+	docker-build docker-up docker-down
 
 db-up:
 	$(DC_CMD) up -d --wait db
 
 db-down:
 	$(DC_CMD) down
+
+# Build the app image (multi-stage; embeds the frontend) via compose.
+docker-build:
+	$(DC_CMD) build app
+
+# Build if needed, then run the whole stack — db + app — in the background.
+# The app reaches Postgres as db:5432 on compose's network and waits for its
+# healthcheck; it is published on http://localhost:8080.
+docker-up:
+	$(DC_CMD) --profile app up -d --build --wait
+
+# Stop and remove the stack (both services, including the profiled app). The
+# db volume is kept.
+docker-down:
+	$(DC_CMD) --profile app down
 
 frontend:
 	npm run --prefix web build
