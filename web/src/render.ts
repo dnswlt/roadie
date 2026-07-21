@@ -3,7 +3,7 @@
 
 import { laneColorValue } from "./colors";
 import { icons } from "./icons";
-import { LABEL_W, layoutLane, type PlacedBlock } from "./layout";
+import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
 import { extractUrls } from "./links";
 import { state } from "./state";
 import {
@@ -16,7 +16,7 @@ import {
   xOf,
   type Scale,
 } from "./timescale";
-import type { LaneFull, Milestone } from "./types";
+import type { Item, LaneFull, Milestone } from "./types";
 
 let scale: Scale = { startDay: 0, endDay: 0, pxPerDay: 3 };
 
@@ -220,12 +220,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   if (state.isDimmed(item.labels)) bar.classList.add("dimmed");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
-  bar.append(
-    handle("rh rh-l"),
-    barMain(item.title, item.description),
-    prioPill(item.priority),
-    handle("rh rh-r"),
-  );
+  fillBar(bar, el, item, { left: block.w, top: 0, height: PARENT_BAR_H, width: block.w });
   el.append(bar);
 
   for (const child of block.children) {
@@ -237,15 +232,93 @@ function renderBlock(block: PlacedBlock): HTMLElement {
     c.style.top = `${child.y}px`;
     c.style.width = `${child.w}px`;
     c.style.height = `${child.h}px`;
-    c.append(
-      handle("rh rh-l"),
-      barMain(child.item.title, child.item.description),
-      prioPill(child.item.priority),
-      handle("rh rh-r"),
-    );
+    fillBar(c, el, child.item, {
+      left: child.x + child.w,
+      top: child.y,
+      height: child.h,
+      width: child.w,
+    });
     el.append(c);
   }
   return el;
+}
+
+interface BarGeom {
+  left: number; // block-relative px of the bar's right edge (label starts here)
+  top: number; // block-relative px of the bar's top
+  height: number; // bar height, for vertical centering of the outside label
+  width: number; // bar width, to decide whether the title fits inside
+}
+
+// fillBar populates a bar. When the title fits within the bar it renders on the
+// bar as before (title + link + priority pill). When it doesn't, the bar keeps
+// only its resize handles and the label is placed just past the bar's right
+// edge on the row background (see barOutside): each item owns its whole row, so
+// that space is always free. `block` is where the outside label is appended
+// (it never clips), for both the parent bar and its children.
+function fillBar(bar: HTMLElement, block: HTMLElement, item: Item, geom: BarGeom): void {
+  bar.append(handle("rh rh-l"));
+  if (titleFits(item, geom.width)) {
+    bar.append(barMain(item.title, item.description), prioPill(item.priority));
+  } else {
+    bar.append(div("bar-fill")); // flex spacer so the handles stay at the edges
+    block.append(barOutside(item, geom));
+  }
+  bar.append(handle("rh rh-r"));
+}
+
+// barOutside builds the label shown to the right of a too-short bar. It is
+// pointer-events:none so it never interferes with drag hit-testing (only the
+// link icon re-enables clicks, via CSS).
+function barOutside(item: Item, geom: BarGeom): HTMLElement {
+  const lbl = div("bar-outside");
+  if (state.isDimmed(item.labels)) lbl.classList.add("dimmed");
+  lbl.style.left = `${geom.left + OUTSIDE_GAP}px`;
+  lbl.style.top = `${geom.top}px`;
+  lbl.style.height = `${geom.height}px`;
+  lbl.append(prioPill(item.priority), barTitle(item.title), barLink(item.description));
+  return lbl;
+}
+
+// Non-title space reserved inside a bar when deciding whether the title fits:
+// the two resize handles, the title's own padding, a little slack (so we spill
+// a hair before the text would visually clip), and the pill/link when present.
+const RH_TOTAL = 16;
+const TITLE_PAD = 4;
+const FIT_SLACK = 4;
+const PILL_RESERVE = 32;
+const LINK_RESERVE = 18;
+const OUTSIDE_GAP = 6; // gap between a bar and its outside label
+
+// titleFits reports whether `item`'s title (plus its pill/link, if any) fits in
+// a bar `width` px wide. Empty titles never spill.
+function titleFits(item: Item, width: number): boolean {
+  if (!item.title) return true;
+  let reserved = RH_TOTAL + TITLE_PAD + FIT_SLACK;
+  if (item.priority) reserved += PILL_RESERVE;
+  if (extractUrls(item.description)[0]) reserved += LINK_RESERVE;
+  return measureTitleWidth(item.title) <= width - reserved;
+}
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+// measureTitleWidth returns the rendered px width of `text` in the bar-title
+// font via an offscreen canvas — exact for the font and, unlike reading
+// scrollWidth, without forcing a reflow. The font is read once from a probe so
+// it always tracks the real .bar-title style.
+function measureTitleWidth(text: string): number {
+  if (!measureCtx) {
+    const probe = div("bar-title");
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    document.body.append(probe);
+    const cs = getComputedStyle(probe);
+    const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    probe.remove();
+    measureCtx = document.createElement("canvas").getContext("2d");
+    if (measureCtx) measureCtx.font = font;
+  }
+  return measureCtx ? measureCtx.measureText(text).width : 0;
 }
 
 // A small P1..P4 badge shown at the right end of a bar. Non-interactive

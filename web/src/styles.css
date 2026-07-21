@@ -598,6 +598,35 @@ select#rm-select:focus-visible {
   pointer-events: none;
 }
 
+/* Flex filler for a bar too short to hold its title: keeps the two resize
+   handles pinned to the bar's edges while the label renders outside. */
+.bar-fill {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Title rendered to the right of a bar too short to contain it, on the row
+   background (dark text). Positioned absolutely within the .block, which never
+   clips. pointer-events:none so it stays out of drag hit-testing; the link
+   icon re-enables clicks below. */
+.bar-outside {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.bar-outside .bar-title {
+  color: inherit;
+}
+
+.bar-outside .bar-link {
+  color: var(--ink-2);
+  pointer-events: auto;
+}
+
 .rh {
   flex: none;
   width: 8px;
@@ -1098,6 +1127,7 @@ dialog input:focus {
    matching ones pop. Grayscale drops their lane color too, not just opacity. */
 .bar.dimmed,
 .child-bar.dimmed,
+.bar-outside.dimmed,
 .milestone.dimmed,
 .milestone-line.dimmed {
   opacity: 0.12;
