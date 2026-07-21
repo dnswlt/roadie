@@ -661,6 +661,36 @@ body {
   pointer-events: auto;
 }
 
+/* A parent's fold control. It sits wherever the title went — inside the bar,
+   or on the outside label when the title spilled — so it stays reachable even
+   on a bar only a couple of pixels wide. */
+.disclosure {
+  font: inherit;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.disclosure:hover {
+  background: color-mix(in oklab, var(--c) 35%, transparent);
+}
+
+.bar-outside .disclosure {
+  pointer-events: auto; /* the label itself is inert; this control is not */
+  color: var(--ink-2);
+  margin-right: 2px;
+}
+
 .rh {
   flex: none;
   width: 8px;

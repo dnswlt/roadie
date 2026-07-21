@@ -58,11 +58,20 @@ export function blockHeight(numChildren: number): number {
     : PARENT_BAR_H + CHILD_GAP + numChildren * (CHILD_H + CHILD_GAP);
 }
 
-export function layoutLane(lane: LaneFull, scale: Scale): LaneLayout {
+// layoutLane places a lane's items. `isCollapsed` reports whether a parent's
+// children are folded away; a collapsed parent lays out as if childless, so
+// its block shrinks to a single row. Passed in rather than read from state to
+// keep this module free of view state.
+export function layoutLane(
+  lane: LaneFull,
+  scale: Scale,
+  isCollapsed: (itemId: number) => boolean = () => false,
+): LaneLayout {
   let y = LANE_PAD + (lane.milestones.length > 0 ? MILESTONE_BAND : 0);
   const blocks: PlacedBlock[] = lane.items.map((item) => {
     const span = spanOf(item, scale);
-    const children: PlacedChild[] = item.children.map((c, i) => {
+    const kids = isCollapsed(item.id) ? [] : item.children;
+    const children: PlacedChild[] = kids.map((c, i) => {
       const cs = spanOf(c, scale);
       return {
         item: c,

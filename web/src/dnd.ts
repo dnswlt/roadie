@@ -79,6 +79,9 @@ function onPointerDown(e: PointerEvent): void {
   // rather than starting a drag or selecting the item.
   if (t.closest(".bar-link")) return;
 
+  // Same for a parent's fold chevron: it is a button, not a drag handle.
+  if (t.closest(".disclosure")) return;
+
   const grip = t.closest(".lane-grip");
   if (grip) {
     const laneEl = grip.closest<HTMLElement>(".lane");
@@ -437,6 +440,14 @@ function onPointerUp(e: PointerEvent): void {
     state.selectItem(d.id);
     state.notify();
     return;
+  }
+
+  // Unfold the parent an item was just nested into, so it doesn't vanish into
+  // a folded block. Done here rather than on hover: setCollapsed re-renders,
+  // which mid-drag would destroy the element being dragged.
+  const nestedInto = d.dropParentId;
+  if (nestedInto !== null && nestedInto !== d.origParentId && state.isCollapsed(nestedInto)) {
+    state.setCollapsed(nestedInto, false);
   }
 
   const patch: ItemPatch = {};

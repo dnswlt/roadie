@@ -327,6 +327,15 @@ function wireChart(): void {
       })();
       return;
     }
+    // A parent's fold chevron: toggles its children, never selects the item.
+    const disc = t.closest<HTMLElement>(".disclosure");
+    if (disc) {
+      e.stopPropagation();
+      const id = Number(disc.dataset.itemId);
+      state.setCollapsed(id, !state.isCollapsed(id));
+      return;
+    }
+
     const milestoneEl = t.closest<HTMLElement>(".milestone");
     if (milestoneEl) {
       state.selectMilestone(Number(milestoneEl.dataset.milestoneId));

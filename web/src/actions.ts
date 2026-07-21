@@ -101,6 +101,7 @@ export const actions = {
       state.clearSelection();
       state.focusLabel = null; // labels are per-roadmap; don't carry focus across
       state.loadHiddenLanes();
+      state.loadCollapsed();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
       state.notify();
@@ -276,6 +277,9 @@ export const actions = {
         if (item.parentId !== null) {
           const parent = lane.items.find((i) => i.id === item.parentId);
           if (parent) parent.children.push(item);
+          // A child added to a folded parent would be created invisible — and
+          // selected for editing, which the panel would then show off-chart.
+          state.setCollapsed(item.parentId, false);
         } else {
           lane.items.push({ ...item, children: [] });
         }

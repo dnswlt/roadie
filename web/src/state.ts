@@ -40,6 +40,9 @@ class AppState {
   // Lanes hidden from the chart. Purely a view preference (not part of the
   // data model), persisted per roadmap in localStorage.
   hiddenLanes = new Set<number>();
+  // Parent items whose children are folded away. Like hiddenLanes: a view
+  // preference, per roadmap, never sent to the server.
+  collapsed = new Set<number>();
 
   private listeners: Array<() => void> = [];
 
@@ -86,6 +89,51 @@ class AppState {
     else this.hiddenLanes.delete(id);
     const key = this.hiddenKey();
     if (key) localStorage.setItem(key, JSON.stringify([...this.hiddenLanes]));
+    this.notify();
+  }
+
+  isCollapsed(id: number): boolean {
+    return this.collapsed.has(id);
+  }
+
+  private collapsedKey(): string | null {
+    return this.current ? `roadie.collapsed.${this.current.id}` : null;
+  }
+
+  // Loads the collapsed-parent set for the current roadmap. Call after
+  // `current` is set. Prunes ids that are no longer parents, so an item that
+  // lost its children comes back expanded rather than staying folded forever.
+  loadCollapsed(): void {
+    this.collapsed = new Set();
+    const key = this.collapsedKey();
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parents = new Set<number>();
+      for (const lane of this.current?.lanes ?? []) {
+        for (const item of lane.items) if (item.children.length > 0) parents.add(item.id);
+      }
+      for (const id of JSON.parse(raw) as number[]) {
+        if (parents.has(id)) this.collapsed.add(id);
+      }
+    } catch {
+      // Corrupt entry — ignore and treat every parent as expanded.
+    }
+  }
+
+  // setCollapsed folds or unfolds one parent. Collapsing hides the selected
+  // item when it is one of the folded children, so the panel never edits
+  // something that isn't on screen.
+  setCollapsed(id: number, collapsed: boolean): void {
+    if (collapsed) this.collapsed.add(id);
+    else this.collapsed.delete(id);
+    const key = this.collapsedKey();
+    if (key) localStorage.setItem(key, JSON.stringify([...this.collapsed]));
+    if (collapsed && this.selectedItemId !== null) {
+      const sel = this.findItem(this.selectedItemId);
+      if (sel?.parent?.id === id) this.clearSelection();
+    }
     this.notify();
   }
 
