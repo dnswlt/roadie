@@ -145,7 +145,9 @@ function onPointerDown(e: PointerEvent): void {
 // meets B's start" come out flush instead of overlapping by the shared day.
 // Included: every other item in the lane (top-level and children), every
 // milestone (a point, so a single boundary), and today. The dragged bar's own
-// edges are excluded.
+// edges are excluded, and so are the children of a folded parent: a bar that
+// sticks to an edge the user cannot see reads as a broken snap, and folding is
+// a view operation, so it takes those edges off the grid with them.
 function collectSnapBounds(lane: LaneFull, selfId: number): number[] {
   const bounds = new Set<number>();
   for (const it of lane.items) {
@@ -153,6 +155,7 @@ function collectSnapBounds(lane: LaneFull, selfId: number): number[] {
       bounds.add(dayOf(it.startDate));
       bounds.add(dayOf(it.endDate) + 1);
     }
+    if (state.isCollapsed(it.id)) continue;
     for (const c of it.children) {
       if (c.id !== selfId) {
         bounds.add(dayOf(c.startDate));
