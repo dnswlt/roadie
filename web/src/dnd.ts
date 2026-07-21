@@ -41,7 +41,7 @@ interface ItemDrag {
   dropLaneId: number;
   dropParentId: number | null;
   dropRank: number | null; // insertion index in the drop container; null = keep/append
-  snapDays: number[]; // candidate day numbers a resized edge snaps to
+  snapBounds: number[]; // candidate boundary positions a dragged edge snaps to
 }
 
 interface LaneDrag {
@@ -129,36 +129,39 @@ function onPointerDown(e: PointerEvent): void {
     dropLaneId: loc.item.laneId,
     dropParentId: loc.item.parentId,
     dropRank: null,
-    snapDays: collectSnapDays(loc.lane, id),
+    snapBounds: collectSnapBounds(loc.lane, id),
   };
   chartEl.setPointerCapture(e.pointerId);
   e.preventDefault();
 }
 
-// collectSnapDays gathers the dates a moved bar or resized handle can snap to:
-// the start/end of every other item in the same lane (top-level items, their
-// children, and — when resizing a parent — the parent's own children), every
-// milestone in the lane, plus today. Only the dragged bar's own edges are
-// excluded.
-function collectSnapDays(lane: LaneFull, selfId: number): number[] {
-  const days = new Set<number>();
+// collectSnapBounds gathers the boundary positions a moved bar or resized
+// handle can snap to. A bar occupies pixels [xOf(start), xOf(end + 1)), so its
+// edges live on the boundary grid: an item contributes `start` (its left edge)
+// and `end + 1` (its right edge). Snapping edges in this domain makes "A's end
+// meets B's start" come out flush instead of overlapping by the shared day.
+// Included: every other item in the lane (top-level and children), every
+// milestone (a point, so a single boundary), and today. The dragged bar's own
+// edges are excluded.
+function collectSnapBounds(lane: LaneFull, selfId: number): number[] {
+  const bounds = new Set<number>();
   for (const it of lane.items) {
     if (it.id !== selfId) {
-      days.add(dayOf(it.startDate));
-      days.add(dayOf(it.endDate));
+      bounds.add(dayOf(it.startDate));
+      bounds.add(dayOf(it.endDate) + 1);
     }
     for (const c of it.children) {
       if (c.id !== selfId) {
-        days.add(dayOf(c.startDate));
-        days.add(dayOf(c.endDate));
+        bounds.add(dayOf(c.startDate));
+        bounds.add(dayOf(c.endDate) + 1);
       }
     }
   }
   for (const m of lane.milestones) {
-    days.add(dayOf(m.date));
+    bounds.add(dayOf(m.date));
   }
-  days.add(todayDay());
-  return [...days];
+  bounds.add(todayDay());
+  return [...bounds];
 }
 
 // snapEdge returns the candidate day nearest `day` within SNAP_PX pixels, or
@@ -176,25 +179,32 @@ function snapEdge(day: number, cands: number[], px: number): number {
   return best;
 }
 
-// snapEdgeValue resolves a single dragged/resized edge. Item-edge snapping
-// (radius-limited) takes priority — aligning to a real item is the strongest
-// intent — and only when no item edge is close does the edge fall to the
-// calendar grid. In "day" mode the grid is the identity, so this is pure
-// item snapping (the original behavior).
-function snapEdgeValue(day: number, cands: number[], px: number, mode: SnapMode): number {
-  const item = snapEdge(day, cands, px);
-  if (item !== day) return item;
-  return snapToGrid(day, mode);
+// snapBoundary resolves a single dragged/resized edge, given as a boundary
+// position. Item-edge snapping (radius-limited) takes priority — aligning to a
+// real item is the strongest intent — and only when no item boundary is close
+// does the edge fall to the calendar grid. In "day" mode the grid is the
+// identity, so this is pure item snapping.
+function snapBoundary(bound: number, cands: number[], px: number, mode: SnapMode): number {
+  const item = snapEdge(bound, cands, px);
+  if (item !== bound) return item;
+  return snapToGrid(bound, mode);
+}
+
+// moveBounds returns the dragged bar's two edge boundaries after a rigid shift
+// of `dayDelta`: the left edge sits at start, the right edge at end + 1.
+function moveBounds(d: ItemDrag, dayDelta: number): [number, number] {
+  return [d.startDay + dayDelta, d.endDay + 1 + dayDelta];
 }
 
 // snapMoveToItems adjusts a move's day-offset so that whichever of the two
-// (rigidly shifted) edges is closest to an item candidate lands exactly on it,
-// within SNAP_PX. Returns dayDelta unchanged when nothing is close enough.
+// (rigidly shifted) edge boundaries is closest to an item boundary lands
+// exactly on it, within SNAP_PX. Returns dayDelta unchanged when nothing is
+// close enough.
 function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number): number {
   let best = dayDelta;
   let bestDist = SNAP_PX + 1;
-  for (const edge of [d.startDay + dayDelta, d.endDay + dayDelta]) {
-    for (const c of d.snapDays) {
+  for (const edge of moveBounds(d, dayDelta)) {
+    for (const c of d.snapBounds) {
       const dist = Math.abs(edge - c) * px;
       if (dist <= SNAP_PX && dist < bestDist) {
         bestDist = dist;
@@ -205,17 +215,17 @@ function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number): number {
   return best;
 }
 
-// snapMoveDelta resolves a move. Item snapping wins when an edge is within
-// SNAP_PX of a real item edge; otherwise the offset is nudged so whichever of
-// the two edges is nearest a calendar-grid line lands exactly on it (duration
-// preserved). The move rides the grid but "clicks" onto neighbouring items.
+// snapMoveDelta resolves a move. Item snapping wins when an edge boundary is
+// within SNAP_PX of a real item boundary; otherwise the offset is nudged so
+// whichever edge boundary is nearest a calendar-grid line lands exactly on it
+// (duration preserved). The move rides the grid but "clicks" onto neighbours.
 function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, mode: SnapMode): number {
   const item = snapMoveToItems(d, dayDelta, px);
   if (item !== dayDelta) return item;
   if (mode === "day") return dayDelta;
   let best = dayDelta;
   let bestDist = Infinity;
-  for (const edge of [d.startDay + dayDelta, d.endDay + dayDelta]) {
+  for (const edge of moveBounds(d, dayDelta)) {
     const g = snapToGrid(edge, mode);
     const dist = Math.abs(g - edge);
     if (dist < bestDist) {
@@ -257,12 +267,13 @@ function onPointerMove(e: PointerEvent): void {
       d.newEnd = d.endDay + md;
       d.el.style.transform = `translate(${md * px}px, ${dy}px)`;
       updateDropTarget(d, e);
-      updateSnapGuide(d, bypass, d.newStart, d.newEnd);
+      updateSnapGuide(d, bypass, d.newStart, d.newEnd + 1);
       break;
     }
     case "resize-l": {
+      // The left edge is the start boundary itself.
       let s = d.startDay + dayDelta;
-      if (!bypass) s = snapEdgeValue(s, d.snapDays, px, mode);
+      if (!bypass) s = snapBoundary(s, d.snapBounds, px, mode);
       d.newStart = Math.min(s, d.endDay);
       d.newEnd = d.endDay;
       const shift = (d.newStart - d.startDay) * px;
@@ -272,12 +283,13 @@ function onPointerMove(e: PointerEvent): void {
       break;
     }
     case "resize-r": {
-      let en = d.endDay + dayDelta;
-      if (!bypass) en = snapEdgeValue(en, d.snapDays, px, mode);
+      // The right edge lives at end + 1; snap there, then convert back.
+      let eb = d.endDay + 1 + dayDelta;
+      if (!bypass) eb = snapBoundary(eb, d.snapBounds, px, mode);
       d.newStart = d.startDay;
-      d.newEnd = Math.max(en, d.startDay);
+      d.newEnd = Math.max(eb - 1, d.startDay);
       d.barEl.style.width = `${d.origWidth + (d.newEnd - d.endDay) * px}px`;
-      updateSnapGuide(d, bypass, d.newEnd);
+      updateSnapGuide(d, bypass, d.newEnd + 1);
       break;
     }
   }
@@ -379,19 +391,21 @@ function removeInsertLine(): void {
   document.querySelector(".item-insert")?.remove();
 }
 
-// updateSnapGuide draws a full-height guide line at the first of `edges` that
-// has landed exactly on a snap candidate; otherwise it clears the guide. When
-// snapping is bypassed the guide is always cleared — no alignment assistance.
-function updateSnapGuide(d: ItemDrag, bypass: boolean, ...edges: number[]): void {
+// updateSnapGuide draws a full-height guide line at the first of `bounds` (edge
+// boundary positions) that has landed exactly on a snap candidate; otherwise it
+// clears the guide. When snapping is bypassed the guide is always cleared — no
+// alignment assistance. The line sits at the boundary's pixel column, which is
+// the bar edge itself (xOf(end + 1) for a right edge).
+function updateSnapGuide(d: ItemDrag, bypass: boolean, ...bounds: number[]): void {
   removeSnapGuide();
   if (bypass) return;
-  const edge = edges.find((day) => d.snapDays.includes(day));
-  if (edge === undefined) return;
+  const bound = bounds.find((b) => d.snapBounds.includes(b));
+  if (bound === undefined) return;
   const canvas = d.barEl.closest<HTMLElement>(".lane-canvas");
   if (!canvas) return;
   const line = document.createElement("div");
   line.className = "snap-guide";
-  line.style.left = `${xOf(currentScale(), edge)}px`;
+  line.style.left = `${xOf(currentScale(), bound)}px`;
   canvas.append(line);
 }
 
