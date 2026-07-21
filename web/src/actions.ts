@@ -8,6 +8,11 @@ import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
 import type { Item, ItemFull, ItemPatch, MilestonePatch } from "./types";
 
+// Default item length, in days added to the start (end date is inclusive, so
+// this spans DEFAULT_ITEM_SPAN + 1 days). Shared by new top-level items and,
+// as an upper bound, by new children.
+const DEFAULT_ITEM_SPAN = 27;
+
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -229,14 +234,26 @@ export const actions = {
   },
 
   // addItem creates an item with default dates and selects it for editing.
+  // Top-level items span DEFAULT_ITEM_SPAN days from today. A child instead
+  // starts at its parent's start and runs the default span, but never past the
+  // parent's own end — so a short parent yields a short child.
   async addItem(laneId: number, parentId: number | null): Promise<void> {
     const today = todayDay();
+    let startDay = today;
+    let endDay = today + DEFAULT_ITEM_SPAN;
+    if (parentId !== null) {
+      const parentLoc = state.findItem(parentId);
+      if (parentLoc) {
+        startDay = dayOf(parentLoc.item.startDate);
+        endDay = Math.min(startDay + DEFAULT_ITEM_SPAN, dayOf(parentLoc.item.endDate));
+      }
+    }
     try {
       const item = await api.createItem(laneId, {
         title: parentId ? "New child item" : "New item",
         description: "",
-        startDate: isoOf(today),
-        endDate: isoOf(today + 27),
+        startDate: isoOf(startDay),
+        endDate: isoOf(endDay),
         parentId,
       });
       // The server appends new items to their container.
