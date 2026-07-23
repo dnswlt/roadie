@@ -101,7 +101,10 @@ function onPointerDown(e: PointerEvent): void {
       started: false,
       insertIndex: -1,
     };
-    chartEl.setPointerCapture(e.pointerId);
+    // Pointer capture is taken only once the drag actually starts (see
+    // onPointerMove) — capturing on pointerdown makes Safari/Firefox dispatch
+    // the ensuing click to the capture element, which would swallow a plain
+    // click's selection.
     e.preventDefault();
     return;
   }
@@ -162,7 +165,9 @@ function onPointerDown(e: PointerEvent): void {
     members,
     memberIds: [...exclude],
   };
-  chartEl.setPointerCapture(e.pointerId);
+  // Capture is deferred to drag start (onPointerMove) so a plain click isn't
+  // captured — otherwise Safari/Firefox retarget the click to the capture
+  // element and the selection is cleared before the panel can open.
   e.preventDefault();
 }
 
@@ -338,6 +343,7 @@ function onPointerMove(e: PointerEvent): void {
   if (!d.started) {
     if (Math.hypot(dx, dy) < 4) return;
     d.started = true;
+    chartEl?.setPointerCapture(e.pointerId); // now dragging: keep events if the pointer leaves the chart
     for (const m of d.members) {
       m.classList.add("dragging");
       m.style.pointerEvents = "none";
@@ -618,6 +624,7 @@ function laneDragMove(e: PointerEvent): void {
   if (!d.started) {
     if (Math.abs(e.clientY - d.py) < 4) return;
     d.started = true;
+    chartEl?.setPointerCapture(e.pointerId); // now dragging: keep events if the pointer leaves the chart
     d.laneEl.classList.add("lane-dragging");
   }
   const els = laneEls();
