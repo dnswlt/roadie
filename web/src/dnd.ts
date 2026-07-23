@@ -42,6 +42,13 @@ interface ItemDrag {
   dropParentId: number | null;
   dropRank: number | null; // insertion index in the drop container; null = keep/append
   snapBounds: number[]; // candidate boundary positions a dragged edge snaps to
+  // A single-item drag is just a group drag of one member: `members` are the
+  // elements translated as a live preview, and the drag snaps around one
+  // anchor (this item). A group drag (isGroup) shifts several items in time
+  // together — horizontal only, no structure — and commits via `memberIds`.
+  isGroup: boolean;
+  members: HTMLElement[];
+  memberIds: number[];
 }
 
 interface LaneDrag {
@@ -105,12 +112,29 @@ function onPointerDown(e: PointerEvent): void {
   const loc = state.findItem(id);
   if (!loc) return;
 
-  const mode: Mode = t.closest(".rh-l") ? "resize-l" : t.closest(".rh-r") ? "resize-r" : "move";
+  // Grabbing any member of a multi-selection drags the whole group in time.
+  const isGroup = state.hasMultiSelection() && state.isItemSelected(id);
+  // A group drag is move-only; a resize handle grabbed on a member still moves.
+  const mode: Mode = isGroup
+    ? "move"
+    : t.closest(".rh-l")
+      ? "resize-l"
+      : t.closest(".rh-r")
+        ? "resize-r"
+        : "move";
   const isChild = barEl.classList.contains("child-bar");
   const el = isChild ? barEl : (barEl.closest<HTMLElement>(".block") ?? barEl);
   const children = (loc.item as ItemFull).children;
   const container = loc.parent ? loc.parent.children : loc.lane.items;
   const hasChildren = !isChild && children.length > 0;
+  const { exclude, members } = collectDragMembers(
+    chartEl,
+    id,
+    el,
+    mode === "move" && hasChildren,
+    children,
+    isGroup,
+  );
   drag = {
     kind: "item",
     mode,
@@ -133,7 +157,10 @@ function onPointerDown(e: PointerEvent): void {
     dropLaneId: loc.item.laneId,
     dropParentId: loc.item.parentId,
     dropRank: null,
-    snapBounds: collectSnapBounds(loc.lane, id, mode === "move" && hasChildren),
+    snapBounds: collectSnapBounds(loc.lane, exclude),
+    isGroup,
+    members,
+    memberIds: [...exclude],
   };
   chartEl.setPointerCapture(e.pointerId);
   e.preventDefault();
@@ -146,28 +173,26 @@ function onPointerDown(e: PointerEvent): void {
 // meets B's start" come out flush instead of overlapping by the shared day.
 //
 // Targets are the lane's other items (top-level and children alike), its
-// milestones (a point in time, so one boundary each), and today. Three kinds
-// of edge are deliberately left off the grid:
+// milestones (a point in time, so one boundary each), and today. Two kinds of
+// edge are deliberately left off the grid:
 //
-//  - the dragged bar's own — it cannot snap to itself
 //  - the children of a folded parent, which are not on screen; a bar sticking
 //    to an edge the user cannot see reads as a broken snap
-//  - the dragged item's own children, when `movesChildren` says they travel
-//    with it: a move shifts them by the same delta, so those edges run away as
-//    fast as the parent chases them. A resize leaves them put, and there they
-//    stay valid targets.
-function collectSnapBounds(lane: LaneFull, selfId: number, movesChildren: boolean): number[] {
+//  - every item in `exclude`: the ids that travel with this drag (the dragged
+//    item, a moved parent's children, or all members of a group). A move
+//    shifts them by the same delta, so their edges run away as fast as the
+//    drag chases them. (A resize excludes only the dragged bar itself, so its
+//    children stay put and remain valid targets.)
+function collectSnapBounds(lane: LaneFull, exclude: Set<number>): number[] {
   const bounds = new Set<number>();
   for (const it of lane.items) {
-    if (it.id === selfId) {
-      if (movesChildren) continue; // travels with the drag: neither edge is a fixed target
-    } else {
+    if (!exclude.has(it.id)) {
       bounds.add(dayOf(it.startDate));
       bounds.add(dayOf(it.endDate) + 1);
     }
     if (state.isCollapsed(it.id)) continue;
     for (const c of it.children) {
-      if (c.id !== selfId) {
+      if (!exclude.has(c.id)) {
         bounds.add(dayOf(c.startDate));
         bounds.add(dayOf(c.endDate) + 1);
       }
@@ -178,6 +203,54 @@ function collectSnapBounds(lane: LaneFull, selfId: number, movesChildren: boolea
   }
   bounds.add(todayDay());
   return [...bounds];
+}
+
+// collectDragMembers resolves who travels with a drag that started on `id`.
+// Returns the set of item ids whose edges are excluded from snapping and whose
+// dates shift on a group drop, plus the DOM elements to translate as a preview.
+//
+//  - Single drag: just `id`, plus the item's children when a parent is *moved*
+//    (they follow it; a resize leaves them put). One preview element: `el`.
+//  - Group drag: every selected item and the children of every selected
+//    top-level member. Preview elements are each selected top-level `.block`
+//    (its children ride inside it) and each selected child's own bar. A parent
+//    and its child are never both selected (see toggleItem), so no child is
+//    ever translated twice.
+function collectDragMembers(
+  chart: HTMLElement,
+  id: number,
+  el: HTMLElement,
+  moveWithChildren: boolean,
+  children: ItemFull["children"],
+  isGroup: boolean,
+): { exclude: Set<number>; members: HTMLElement[] } {
+  const exclude = new Set<number>();
+  const members: HTMLElement[] = [];
+  if (!isGroup) {
+    exclude.add(id);
+    if (moveWithChildren) for (const c of children) exclude.add(c.id);
+    members.push(el);
+    return { exclude, members };
+  }
+  for (const selId of state.selectedItemIds) {
+    const loc = state.findItem(selId);
+    if (!loc) continue;
+    exclude.add(selId);
+    if (loc.parent === null) {
+      // Children aren't in the selection but travel with their parent: exclude
+      // their edges from snapping and shift their dates on drop.
+      for (const c of (loc.item as ItemFull).children) exclude.add(c.id);
+      const block = chart.querySelector<HTMLElement>(`.block[data-item-id="${selId}"]`);
+      if (block) members.push(block);
+    } else {
+      // A selected child never has a selected parent (toggleItem's invariant),
+      // so it always moves on its own bar — never doubly, via a parent block
+      // that would also carry it.
+      const bar = chart.querySelector<HTMLElement>(`.child-bar[data-item-id="${selId}"]`);
+      if (bar) members.push(bar);
+    }
+  }
+  return { exclude, members };
 }
 
 // snapEdge returns the candidate day nearest `day` within SNAP_PX pixels, or
@@ -265,8 +338,11 @@ function onPointerMove(e: PointerEvent): void {
   if (!d.started) {
     if (Math.hypot(dx, dy) < 4) return;
     d.started = true;
-    d.el.classList.add("dragging");
-    d.el.style.pointerEvents = "none";
+    for (const m of d.members) {
+      m.classList.add("dragging");
+      m.style.pointerEvents = "none";
+    }
+    if (d.isGroup) chartEl?.classList.add("group-dragging");
     tooltip = document.createElement("div");
     tooltip.className = "drag-tooltip";
     document.body.append(tooltip);
@@ -281,8 +357,10 @@ function onPointerMove(e: PointerEvent): void {
       const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px, mode);
       d.newStart = d.startDay + md;
       d.newEnd = d.endDay + md;
-      d.el.style.transform = `translate(${md * px}px, ${dy}px)`;
-      updateDropTarget(d, e);
+      // Group drag is horizontal only; a single drag follows the pointer's Y.
+      const ty = d.isGroup ? 0 : dy;
+      for (const m of d.members) m.style.transform = `translate(${md * px}px, ${ty}px)`;
+      if (!d.isGroup) updateDropTarget(d, e); // no structural drop target for a group
       updateSnapGuide(d, bypass, d.newStart, d.newEnd + 1);
       break;
     }
@@ -449,11 +527,25 @@ function onPointerUp(e: PointerEvent): void {
   drag = null;
 
   if (!d.started) {
-    // Plain click: select the item and show the edit panel.
-    state.selectItem(d.id);
+    // A click, not a drag. Shift-click toggles the item in the multi-selection;
+    // a plain click selects it alone and shows the edit panel.
+    if (e.shiftKey) state.toggleItem(d.id);
+    else state.selectItem(d.id);
     state.notify();
     return;
   }
+
+  // Group drag: shift every member in time by the same delta. No structure.
+  if (d.isGroup) {
+    const dayDelta = d.newStart - d.startDay;
+    if (dayDelta !== 0) void actions.shiftItems(d.memberIds, dayDelta);
+    else state.notify(); // no net change — re-render to discard the preview
+    return;
+  }
+
+  // A single-item drag ends any lingering multi-selection: the user is now
+  // manipulating one item, so collapse back to a single (soon: none) selection.
+  if (state.hasMultiSelection()) state.clearSelection();
 
   // Unfold the parent an item was just nested into, so it doesn't vanish into
   // a folded block. Done here rather than on hover: setCollapsed re-renders,
@@ -491,11 +583,14 @@ function onPointerUp(e: PointerEvent): void {
 }
 
 function resetItemVisuals(d: ItemDrag): void {
-  d.el.classList.remove("dragging");
-  d.el.style.pointerEvents = "";
-  d.el.style.transform = "";
+  for (const m of d.members) {
+    m.classList.remove("dragging");
+    m.style.pointerEvents = "";
+    m.style.transform = "";
+  }
   d.barEl.style.left = "";
   d.barEl.style.width = "";
+  chartEl?.classList.remove("group-dragging");
   clearHighlights();
   tooltip?.remove();
   tooltip = null;

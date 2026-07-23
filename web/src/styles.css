@@ -795,6 +795,12 @@ body {
   z-index: 30;
 }
 
+/* While a multi-selection drags, the whole chart signals time-only movement. */
+.group-dragging,
+.group-dragging * {
+  cursor: ew-resize !important;
+}
+
 .drop-target {
   outline: 2px dashed var(--ink-2);
   outline-offset: 2px;

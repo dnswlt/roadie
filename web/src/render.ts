@@ -209,7 +209,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   // the model, not from the layout.
   const hasChildren = item.children.length > 0;
   const collapsed = hasChildren && state.isCollapsed(item.id);
-  const isSelected = state.selectedItemId === item.id;
+  const isSelected = state.isItemSelected(item.id);
   let blockClass = hasChildren ? "block has-children" : "block";
   if (isSelected) blockClass += " selected";
   const el = div(blockClass);
@@ -233,7 +233,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   el.append(bar);
 
   for (const child of block.children) {
-    const c = div(state.selectedItemId === child.item.id ? "child-bar selected" : "child-bar");
+    const c = div(state.isItemSelected(child.item.id) ? "child-bar selected" : "child-bar");
     if (state.isDimmed(child.item.labels)) c.classList.add("dimmed");
     c.dataset.itemId = String(child.item.id);
     c.title = child.item.title;

@@ -24,9 +24,27 @@ export interface MilestoneLocation {
 class AppState {
   roadmaps: Roadmap[] = [];
   current: RoadmapFull | null = null;
-  // At most one of these is set at a time (item vs. milestone editor).
-  selectedItemId: number | null = null;
+  // The set of selected items. Usually empty or a single item; shift-click
+  // builds a multi-selection that drags together (time-shift only). The item
+  // and milestone selections are mutually exclusive (item vs. milestone
+  // editor). A transient view state, never persisted.
+  selectedItemIds = new Set<number>();
   selectedMilestoneId: number | null = null;
+
+  // selectedItemId is the item shown in the edit panel: defined only when
+  // exactly one item is selected. A multi-selection (or none) yields null, so
+  // the panel hides itself — see panel.ts.
+  get selectedItemId(): number | null {
+    return this.selectedItemIds.size === 1 ? [...this.selectedItemIds][0]! : null;
+  }
+
+  isItemSelected(id: number): boolean {
+    return this.selectedItemIds.has(id);
+  }
+
+  hasMultiSelection(): boolean {
+    return this.selectedItemIds.size > 1;
+  }
   pxPerDay = DEFAULT_PX_PER_DAY;
   // Calendar grid a dragged/resized edge snaps to (in addition to always-on
   // item-edge snapping). A global view preference, persisted in localStorage.
@@ -130,9 +148,12 @@ class AppState {
     else this.collapsed.delete(id);
     const key = this.collapsedKey();
     if (key) localStorage.setItem(key, JSON.stringify([...this.collapsed]));
-    if (collapsed && this.selectedItemId !== null) {
-      const sel = this.findItem(this.selectedItemId);
-      if (sel?.parent?.id === id) this.clearSelection();
+    if (collapsed) {
+      // Drop any selected item that is a child of the just-folded parent, so
+      // the panel never edits something that isn't on screen.
+      for (const selId of [...this.selectedItemIds]) {
+        if (this.findItem(selId)?.parent?.id === id) this.selectedItemIds.delete(selId);
+      }
     }
     this.notify();
   }
@@ -180,20 +201,49 @@ class AppState {
   }
 
   // Selection is exclusive: selecting an item clears any milestone selection
-  // and vice versa; the panel shows whichever is set.
+  // and vice versa; the panel shows whichever is set. Selecting an item
+  // collapses any multi-selection down to just that item.
   selectItem(id: number | null): void {
-    this.selectedItemId = id;
+    this.selectedItemIds = id === null ? new Set() : new Set([id]);
     this.selectedMilestoneId = null;
+  }
+
+  // toggleItem adds or removes one item from the selection (shift-click),
+  // building or shrinking a multi-selection. Clears any milestone selection.
+  //
+  // A parent and its child are never both selected: a parent already carries
+  // its children (they travel with it on a group drag, and a delete cascades),
+  // so co-selecting a child adds nothing. Selecting a parent therefore drops
+  // any of its selected children, and shift-clicking a child whose parent is
+  // already selected is a no-op.
+  toggleItem(id: number): void {
+    this.selectedMilestoneId = null;
+    if (this.selectedItemIds.has(id)) {
+      this.selectedItemIds.delete(id);
+      return;
+    }
+    const loc = this.findItem(id);
+    if (loc?.parent && this.selectedItemIds.has(loc.parent.id)) return; // covered by parent
+    this.selectedItemIds.add(id);
+    if (loc && loc.parent === null) {
+      for (const c of (loc.item as ItemFull).children) this.selectedItemIds.delete(c.id);
+    }
+  }
+
+  // deselectItem drops one item from the selection, if present (e.g. after it
+  // is deleted). Leaves the rest of a multi-selection intact.
+  deselectItem(id: number): void {
+    this.selectedItemIds.delete(id);
   }
 
   selectMilestone(id: number | null): void {
     this.selectedMilestoneId = id;
-    this.selectedItemId = null;
+    this.selectedItemIds = new Set();
   }
 
   clearSelection(): boolean {
-    if (this.selectedItemId === null && this.selectedMilestoneId === null) return false;
-    this.selectedItemId = null;
+    if (this.selectedItemIds.size === 0 && this.selectedMilestoneId === null) return false;
+    this.selectedItemIds = new Set();
     this.selectedMilestoneId = null;
     return true;
   }

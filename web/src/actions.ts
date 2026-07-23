@@ -324,6 +324,31 @@ export const actions = {
     );
   },
 
+  // shiftItems moves several items in time by the same day-delta, leaving
+  // their container, parent, and rank untouched. Backs group drag: each item
+  // gets a start/end-only PATCH, applied optimistically as one batch.
+  async shiftItems(ids: number[], dayDelta: number): Promise<void> {
+    if (dayDelta === 0 || ids.length === 0) return;
+    const patches: { id: number; patch: ItemPatch }[] = [];
+    for (const id of ids) {
+      const loc = state.findItem(id);
+      if (!loc) continue;
+      patches.push({
+        id,
+        patch: {
+          startDate: isoOf(dayOf(loc.item.startDate) + dayDelta),
+          endDate: isoOf(dayOf(loc.item.endDate) + dayDelta),
+        },
+      });
+    }
+    await optimistic(
+      () => {
+        for (const p of patches) applyItemPatch(p.id, p.patch);
+      },
+      () => Promise.all(patches.map((p) => api.updateItem(p.id, p.patch))),
+    );
+  },
+
   async deleteItem(id: number): Promise<void> {
     await optimistic(
       () => {
@@ -336,7 +361,7 @@ export const actions = {
           loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
           renumber(loc.lane.items);
         }
-        if (state.selectedItemId === id) state.selectedItemId = null;
+        state.deselectItem(id);
       },
       () => api.deleteItem(id),
     );
