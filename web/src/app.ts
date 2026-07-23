@@ -369,26 +369,40 @@ function wireChart(): void {
     const nameEl = (e.target as HTMLElement).closest<HTMLElement>(".lane-name");
     const laneEl = (e.target as HTMLElement).closest<HTMLElement>(".lane");
     if (!nameEl || !laneEl) return;
-    const laneId = Number(laneEl.dataset.laneId);
-    const input = document.createElement("input");
-    input.className = "lane-name-input";
-    input.value = nameEl.textContent ?? "";
-    nameEl.replaceWith(input);
-    input.select();
-    let done = false;
-    const commit = (save: boolean) => {
-      if (done) return;
-      done = true;
-      const v = input.value.trim();
-      input.replaceWith(nameEl);
-      if (save && v && v !== nameEl.textContent) void actions.renameLane(laneId, v);
-    };
-    input.addEventListener("blur", () => commit(true));
-    input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") commit(true);
-      if (ev.key === "Escape") commit(false);
-    });
+    startLaneRename(nameEl, Number(laneEl.dataset.laneId));
   });
+}
+
+// startLaneRename swaps a lane's name span for an input, committing on Enter or
+// blur and reverting on Escape. Shared by the double-click shortcut and the
+// lane menu's Rename entry, so there is one editor rather than two.
+function startLaneRename(nameEl: HTMLElement, laneId: number): void {
+  const input = document.createElement("input");
+  input.className = "lane-name-input";
+  input.value = nameEl.textContent ?? "";
+  nameEl.replaceWith(input);
+  // focus() before select(): entering from the menu leaves focus on a button
+  // that is about to be removed, so selection alone would not put the caret here.
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = (save: boolean) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    input.replaceWith(nameEl);
+    if (save && v && v !== nameEl.textContent) void actions.renameLane(laneId, v);
+  };
+  input.addEventListener("blur", () => commit(true));
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") commit(true);
+    if (ev.key === "Escape") commit(false);
+  });
+}
+
+// laneNameEl finds a lane's name span in the rendered chart.
+function laneNameEl(laneId: number): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`.lane[data-lane-id="${laneId}"] .lane-name`);
 }
 
 // Lane visibility menu: one toggle row per context. Visibility is a view
@@ -447,6 +461,17 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
   menu.className = "menu lane-menu";
   menu.dataset.laneId = String(laneId);
 
+  // The discoverable route into the same inline editor that double-clicking
+  // the lane name opens.
+  const rename = document.createElement("button");
+  rename.className = "menu-item";
+  rename.append(icons.pencil(16), text("Rename context"));
+  rename.addEventListener("click", () => {
+    closeLaneMenu();
+    const nameEl = laneNameEl(laneId);
+    if (nameEl) startLaneRename(nameEl, laneId);
+  });
+
   const addMs = document.createElement("button");
   addMs.className = "menu-item";
   addMs.append(icons.flag(16), text("Add milestone"));
@@ -481,7 +506,7 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     })();
   });
 
-  menu.append(addMs, color, del);
+  menu.append(rename, addMs, color, del);
   document.body.append(menu);
   const r = anchor.getBoundingClientRect();
   // Right-align the menu under the button so it doesn't run off-screen.
