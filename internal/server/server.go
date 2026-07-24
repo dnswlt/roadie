@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dnswlt/roadie/internal/model"
@@ -21,10 +22,17 @@ import (
 type Server struct {
 	store *store.Store
 	mux   *http.ServeMux
+
+	// lastAuto records when each roadmap was last auto-snapshotted, so the
+	// capture throttle (autoSnapshot) is an in-process check rather than a DB
+	// round-trip — and, by claiming the window before capturing, collapses a
+	// burst of concurrent mutations into one snapshot. See autoSnapshot.
+	snapMu   sync.Mutex
+	lastAuto map[int64]time.Time
 }
 
 func New(st *store.Store, static fs.FS) *Server {
-	s := &Server{store: st, mux: http.NewServeMux()}
+	s := &Server{store: st, mux: http.NewServeMux(), lastAuto: map[int64]time.Time{}}
 
 	// Liveness: the process is up. Deliberately does not touch the database —
 	// a DB blip shouldn't get healthy pods killed and restarted.

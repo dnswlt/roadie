@@ -72,20 +72,25 @@ func (s *Server) snap(mode snapMode, resolve roadmapResolver, h http.HandlerFunc
 	}
 }
 
-// autoSnapshot captures roadmapID's current state as an auto snapshot, honoring
-// the throttle for snapThrottle. Errors are logged, not returned: snapshotting
-// must never fail a user's mutation.
+// autoSnapshot captures roadmapID's current state as an auto snapshot. A
+// throttled capture is skipped if the roadmap was auto-snapshotted within
+// snapshotInterval; a forced one (before a delete) always captures. The
+// throttle is an in-process check under snapMu: claiming the window *before*
+// capturing is what collapses a burst of concurrent mutations (a parent moved
+// with its children, a multi-selection shift) into one snapshot instead of one
+// per request. In-process means each replica may capture once per interval —
+// harmless over-capture, since auto snapshots are pruned. Errors are logged,
+// not returned: snapshotting must never fail a user's mutation.
 func (s *Server) autoSnapshot(ctx context.Context, roadmapID int64, mode snapMode) {
-	if mode == snapThrottle {
-		t, ok, err := s.store.LatestSnapshotTime(ctx, roadmapID)
-		if err != nil {
-			log.Printf("auto snapshot (throttle check, roadmap %d): %v", roadmapID, err)
-			return
-		}
-		if ok && time.Since(t) < snapshotInterval {
-			return
-		}
+	s.snapMu.Lock()
+	last, seen := s.lastAuto[roadmapID]
+	if mode == snapThrottle && seen && time.Since(last) < snapshotInterval {
+		s.snapMu.Unlock()
+		return // recent enough; no DB touched
 	}
+	s.lastAuto[roadmapID] = time.Now() // claim the window before capturing
+	s.snapMu.Unlock()
+
 	if _, err := s.store.CreateSnapshot(ctx, roadmapID, model.SnapshotAuto, nil); err != nil {
 		log.Printf("auto snapshot (roadmap %d): %v", roadmapID, err)
 	}

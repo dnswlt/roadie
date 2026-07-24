@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/dnswlt/roadie/internal/model"
@@ -120,5 +122,37 @@ func TestAutoSnapshotPolicy(t *testing.T) {
 	}
 	if snaps := listSnaps(t, id); len(snaps) != 2 {
 		t.Errorf("snapshots after no-op delete: want 2, got %d", len(snaps))
+	}
+}
+
+// TestAutoSnapshotCollapsesBurst fires many PATCHes at once, as the client does
+// when moving a parent with its children or shifting a multi-selection. The
+// in-process debounce (claiming the window before capturing) must collapse them
+// into a single snapshot rather than one per request.
+func TestAutoSnapshotCollapsesBurst(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+	live := decode[model.RoadmapFull](t, do(t, http.MethodGet, "/api/roadmaps/"+itoa(id), nil))
+	itemID := live.Lanes[0].Items[0].ID
+
+	const n = 8
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body, _ := json.Marshal(map[string]string{"title": "T" + itoa(int64(i))})
+			r := httptest.NewRequest(http.MethodPatch, "/api/items/"+itoa(itemID), bytes.NewReader(body))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			testSrv.ServeHTTP(w, r)
+			if w.Code != http.StatusOK {
+				t.Errorf("patch %d: status %d (%s)", i, w.Code, w.Body.String())
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if snaps := listSnaps(t, id); len(snaps) != 1 {
+		t.Fatalf("concurrent burst: want 1 snapshot, got %d", len(snaps))
 	}
 }

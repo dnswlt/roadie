@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -249,21 +248,4 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 		return model.Roadmap{}, err
 	}
 	return rm, tx.Commit(ctx)
-}
-
-// LatestSnapshotTime returns the creation time of the most recent snapshot for
-// roadmapID, and whether any snapshot exists. The server uses it to throttle
-// auto captures (skip if the last one is younger than the capture interval).
-func (s *Store) LatestSnapshotTime(ctx context.Context, roadmapID int64) (time.Time, bool, error) {
-	var t time.Time
-	err := s.pool.QueryRow(ctx,
-		`SELECT created_at FROM snapshots WHERE roadmap_id = $1
-		 ORDER BY created_at DESC, id DESC LIMIT 1`, roadmapID).Scan(&t)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, false, nil
-	}
-	if err != nil {
-		return time.Time{}, false, err
-	}
-	return t, true, nil
 }
