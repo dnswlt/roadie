@@ -80,6 +80,9 @@ func Connect(ctx context.Context, databaseURL string) (*Store, error) {
 
 func (s *Store) Close() { s.pool.Close() }
 
+// Ping verifies database connectivity, backing the /readyz probe.
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

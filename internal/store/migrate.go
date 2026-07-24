@@ -7,7 +7,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// migrateLockKey is an arbitrary but stable key for the advisory lock that
+// serializes concurrent Migrate calls (e.g. several replicas booting at once),
+// so they can't race to apply schema changes. Only Migrate uses it.
+const migrateLockKey = 0x726f6164 // "road"
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
@@ -72,8 +79,33 @@ func checkNoPrunedGap(applied map[int]bool, migs []migration) error {
 // Migrate brings the database schema up to date. A fresh database (nothing in
 // schema_migrations) is built from schema.sql and all migrations marked
 // applied; an existing one gets the pending numbered migrations in order.
+//
+// The whole thing runs under a session-level advisory lock held on a single
+// dedicated connection, so concurrent callers (multiple replicas starting up)
+// serialize: the first applies the schema, the rest wait, then find nothing to
+// do. Running the migration on the held connection — rather than fresh pool
+// connections — also keeps it deadlock-free when the pool is tiny. A crashed
+// process drops the lock automatically when its connection closes.
 func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, int64(migrateLockKey)); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	// Release on a fresh context so an already-cancelled ctx still unlocks.
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, int64(migrateLockKey))
+
+	return migrate(ctx, conn)
+}
+
+// migrate runs the migration steps on a single connection. Callers hold the
+// advisory lock; see Migrate.
+func migrate(ctx context.Context, conn *pgxpool.Conn) error {
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version INT PRIMARY KEY,
 		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`); err != nil {
@@ -81,7 +113,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 
 	applied := map[int]bool{}
-	rows, err := s.pool.Query(ctx, `SELECT version FROM schema_migrations`)
+	rows, err := conn.Query(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return err
 	}
@@ -105,7 +137,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 	// Fresh database: build from schema.sql, then mark every migration applied.
 	if len(applied) == 0 {
-		tx, err := s.pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}
@@ -135,7 +167,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		tx, err := s.pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}

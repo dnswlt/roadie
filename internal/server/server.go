@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dnswlt/roadie/internal/model"
 	"github.com/dnswlt/roadie/internal/store"
@@ -24,7 +26,21 @@ type Server struct {
 func New(st *store.Store, static fs.FS) *Server {
 	s := &Server{store: st, mux: http.NewServeMux()}
 
+	// Liveness: the process is up. Deliberately does not touch the database —
+	// a DB blip shouldn't get healthy pods killed and restarted.
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	// Readiness: the pod can actually serve traffic, which here means the
+	// database is reachable. k8s stops routing to a pod that fails this.
+	s.mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := s.store.Ping(ctx); err != nil {
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Write([]byte("ok"))
 	})
 
