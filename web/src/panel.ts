@@ -9,8 +9,43 @@ import { icons } from "./icons";
 import { extractUrls, linkLabel } from "./links";
 import { state, type MilestoneLocation } from "./state";
 import { toast } from "./toast";
-import type { ItemFull } from "./types";
+import type { Item, ItemFull, Milestone } from "./types";
 import { selectionLink } from "./url";
+
+// confirmAndDeleteItem / confirmAndDeleteMilestone are the delete flow behind
+// both the panel's Delete button and the Del keyboard shortcut: confirm, then
+// delegate to actions. Keeping them shared means the shortcut is exactly the
+// button.
+async function confirmAndDeleteItem(item: Item): Promise<void> {
+  const children = (item as ItemFull).children;
+  const suffix = children && children.length > 0 ? ` and its ${children.length} child item(s)` : "";
+  if (await confirmDialog(`Delete "${item.title}"${suffix}?`)) {
+    void actions.deleteItem(item.id);
+  }
+}
+
+async function confirmAndDeleteMilestone(milestone: Milestone): Promise<void> {
+  if (await confirmDialog(`Delete milestone "${milestone.title}"?`)) {
+    void actions.deleteMilestone(milestone.id);
+  }
+}
+
+// deleteSelection deletes whatever the edit panel currently targets — the one
+// selected item or milestone — mirroring the Delete button. No-op with nothing
+// (or a multi-selection) targeted, or while previewing a snapshot (read-only).
+export function deleteSelection(): void {
+  if (state.preview) return;
+  const msId = state.selectedMilestoneId;
+  if (msId !== null) {
+    const loc = state.findMilestone(msId);
+    if (loc) void confirmAndDeleteMilestone(loc.milestone);
+    return;
+  }
+  const id = state.selectedItemId;
+  if (id === null) return;
+  const loc = state.findItem(id);
+  if (loc) void confirmAndDeleteItem(loc.item);
+}
 
 // copyLinkButton builds a "copy shareable link" icon button for the panel head.
 // The link is generated on demand from the current roadmap + this selection —
@@ -170,17 +205,19 @@ export function renderPanel(panel: HTMLElement): void {
     addChild.textContent = "+ Add child";
     addChild.addEventListener("click", () => void actions.addItem(item.laneId, item.id));
     actionsRow.append(addChild);
+  } else {
+    const addSibling = document.createElement("button");
+    addSibling.className = "btn";
+    addSibling.textContent = "+ Add sibling";
+    addSibling.addEventListener("click", () =>
+      void actions.addItem(item.laneId, parent.id, { start: item.startDate, end: item.endDate })
+    );
+    actionsRow.append(addSibling);
   }
   const del = document.createElement("button");
   del.className = "btn btn-danger";
   del.textContent = "Delete";
-  del.addEventListener("click", async () => {
-    const children = (item as ItemFull).children;
-    const suffix = children && children.length > 0 ? ` and its ${children.length} child item(s)` : "";
-    if (await confirmDialog(`Delete "${item.title}"${suffix}?`)) {
-      void actions.deleteItem(item.id);
-    }
-  });
+  del.addEventListener("click", () => void confirmAndDeleteItem(item));
   actionsRow.append(del);
 
   panel.append(head, crumb, title.wrap, desc.wrap, linksSection, dates, prio, labels, actionsRow);
@@ -328,11 +365,7 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
   const del = document.createElement("button");
   del.className = "btn btn-danger";
   del.textContent = "Delete";
-  del.addEventListener("click", async () => {
-    if (await confirmDialog(`Delete milestone "${milestone.title}"?`)) {
-      void actions.deleteMilestone(milestone.id);
-    }
-  });
+  del.addEventListener("click", () => void confirmAndDeleteMilestone(milestone));
   actionsRow.append(del);
 
   panel.append(head, crumb, title.wrap, dateField.wrap, desc.wrap, linksSection, actionsRow);

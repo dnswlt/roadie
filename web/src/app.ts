@@ -7,7 +7,7 @@ import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { LABEL_W } from "./layout";
 import { currentScale, renderChart } from "./render";
-import { renderPanel } from "./panel";
+import { deleteSelection, renderPanel } from "./panel";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
 import { readUrl, type UrlTarget } from "./url";
@@ -641,12 +641,20 @@ async function boot(): Promise<void> {
   wirePanelResize();
   initDnd(chart);
   window.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    // Escape backs out of history browsing first, then clears any selection.
-    if (state.history !== null) {
-      void actions.closeHistory();
-    } else if (state.clearSelection()) {
-      state.notify();
+    if (e.key === "Escape") {
+      // Escape backs out of history browsing first, then clears any selection —
+      // works even from inside a panel field (blur + deselect).
+      if (state.history !== null) {
+        void actions.closeHistory();
+      } else if (state.clearSelection()) {
+        state.notify();
+      }
+    } else if (e.key === "Delete") {
+      // Del deletes the selected item/milestone — the panel's Delete button —
+      // but not while typing in a field, where Del means "delete a character".
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      deleteSelection();
     }
   });
 

@@ -274,13 +274,18 @@ export const actions = {
   // addItem creates an item with default dates and selects it for editing.
   // Top-level items span DEFAULT_ITEM_SPAN days from today. A child instead
   // starts at its parent's start and runs the default span, but never past the
-  // parent's own end — so a short parent yields a short child.
-  async addItem(laneId: number, parentId: number | null): Promise<void> {
+  // parent's own end — so a short parent yields a short child. If explicit
+  // dates are provided (e.g. for siblings), the new item uses those exact dates.
+  async addItem(laneId: number, parentId: number | null, dates?: { start: string; end: string }): Promise<void> {
     if (state.preview) return;
     const today = todayDay();
     let startDay = today;
     let endDay = today + DEFAULT_ITEM_SPAN;
-    if (parentId !== null) {
+
+    if (dates) {
+      startDay = dayOf(dates.start);
+      endDay = dayOf(dates.end);
+    } else if (parentId !== null) {
       const parentLoc = state.findItem(parentId);
       if (parentLoc) {
         startDay = dayOf(parentLoc.item.startDate);
