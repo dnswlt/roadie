@@ -105,7 +105,7 @@ export const actions = {
       state.loadCollapsed();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
-      setRoadmapUrl(id);
+      setRoadmapUrl(state.current);
       state.notify();
     } catch (e) {
       toast(errMsg(e), true);
@@ -147,6 +147,8 @@ export const actions = {
       },
       () => api.renameRoadmap(id, name),
     );
+    // Refresh the decorative name slug in the address bar (id is unchanged).
+    setRoadmapUrl(state.current);
   },
 
   async deleteRoadmap(): Promise<void> {

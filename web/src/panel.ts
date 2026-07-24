@@ -21,10 +21,10 @@ function copyLinkButton(kind: "item" | "milestone", id: number): HTMLButtonEleme
   btn.title = "Copy link";
   btn.append(icons.link(16));
   btn.addEventListener("click", async () => {
-    const roadmapId = state.current?.id;
-    if (roadmapId === undefined) return;
+    const roadmap = state.current;
+    if (!roadmap) return;
     try {
-      await navigator.clipboard.writeText(selectionLink(roadmapId, kind, id));
+      await navigator.clipboard.writeText(selectionLink(roadmap, kind, id));
       toast("Link copied");
     } catch {
       toast("Couldn't copy link", true);
