@@ -50,18 +50,26 @@ func New(st *store.Store, static fs.FS) *Server {
 	s.mux.HandleFunc("POST /api/roadmaps/{id}/duplicate", s.duplicateRoadmap)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/export", s.exportRoadmap)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}", s.getRoadmap)
-	s.mux.HandleFunc("PATCH /api/roadmaps/{id}", s.patchRoadmap)
+	s.mux.HandleFunc("PATCH /api/roadmaps/{id}", s.snap(snapThrottle, byRoadmapID, s.patchRoadmap))
+	// No auto snapshot on roadmap delete: the FK cascade removes its snapshots too.
 	s.mux.HandleFunc("DELETE /api/roadmaps/{id}", s.deleteRoadmap)
-	s.mux.HandleFunc("POST /api/roadmaps/{id}/lanes", s.createLane)
-	s.mux.HandleFunc("PUT /api/roadmaps/{id}/lane-order", s.reorderLanes)
-	s.mux.HandleFunc("PATCH /api/lanes/{id}", s.patchLane)
-	s.mux.HandleFunc("DELETE /api/lanes/{id}", s.deleteLane)
-	s.mux.HandleFunc("POST /api/lanes/{id}/items", s.createItem)
-	s.mux.HandleFunc("PATCH /api/items/{id}", s.patchItem)
-	s.mux.HandleFunc("DELETE /api/items/{id}", s.deleteItem)
-	s.mux.HandleFunc("POST /api/lanes/{id}/milestones", s.createMilestone)
-	s.mux.HandleFunc("PATCH /api/milestones/{id}", s.patchMilestone)
-	s.mux.HandleFunc("DELETE /api/milestones/{id}", s.deleteMilestone)
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/lanes", s.snap(snapThrottle, byRoadmapID, s.createLane))
+	s.mux.HandleFunc("PUT /api/roadmaps/{id}/lane-order", s.snap(snapThrottle, byRoadmapID, s.reorderLanes))
+	s.mux.HandleFunc("PATCH /api/lanes/{id}", s.snap(snapThrottle, byLaneID, s.patchLane))
+	s.mux.HandleFunc("DELETE /api/lanes/{id}", s.snap(snapForce, byLaneID, s.deleteLane))
+	s.mux.HandleFunc("POST /api/lanes/{id}/items", s.snap(snapThrottle, byLaneID, s.createItem))
+	s.mux.HandleFunc("PATCH /api/items/{id}", s.snap(snapThrottle, byItemID, s.patchItem))
+	s.mux.HandleFunc("DELETE /api/items/{id}", s.snap(snapForce, byItemID, s.deleteItem))
+	s.mux.HandleFunc("POST /api/lanes/{id}/milestones", s.snap(snapThrottle, byLaneID, s.createMilestone))
+	s.mux.HandleFunc("PATCH /api/milestones/{id}", s.snap(snapThrottle, byMilestoneID, s.patchMilestone))
+	s.mux.HandleFunc("DELETE /api/milestones/{id}", s.snap(snapForce, byMilestoneID, s.deleteMilestone))
+
+	// Snapshots (version history). Restore captures the pre-restore state in the
+	// store, so it is deliberately not wrapped with s.snap.
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/snapshots", s.listSnapshots)
+	s.mux.HandleFunc("GET /api/snapshots/{id}", s.getSnapshot)
+	s.mux.HandleFunc("POST /api/snapshots/{id}/restore", s.restoreSnapshot)
+	s.mux.HandleFunc("DELETE /api/snapshots/{id}", s.deleteSnapshot)
 
 	s.mux.Handle("/", http.FileServerFS(static))
 	return s

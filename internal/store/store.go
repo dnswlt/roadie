@@ -62,6 +62,42 @@ func (s *Store) lockRoadmapByItem(ctx context.Context, tx pgx.Tx, itemID int64) 
 	return roadmapID, s.lockRoadmap(ctx, tx, roadmapID)
 }
 
+// RoadmapIDByLane returns the roadmap that owns laneID, or ErrNotFound. It is a
+// plain (non-locking) lookup used to resolve which roadmap a request touches,
+// e.g. for auto snapshots.
+func (s *Store) RoadmapIDByLane(ctx context.Context, laneID int64) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `SELECT roadmap_id FROM lanes WHERE id = $1`, laneID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
+}
+
+// RoadmapIDByItem returns the roadmap that owns itemID, or ErrNotFound.
+func (s *Store) RoadmapIDByItem(ctx context.Context, itemID int64) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT roadmap_id FROM lanes WHERE id = (SELECT lane_id FROM items WHERE id = $1)`,
+		itemID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
+}
+
+// RoadmapIDByMilestone returns the roadmap that owns milestoneID, or ErrNotFound.
+func (s *Store) RoadmapIDByMilestone(ctx context.Context, milestoneID int64) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT roadmap_id FROM lanes WHERE id = (SELECT lane_id FROM milestones WHERE id = $1)`,
+		milestoneID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
+}
+
 type Store struct {
 	pool *pgxpool.Pool
 }
