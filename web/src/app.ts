@@ -9,6 +9,7 @@ import { currentScale, renderChart } from "./render";
 import { renderPanel } from "./panel";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
+import { readUrl, type UrlTarget } from "./url";
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -603,6 +604,25 @@ function toggleColorPop(anchor: HTMLElement, laneId: number): void {
   document.body.append(pop);
 }
 
+// applySelection restores a deep-linked item/milestone selection after its
+// roadmap is loaded. It expands a collapsed parent so the target is on screen,
+// and asks the next render to scroll it into view. It does not notify — boot
+// does, once, at the end.
+function applySelection(sel: UrlTarget["selection"]): void {
+  if (!sel) return;
+  if (sel.kind === "item") {
+    const loc = state.findItem(sel.id);
+    if (!loc) return;
+    if (loc.parent) state.setCollapsed(loc.parent.id, false);
+    state.selectItem(sel.id);
+  } else if (!state.findMilestone(sel.id)) {
+    return;
+  } else {
+    state.selectMilestone(sel.id);
+  }
+  state.scrollToSelection = true;
+}
+
 async function boot(): Promise<void> {
   state.subscribe(render);
   injectIcons();
@@ -629,14 +649,27 @@ async function boot(): Promise<void> {
     state.panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, storedWidth));
   }
 
+  // Capture the deep link before anything can rewrite the address bar.
+  const target = readUrl();
+
   await actions.loadRoadmaps();
-  const stored = Number(localStorage.getItem("roadie.roadmap"));
-  const initial = state.roadmaps.find((r) => r.id === stored) ?? state.roadmaps[0];
+
+  let initial = target.roadmapId !== null
+    ? state.roadmaps.find((r) => r.id === target.roadmapId)
+    : undefined;
+  if (!initial) {
+    const stored = Number(localStorage.getItem("roadie.roadmap"));
+    initial = state.roadmaps.find((r) => r.id === stored) ?? state.roadmaps[0];
+  }
+
   if (initial) {
     await actions.selectRoadmap(initial.id);
-  } else {
-    state.notify();
+    // Only honour the hash selection if we actually landed on its roadmap;
+    // a stale/foreign roadmap id would point the selection at the wrong chart.
+    if (initial.id === target.roadmapId) applySelection(target.selection);
   }
+
+  state.notify();
 }
 
 void boot();

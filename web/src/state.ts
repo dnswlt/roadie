@@ -55,6 +55,9 @@ class AppState {
   focusLabel: string | null = null;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
+  // Set when a selection should be scrolled into view once (e.g. a deep link
+  // opened with #item-/#milestone-). Takes precedence over scrollToToday.
+  scrollToSelection = false;
   // Lanes hidden from the chart. Purely a view preference (not part of the
   // data model), persisted per roadmap in localStorage.
   hiddenLanes = new Set<number>();

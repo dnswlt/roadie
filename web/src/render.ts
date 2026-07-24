@@ -116,7 +116,15 @@ export function renderChart(container: HTMLElement): void {
   grid.append(thead, lanesEl, addRow);
   container.append(grid);
 
-  if (state.scrollToToday) {
+  const selectedEl = state.scrollToSelection
+    ? container.querySelector<HTMLElement>(".block.selected, .child-bar.selected, .milestone.selected")
+    : null;
+  if (state.scrollToSelection && selectedEl) {
+    state.scrollToSelection = false;
+    state.scrollToToday = false;
+    selectedEl.scrollIntoView({ block: "center", inline: "center" });
+  } else if (state.scrollToToday) {
+    state.scrollToSelection = false;
     state.scrollToToday = false;
     container.scrollLeft = Math.max(0, LABEL_W + tx - container.clientWidth / 2);
     container.scrollTop = 0;

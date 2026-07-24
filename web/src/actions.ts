@@ -7,6 +7,7 @@ import { state } from "./state";
 import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
 import type { Item, ItemFull, ItemPatch, MilestonePatch } from "./types";
+import { setRoadmapUrl } from "./url";
 
 // Default item length, in days added to the start (end date is inclusive, so
 // this spans DEFAULT_ITEM_SPAN + 1 days). Shared by new top-level items and,
@@ -104,6 +105,7 @@ export const actions = {
       state.loadCollapsed();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
+      setRoadmapUrl(id);
       state.notify();
     } catch (e) {
       toast(errMsg(e), true);
@@ -157,7 +159,10 @@ export const actions = {
       state.clearSelection();
       const next = state.roadmaps[0];
       if (next) await this.selectRoadmap(next.id);
-      else state.notify();
+      else {
+        setRoadmapUrl(null);
+        state.notify();
+      }
     } catch (e) {
       toast(errMsg(e), true);
     }

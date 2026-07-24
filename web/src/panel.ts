@@ -8,7 +8,30 @@ import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { extractUrls, linkLabel } from "./links";
 import { state, type MilestoneLocation } from "./state";
+import { toast } from "./toast";
 import type { ItemFull } from "./types";
+import { selectionLink } from "./url";
+
+// copyLinkButton builds a "copy shareable link" icon button for the panel head.
+// The link is generated on demand from the current roadmap + this selection —
+// the address bar itself never carries the selection (see url.ts).
+function copyLinkButton(kind: "item" | "milestone", id: number): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = "icon-btn";
+  btn.title = "Copy link";
+  btn.append(icons.link(16));
+  btn.addEventListener("click", async () => {
+    const roadmapId = state.current?.id;
+    if (roadmapId === undefined) return;
+    try {
+      await navigator.clipboard.writeText(selectionLink(roadmapId, kind, id));
+      toast("Link copied");
+    } catch {
+      toast("Couldn't copy link", true);
+    }
+  });
+  return btn;
+}
 
 // Identifies what the panel currently shows, e.g. "item:5" or "ms:3", so a
 // re-render can skip rebuilding the panel under the user's cursor.
@@ -60,7 +83,10 @@ export function renderPanel(panel: HTMLElement): void {
     state.clearSelection();
     state.notify();
   });
-  head.append(kind, close);
+  const headActions = document.createElement("div");
+  headActions.className = "panel-head-actions";
+  headActions.append(copyLinkButton("item", item.id), close);
+  head.append(kind, headActions);
 
   const crumb = document.createElement("div");
   crumb.className = "panel-crumb";
@@ -254,7 +280,10 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
     state.clearSelection();
     state.notify();
   });
-  head.append(kind, close);
+  const headActions = document.createElement("div");
+  headActions.className = "panel-head-actions";
+  headActions.append(copyLinkButton("milestone", milestone.id), close);
+  head.append(kind, headActions);
 
   const crumb = document.createElement("div");
   crumb.className = "panel-crumb";
