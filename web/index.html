@@ -23,6 +23,7 @@
         <div id="rm-menu-pop" class="menu hidden">
           <button id="rm-rename" class="menu-item">Rename</button>
           <button id="rm-duplicate" class="menu-item">Duplicate…</button>
+          <button id="rm-history" class="menu-item">Version history…</button>
           <button id="rm-export" class="menu-item">Export…</button>
           <button id="rm-import" class="menu-item">Import…</button>
           <button id="rm-delete" class="menu-item menu-danger">Delete roadmap</button>
@@ -50,9 +51,11 @@
       </div>
     </header>
     <div class="main">
+      <div id="snapshot-banner" class="snapshot-banner hidden"></div>
       <div id="chart" class="chart-scroll"></div>
       <div id="panel-resize" title="Drag to resize"></div>
       <aside id="panel" class="panel"></aside>
+      <aside id="history" class="history"></aside>
     </div>
     <div id="toasts"></div>
     <dialog id="dialog"></dialog>

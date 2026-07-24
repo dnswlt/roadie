@@ -41,7 +41,10 @@ export function promptDialog(title: string, initial = "", okLabel = "OK"): Promi
   });
 }
 
-export function confirmDialog(message: string, okLabel = "Delete"): Promise<boolean> {
+// confirmDialog asks a yes/no question. The confirm button is a red "Delete"
+// by default (the common case); pass danger = false for a non-destructive
+// confirmation (e.g. restore), which uses the neutral button style instead.
+export function confirmDialog(message: string, okLabel = "Delete", danger = true): Promise<boolean> {
   const dlg = dialogEl();
   dlg.replaceChildren();
   const p = document.createElement("p");
@@ -52,7 +55,7 @@ export function confirmDialog(message: string, okLabel = "Delete"): Promise<bool
   cancel.className = "btn";
   cancel.textContent = "Cancel";
   const ok = document.createElement("button");
-  ok.className = "btn btn-danger";
+  ok.className = danger ? "btn btn-danger" : "btn";
   ok.textContent = okLabel;
   row.append(cancel, ok);
   dlg.append(p, row);

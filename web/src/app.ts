@@ -3,6 +3,7 @@ import { actions } from "./actions";
 import { LANE_COLOR_ORDER, laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { initDnd } from "./dnd";
+import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { LABEL_W } from "./layout";
 import { currentScale, renderChart } from "./render";
@@ -20,6 +21,8 @@ function $(id: string): HTMLElement {
 const chart = $("chart");
 const panel = $("panel");
 const panelResize = $("panel-resize");
+const historyEl = $("history");
+const snapshotBanner = $("snapshot-banner");
 const rmPicker = $("rm-picker") as HTMLButtonElement;
 
 // Human labels for the drag-snap grids, in menu order.
@@ -34,6 +37,7 @@ function render(): void {
   renderTopbar();
   renderChart(chart);
   renderPanel(panel);
+  renderHistory(historyEl, snapshotBanner);
 }
 
 function renderTopbar(): void {
@@ -47,6 +51,7 @@ function renderTopbar(): void {
   rmPicker.disabled = state.roadmaps.length === 0;
   ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
   ($("rm-duplicate") as HTMLButtonElement).disabled = !state.current;
+  ($("rm-history") as HTMLButtonElement).disabled = !state.current;
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
   // Surface active focus even while the dropdown is closed.
@@ -199,6 +204,7 @@ function injectIcons(): void {
   $("focus-menu").append(icons.tag(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
+  $("rm-history").prepend(icons.history(14));
   $("rm-export").prepend(icons.download(14));
   $("rm-import").prepend(icons.upload(14));
   $("rm-delete").prepend(icons.trash(14));
@@ -274,6 +280,10 @@ function wireTopbar(): void {
     // Prefill a distinct name so the copy is deliberately named, not "(2)".
     const name = await promptDialog("Duplicate roadmap", `${state.current.name} (copy)`, "Duplicate");
     if (name) void actions.duplicateRoadmap(name);
+  });
+  $("rm-history").addEventListener("click", () => {
+    menuPop.classList.add("hidden");
+    void actions.openHistory();
   });
   $("rm-export").addEventListener("click", () => {
     menuPop.classList.add("hidden");
@@ -631,7 +641,11 @@ async function boot(): Promise<void> {
   wirePanelResize();
   initDnd(chart);
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && state.clearSelection()) {
+    if (e.key !== "Escape") return;
+    // Escape backs out of history browsing first, then clears any selection.
+    if (state.history !== null) {
+      void actions.closeHistory();
+    } else if (state.clearSelection()) {
       state.notify();
     }
   });

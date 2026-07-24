@@ -19,6 +19,10 @@ function errMsg(e: unknown): string {
 }
 
 async function optimistic(mutate: () => void, call: () => Promise<unknown>): Promise<boolean> {
+  // Single choke point: no mutation persists while previewing a snapshot (its
+  // IDs are historical and could hit the wrong live row). Silently no-op — the
+  // snapshot banner already explains why edits don't take.
+  if (state.preview) return false;
   const snap = state.snapshot();
   mutate();
   state.notify();
@@ -30,6 +34,16 @@ async function optimistic(mutate: () => void, call: () => Promise<unknown>): Pro
     toast(errMsg(e), true);
     return false;
   }
+}
+
+// reloadLive re-fetches the live roadmap into `current`, used when leaving a
+// snapshot preview. Unlike selectRoadmap it keeps the scroll position and view
+// prefs (they never changed while viewing) and doesn't touch history/preview,
+// so the caller controls those. Throws on failure.
+async function reloadLive(): Promise<void> {
+  if (!state.current) return;
+  state.current = await api.getRoadmap(state.current.id);
+  state.clearSelection();
 }
 
 function renumber(items: Item[]): void {
@@ -100,6 +114,8 @@ export const actions = {
     try {
       state.current = await api.getRoadmap(id);
       state.clearSelection();
+      state.history = null; // switching roadmaps exits history browsing
+      state.preview = null;
       state.focusLabel = null; // labels are per-roadmap; don't carry focus across
       state.loadHiddenLanes();
       state.loadCollapsed();
@@ -198,7 +214,7 @@ export const actions = {
   },
 
   async addLane(name: string): Promise<void> {
-    if (!state.current) return;
+    if (!state.current || state.preview) return;
     try {
       const lane = await api.createLane(state.current.id, name);
       state.current.lanes.push({ ...lane, items: [], milestones: [] });
@@ -260,6 +276,7 @@ export const actions = {
   // starts at its parent's start and runs the default span, but never past the
   // parent's own end — so a short parent yields a short child.
   async addItem(laneId: number, parentId: number | null): Promise<void> {
+    if (state.preview) return;
     const today = todayDay();
     let startDay = today;
     let endDay = today + DEFAULT_ITEM_SPAN;
@@ -377,6 +394,7 @@ export const actions = {
   // addMilestone creates a milestone dated today and selects it for editing.
   // Not optimistic (the server assigns the ID).
   async addMilestone(laneId: number): Promise<void> {
+    if (state.preview) return;
     try {
       const milestone = await api.createMilestone(laneId, {
         title: "New milestone",
@@ -422,5 +440,75 @@ export const actions = {
       },
       () => api.deleteMilestone(id),
     );
+  },
+
+  // Version history (snapshots).
+
+  // openHistory loads the current roadmap's snapshots and opens the history
+  // side-list. The live roadmap stays on screen until a snapshot is picked.
+  async openHistory(): Promise<void> {
+    if (!state.current) return;
+    try {
+      state.history = await api.listSnapshots(state.current.id);
+      state.notify();
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
+  // closeHistory leaves history browsing entirely. If a snapshot was being
+  // previewed, the live roadmap is reloaded to discard it.
+  async closeHistory(): Promise<void> {
+    try {
+      if (state.preview) await reloadLive();
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+    state.preview = null;
+    state.history = null;
+    state.notify();
+  },
+
+  // viewSnapshot loads a snapshot's contents into `current` for read-only
+  // viewing (live scrub). Nothing is lost: the live roadmap is reloaded from
+  // the server whenever preview is left.
+  async viewSnapshot(snapshotId: number, createdAt: string): Promise<void> {
+    try {
+      const full = await api.getSnapshot(snapshotId);
+      state.current = full;
+      state.preview = { snapshotId, createdAt };
+      state.clearSelection();
+      state.notify();
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
+  // backToCurrent leaves preview (shows the live roadmap again) but keeps the
+  // history list open, so the user can pick another snapshot.
+  async backToCurrent(): Promise<void> {
+    if (!state.preview) return;
+    try {
+      await reloadLive();
+      state.preview = null;
+      state.notify();
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
+  // restoreSnapshot replaces the roadmap with the snapshot's contents (the
+  // server keeps a snapshot of the pre-restore state), then exits history and
+  // reloads the now-restored roadmap.
+  async restoreSnapshot(snapshotId: number): Promise<void> {
+    try {
+      const rm = await api.restoreSnapshot(snapshotId);
+      state.history = null;
+      state.preview = null;
+      await this.selectRoadmap(rm.id);
+      toast("Restored this version");
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
   },
 };

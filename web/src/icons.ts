@@ -108,6 +108,13 @@ export const icons = {
       `<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>`,
       size,
     ),
+  history: (size = 16) =>
+    svg(
+      `<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>`,
+      size,
+    ),
+  rotateCcw: (size = 16) =>
+    svg(`<path d="M3 12a9 9 0 1 0 3-7.7L3 8"/><path d="M3 3v5h5"/>`, size),
   eyeOff: (size = 16) =>
     svg(
       `<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68"/>` +

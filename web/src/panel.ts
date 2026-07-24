@@ -38,6 +38,16 @@ function copyLinkButton(kind: "item" | "milestone", id: number): HTMLButtonEleme
 let renderedKey: string | null = null;
 
 export function renderPanel(panel: HTMLElement): void {
+  // While browsing version history the right side belongs to the history list,
+  // and a snapshot preview is read-only — so the edit panel steps aside.
+  if (state.history !== null) {
+    panel.classList.remove("open");
+    panel.style.width = "";
+    panel.replaceChildren();
+    renderedKey = null;
+    return;
+  }
+
   const msId = state.selectedMilestoneId;
   const msLoc = msId !== null ? state.findMilestone(msId) : null;
   if (msLoc) {

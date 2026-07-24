@@ -52,6 +52,16 @@ export interface RoadmapFull extends Roadmap {
   lanes: LaneFull[];
 }
 
+// Snapshot metadata (no payload) for the version-history list. `name` is set
+// only for manual/named snapshots; auto snapshots have a null name.
+export interface Snapshot {
+  id: number;
+  roadmapId: number;
+  name: string | null;
+  kind: "auto" | "manual";
+  createdAt: string; // ISO 8601 timestamp
+}
+
 // Partial update for PATCH /api/items/{id}. parentId: null explicitly
 // detaches an item from its parent.
 export interface ItemPatch {

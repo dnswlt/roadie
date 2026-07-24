@@ -80,6 +80,9 @@ export function initDnd(chart: HTMLElement): void {
 
 function onPointerDown(e: PointerEvent): void {
   if (e.button !== 0 || drag || !chartEl) return;
+  // No gestures while previewing a snapshot: the view is read-only (see
+  // actions.optimistic). Bailing here avoids a drag preview that couldn't commit.
+  if (state.preview) return;
   const t = e.target as HTMLElement;
 
   // The bar's external-link icon is a real anchor: let its click through

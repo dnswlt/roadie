@@ -9,6 +9,7 @@ import type {
   NewMilestone,
   Roadmap,
   RoadmapFull,
+  Snapshot,
 } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -41,6 +42,12 @@ export const api = {
   importRoadmap: (data: unknown) => req<Roadmap>("POST", "/api/roadmaps/import", data),
   duplicateRoadmap: (id: number, name: string) =>
     req<Roadmap>("POST", `/api/roadmaps/${id}/duplicate`, { name }),
+
+  listSnapshots: (roadmapId: number) =>
+    req<Snapshot[]>("GET", `/api/roadmaps/${roadmapId}/snapshots`),
+  getSnapshot: (id: number) => req<RoadmapFull>("GET", `/api/snapshots/${id}`),
+  restoreSnapshot: (id: number) => req<Roadmap>("POST", `/api/snapshots/${id}/restore`),
+  deleteSnapshot: (id: number) => req<void>("DELETE", `/api/snapshots/${id}`),
 
   createLane: (roadmapId: number, name: string) =>
     req<Lane>("POST", `/api/roadmaps/${roadmapId}/lanes`, { name }),

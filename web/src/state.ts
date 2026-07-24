@@ -1,5 +1,5 @@
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
-import type { Item, ItemFull, LaneFull, Milestone, Roadmap, RoadmapFull } from "./types";
+import type { Item, ItemFull, LaneFull, Milestone, Roadmap, RoadmapFull, Snapshot } from "./types";
 
 // Edit-panel width (px). A global view preference, persisted in localStorage
 // and adjustable by dragging the panel's left edge.
@@ -64,6 +64,15 @@ class AppState {
   // Parent items whose children are folded away. Like hiddenLanes: a view
   // preference, per roadmap, never sent to the server.
   collapsed = new Set<number>();
+
+  // Version-history browsing. `history` holds the loaded snapshot list while
+  // the history side-list is open (null = closed). `preview` is set when a
+  // specific snapshot is loaded into `current` for read-only viewing. While
+  // `preview` is set, every mutation is blocked (actions.ts / dnd.ts) — it is
+  // the single source of truth for "am I looking at a snapshot", so no
+  // read-only flag has to be threaded through the render/menu code.
+  history: Snapshot[] | null = null;
+  preview: { snapshotId: number; createdAt: string } | null = null;
 
   private listeners: Array<() => void> = [];
 
