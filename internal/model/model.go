@@ -128,3 +128,21 @@ type RoadmapExport struct {
 	Version int         `json:"version"`
 	Roadmap RoadmapFull `json:"roadmap"`
 }
+
+// Snapshot kinds. Auto snapshots are captured on a throttle and pruned; manual
+// (named) snapshots are user-created and kept indefinitely.
+const (
+	SnapshotAuto   = "auto"
+	SnapshotManual = "manual"
+)
+
+// Snapshot is the metadata for one stored version of a roadmap. The payload
+// blob (a RoadmapExport) is deliberately not part of this struct: listings
+// return metadata only, and the full contents are fetched separately.
+type Snapshot struct {
+	ID        int64     `json:"id"`
+	RoadmapID int64     `json:"roadmapId"`
+	Name      *string   `json:"name"` // null for unnamed/auto snapshots
+	Kind      string    `json:"kind"`
+	CreatedAt time.Time `json:"createdAt"`
+}

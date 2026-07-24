@@ -360,6 +360,19 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull) (model
 		return model.Roadmap{}, err
 	}
 
+	if err := s.insertRoadmapContents(ctx, tx, rm.ID, src); err != nil {
+		return model.Roadmap{}, err
+	}
+	return rm, tx.Commit(ctx)
+}
+
+// insertRoadmapContents writes the lanes, items (with children) and milestones
+// of src into the already-created roadmap roadmapID, within tx. Lane order
+// (position) and item order (rank) come from the array order, not the stored
+// fields, so the result is dense and consistent regardless of the source. It
+// assumes roadmapID has no lanes yet (a fresh import target, or one just
+// cleared by RestoreSnapshot). Shared by ImportRoadmap and RestoreSnapshot.
+func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID int64, src model.RoadmapFull) error {
 	// insertItem writes one item and returns its new ID. parentID is nil for
 	// top-level items; rank is the caller-supplied dense index.
 	insertItem := func(it model.Item, laneID int64, parentID *int64, rank int) (int64, error) {
@@ -387,7 +400,7 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull) (model
 	for pos, lane := range src.Lanes {
 		laneName := strings.TrimSpace(lane.Name)
 		if laneName == "" {
-			return model.Roadmap{}, invalidf("lane name must not be empty")
+			return invalidf("lane name must not be empty")
 		}
 		color := lane.Color
 		if !validLaneColor(color) {
@@ -396,35 +409,35 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull) (model
 		var laneID int64
 		if err := tx.QueryRow(ctx,
 			`INSERT INTO lanes (roadmap_id, name, position, color) VALUES ($1, $2, $3, $4) RETURNING id`,
-			rm.ID, laneName, pos, color).Scan(&laneID); err != nil {
-			return model.Roadmap{}, err
+			roadmapID, laneName, pos, color).Scan(&laneID); err != nil {
+			return err
 		}
 		for rank, item := range lane.Items {
 			parentID, err := insertItem(item.Item, laneID, nil, rank)
 			if err != nil {
-				return model.Roadmap{}, err
+				return err
 			}
 			for crank, child := range item.Children {
 				if _, err := insertItem(child, laneID, &parentID, crank); err != nil {
-					return model.Roadmap{}, err
+					return err
 				}
 			}
 		}
 		for _, ms := range lane.Milestones {
 			if strings.TrimSpace(ms.Title) == "" {
-				return model.Roadmap{}, invalidf("milestone title must not be empty")
+				return invalidf("milestone title must not be empty")
 			}
 			if ms.Date.IsZero() {
-				return model.Roadmap{}, invalidf("milestone %q is missing a date", ms.Title)
+				return invalidf("milestone %q is missing a date", ms.Title)
 			}
 			if _, err := tx.Exec(ctx,
 				`INSERT INTO milestones (lane_id, title, description, date) VALUES ($1, $2, $3, $4)`,
 				laneID, ms.Title, ms.Description, ms.Date.Time); err != nil {
-				return model.Roadmap{}, err
+				return err
 			}
 		}
 	}
-	return rm, tx.Commit(ctx)
+	return nil
 }
 
 // Lanes
