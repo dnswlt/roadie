@@ -36,18 +36,17 @@ func (s *Store) CreateSnapshot(ctx context.Context, roadmapID int64, kind string
 	if kind != model.SnapshotAuto && kind != model.SnapshotManual {
 		return model.Snapshot{}, invalidf("invalid snapshot kind %q", kind)
 	}
+	// GetRoadmapFull reads a consistent snapshot, so the captured blob is never
+	// torn by a concurrent edit. Encoding the (immutable) value and inserting it
+	// in a separate transaction is fine: the snapshot represents that committed
+	// point-in-time regardless of later edits.
 	full, err := s.GetRoadmapFull(ctx, roadmapID)
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	exp := model.RoadmapExport{
-		Format:  model.ExportFormat,
-		Version: model.ExportVersion,
-		Roadmap: full,
-	}
-	data, err := json.Marshal(exp)
+	data, err := encodeSnapshot(full)
 	if err != nil {
-		return model.Snapshot{}, fmt.Errorf("encode snapshot: %w", err)
+		return model.Snapshot{}, err
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -56,10 +55,7 @@ func (s *Store) CreateSnapshot(ctx context.Context, roadmapID int64, kind string
 	}
 	defer tx.Rollback(ctx)
 
-	snap, err := scanSnapshot(tx.QueryRow(ctx,
-		`INSERT INTO snapshots (roadmap_id, name, kind, format_version, data)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING `+snapshotMetaCols,
-		roadmapID, name, kind, model.ExportVersion, data))
+	snap, err := insertSnapshot(ctx, tx, roadmapID, kind, name, data)
 	if err != nil {
 		return model.Snapshot{}, err
 	}
@@ -69,6 +65,28 @@ func (s *Store) CreateSnapshot(ctx context.Context, roadmapID int64, kind string
 		}
 	}
 	return snap, tx.Commit(ctx)
+}
+
+// encodeSnapshot serializes a roadmap into the stored payload (the export
+// envelope JSON).
+func encodeSnapshot(full model.RoadmapFull) ([]byte, error) {
+	data, err := json.Marshal(model.RoadmapExport{
+		Format:  model.ExportFormat,
+		Version: model.ExportVersion,
+		Roadmap: full,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode snapshot: %w", err)
+	}
+	return data, nil
+}
+
+// insertSnapshot writes one snapshot row within tx and returns its metadata.
+func insertSnapshot(ctx context.Context, tx pgx.Tx, roadmapID int64, kind string, name *string, data []byte) (model.Snapshot, error) {
+	return scanSnapshot(tx.QueryRow(ctx,
+		`INSERT INTO snapshots (roadmap_id, name, kind, format_version, data)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING `+snapshotMetaCols,
+		roadmapID, name, kind, model.ExportVersion, data))
 }
 
 // pruneAutoSnapshots deletes auto snapshots of roadmapID beyond the newest
@@ -165,9 +183,12 @@ func (s *Store) DeleteSnapshot(ctx context.Context, snapID int64) error {
 }
 
 // RestoreSnapshot replaces a roadmap's current contents with those stored in
-// snapshot snapID, keeping the same roadmap (id and name). The pre-restore
-// state is captured as an auto snapshot first, so a restore is itself
-// reversible. The replacement runs in one transaction under the roadmap lock.
+// snapshot snapID, keeping the same roadmap (id and name). The whole thing runs
+// in one transaction under the roadmap lock: it captures the pre-restore state
+// as an auto snapshot (so a restore is itself reversible) and then swaps the
+// contents, atomically — a concurrent editor's changes are either fully in the
+// undo snapshot (committed before us) or fully rejected (blocked until we
+// finish), never silently lost in between.
 func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadmap, error) {
 	var roadmapID int64
 	var data []byte
@@ -184,22 +205,36 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 		return model.Roadmap{}, fmt.Errorf("decode snapshot %d: %w", snapID, err)
 	}
 
-	// Capture the pre-restore state so the restore can be undone. Like export
-	// and duplicate, this read is a separate transaction from the write below;
-	// a roadmap has a single editor in practice.
-	if _, err := s.CreateSnapshot(ctx, roadmapID, model.SnapshotAuto, nil); err != nil {
-		return model.Roadmap{}, err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return model.Roadmap{}, err
 	}
 	defer tx.Rollback(ctx)
 
+	// Lock the roadmap for the whole operation. Every mutation locks it too, so
+	// from here no concurrent edit can commit until we're done.
 	if err := s.lockRoadmap(ctx, tx, roadmapID); err != nil {
 		return model.Roadmap{}, err
 	}
+
+	// Capture the pre-restore state as an auto snapshot *inside the lock*, so the
+	// "undo" snapshot exactly matches what we're about to replace — no edit can
+	// slip in between capturing it and replacing the contents.
+	pre, err := getRoadmapFull(ctx, tx, roadmapID)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+	preData, err := encodeSnapshot(pre)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+	if _, err := insertSnapshot(ctx, tx, roadmapID, model.SnapshotAuto, nil, preData); err != nil {
+		return model.Roadmap{}, err
+	}
+	if err := pruneAutoSnapshots(ctx, tx, roadmapID); err != nil {
+		return model.Roadmap{}, err
+	}
+
 	if _, err := tx.Exec(ctx, `DELETE FROM lanes WHERE roadmap_id = $1`, roadmapID); err != nil {
 		return model.Roadmap{}, err
 	}

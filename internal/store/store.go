@@ -123,6 +123,14 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+// querier is the read subset shared by *pgxpool.Pool and pgx.Tx, so the same
+// query code can run either directly on the pool or inside a transaction (e.g.
+// to read a consistent snapshot, or under a lock held for a later write).
+type querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, updated_at"
 
 func scanItem(r rowScanner) (model.Item, error) {
@@ -228,10 +236,26 @@ func (s *Store) DeleteRoadmap(ctx context.Context, id int64) error {
 }
 
 // GetRoadmapFull returns the roadmap with all lanes and items, lanes ordered
-// by position, items (and children) ordered by start date.
+// by position, items (and children) ordered by start date. It reads inside a
+// REPEATABLE READ, read-only transaction so its several queries see one
+// consistent snapshot even while the roadmap is edited concurrently — which
+// matters both for callers that persist the result (export, duplicate, snapshot
+// capture) and for a coherent view returned to the client.
 func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return model.RoadmapFull{}, err
+	}
+	defer tx.Rollback(ctx) // read-only: nothing to commit
+	return getRoadmapFull(ctx, tx, id)
+}
+
+// getRoadmapFull performs the reads on q, which may be the pool or a
+// transaction. Callers needing a consistent view (or a read under a lock they
+// will write behind) pass a transaction; see GetRoadmapFull and RestoreSnapshot.
+func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull, error) {
 	var full model.RoadmapFull
-	err := s.pool.QueryRow(ctx,
+	err := q.QueryRow(ctx,
 		`SELECT id, name, created_at, updated_at FROM roadmaps WHERE id = $1`, id).
 		Scan(&full.ID, &full.Name, &full.CreatedAt, &full.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -241,7 +265,7 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 		return full, err
 	}
 
-	laneRows, err := s.pool.Query(ctx,
+	laneRows, err := q.Query(ctx,
 		`SELECT id, roadmap_id, name, position, color FROM lanes WHERE roadmap_id = $1 ORDER BY position, id`, id)
 	if err != nil {
 		return full, err
@@ -262,7 +286,7 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 		return full, err
 	}
 
-	itemRows, err := s.pool.Query(ctx,
+	itemRows, err := q.Query(ctx,
 		`SELECT `+itemCols+` FROM items
 		 WHERE lane_id IN (SELECT id FROM lanes WHERE roadmap_id = $1)
 		 ORDER BY rank, id`, id)
@@ -305,7 +329,7 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 		parent.Children = append(parent.Children, it)
 	}
 
-	msRows, err := s.pool.Query(ctx,
+	msRows, err := q.Query(ctx,
 		`SELECT `+milestoneCols+` FROM milestones
 		 WHERE lane_id IN (SELECT id FROM lanes WHERE roadmap_id = $1)
 		 ORDER BY date, id`, id)
@@ -335,9 +359,10 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 // and dense lane positions / item ranks. An empty name reuses the source's,
 // which uniqueRoadmapName then disambiguates with a " (n)" suffix.
 //
-// The read and the write are separate transactions, so a concurrent edit
-// between them lands in the copy or doesn't; the same is true of export, and a
-// roadmap has a single editor in practice.
+// The source is read via GetRoadmapFull (a consistent REPEATABLE READ snapshot),
+// so even under concurrent edits the copy is internally consistent: it reflects
+// one committed point-in-time of the source. The subsequent import is a separate
+// write transaction, but it targets a brand-new roadmap nothing else can touch.
 func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name string) (model.Roadmap, error) {
 	src, err := s.GetRoadmapFull(ctx, id)
 	if err != nil {

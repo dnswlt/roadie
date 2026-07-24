@@ -127,6 +127,16 @@ func TestSnapshotRestore(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("snapshots after restore: want 2 (original + pre-restore), got %d", len(list))
 	}
+	// The newest snapshot is the pre-restore capture; it must hold the exact
+	// state that existed just before the restore (the diverged two-lane roadmap),
+	// which is what capturing inside the restore lock guarantees.
+	preRestore, err := testStore.GetSnapshotContents(ctx, list[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preRestore.Lanes) != 2 {
+		t.Fatalf("pre-restore snapshot: want the diverged 2-lane state, got %d lanes", len(preRestore.Lanes))
+	}
 }
 
 func TestSnapshotRenamePromotesToManual(t *testing.T) {
