@@ -10,7 +10,7 @@ else
     DC_CMD := docker compose
 endif
 
-.PHONY: dev build test check db-up db-down frontend frontend-watch \
+.PHONY: dev kill-watch build test check db-up db-down frontend frontend-watch \
 	docker-build docker-up docker-down
 
 db-up:
@@ -44,11 +44,18 @@ build: frontend
 	go build -o bin/roadie ./cmd/roadie
 
 # Run esbuild in watch mode alongside the Go server serving web/dist from disk.
+# `trap 'kill 0' EXIT` is the standard idiom: on exit it kills the whole process
+# group, so Ctrl-C reaps the esbuild watcher too (even with npm/sh in between,
+# which a plain `kill %1` would leave orphaned — the bug this fixes on WSL).
 dev:
 	npm run --prefix web build
+	@trap 'kill 0' EXIT; \
 	npm run --prefix web watch & \
-	DATABASE_URL=$(DATABASE_URL) go run ./cmd/roadie -dev -seed; \
-	kill %1 2>/dev/null
+	DATABASE_URL=$(DATABASE_URL) go run ./cmd/roadie -dev -seed
+
+# Fallback: kill stray esbuild watchers left over from an interrupted `make dev`.
+kill-watch:
+	@pkill -f 'esbuild.*--watch' && echo "killed stray esbuild watcher(s)" || echo "no esbuild watchers running"
 
 test:
 	DATABASE_URL=$(DATABASE_URL) go test ./...
