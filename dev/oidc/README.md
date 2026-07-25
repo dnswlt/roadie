@@ -20,6 +20,13 @@ The Makefile here only starts and stops the provider. Running Roadie against it
 is the root Makefile's `dev-oidc` rule, whose `OIDC_ISSUER`, `OIDC_CLIENT_ID`
 and `OIDC_CLIENT_SECRET` defaults match the values configured here.
 
+With both running, `./login-test.sh` walks a complete authorization code flow —
+login form, callback, session, an authenticated mutation, CSRF, logout — and
+checks that the API reports the right person. It reads credentials and expected
+claims from `users.json`, so editing that file cannot leave it asserting
+something stale. Nothing else covers this: the Go tests cannot do a real OIDC
+round trip. But note what it *cannot* tell you — see below.
+
 Sign in as one of the users defined in [`users.json`](users.json).
 
 JSON has no comments, so the deliberate choices live here.
