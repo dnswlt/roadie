@@ -78,7 +78,7 @@ function renderTopbar(): void {
   // Highlight the snap button when a grid (not plain Day) is actually engaged.
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
-  $("snap-menu").title = `Snap to ${snapLabel} (Shift: this grid only · Alt: off)`;
+  $("snap-menu").title = `Snap to ${snapLabel} — see Help (?) for modifier keys`;
 }
 
 // setZoom keeps the date under the viewport center fixed while zooming.
@@ -186,6 +186,57 @@ function buildSnapMenu(pop: HTMLElement): void {
     }
     pop.append(b);
   }
+}
+
+// openHelpDialog shows a centered modal with a small reference card. Start with
+// snapping (the most modal, least discoverable gesture); add sections here as
+// needed. Escape / Close dismiss it (native <dialog>).
+function openHelpDialog(): void {
+  const dlg = document.getElementById("dialog") as HTMLDialogElement;
+  dlg.replaceChildren();
+
+  const h = document.createElement("h3");
+  h.textContent = "Help";
+
+  const body = document.createElement("div");
+  body.className = "help-body";
+
+  const section = document.createElement("div");
+  section.className = "help-section";
+  const sh = document.createElement("h4");
+  sh.textContent = "Snapping";
+  const p = document.createElement("p");
+  p.textContent =
+    "Dragging or resizing an item snaps its edges to the grid you pick in the magnet menu (Day, Week, Month, Quarter, or Schedule) and to nearby item edges, milestones, and today.";
+  section.append(sh, p);
+
+  const keys = document.createElement("dl");
+  keys.className = "help-keys";
+  const addKey = (key: string, desc: string): void => {
+    const dt = document.createElement("dt");
+    const kbd = document.createElement("kbd");
+    kbd.textContent = key;
+    dt.append(kbd);
+    const dd = document.createElement("dd");
+    dd.textContent = desc;
+    keys.append(dt, dd);
+  };
+  addKey("Shift", "Snap to the selected grid only — steadier for coarse grids like Quarter or Schedule.");
+  addKey("Alt", "Turn snapping off for free, day-by-day placement.");
+  section.append(keys);
+  body.append(section);
+
+  const row = document.createElement("div");
+  row.className = "dialog-actions";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "btn btn-primary";
+  close.textContent = "Close";
+  close.addEventListener("click", () => dlg.close());
+  row.append(close);
+
+  dlg.append(h, body, row);
+  dlg.showModal();
 }
 
 // openScheduleEditor shows the roadmap's schedule in a textarea (one period per
@@ -297,6 +348,7 @@ function injectIcons(): void {
   $("zoom-fit").append(icons.zoomFit());
   $("zoom-in").append(icons.zoomIn());
   $("zoom-out").append(icons.zoomOut());
+  $("help-menu").append(icons.help(18));
 }
 
 function wireTopbar(): void {
@@ -339,6 +391,7 @@ function wireTopbar(): void {
     if (snapPop.classList.contains("hidden")) buildSnapMenu(snapPop);
     snapPop.classList.toggle("hidden");
   });
+  $("help-menu").addEventListener("click", () => openHelpDialog());
   document.addEventListener("click", (e) => {
     // Close each popup unless the click landed inside its own menu wrap.
     const wrap = (e.target as HTMLElement).closest(".menu-wrap");

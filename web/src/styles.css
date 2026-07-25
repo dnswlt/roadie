@@ -261,6 +261,67 @@ body {
   right: 0;
 }
 
+/* Help modal: a reference card in the shared centered dialog. Roomier than the
+   input dialogs so help text reads as a page, not a prompt. */
+.help-body {
+  width: 480px;
+  max-width: 100%;
+}
+
+.help-section + .help-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.help-section h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.help-section p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.help-keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 10px;
+  margin: 10px 0 0;
+  align-items: baseline;
+}
+
+.help-keys dt {
+  margin: 0;
+}
+
+.help-keys dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 1px 6px;
+  font: 600 11px/1.6 ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+  color: var(--ink);
+  background: var(--grid);
+  border: 1px solid var(--grid-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
 .menu.hidden {
   display: none;
 }
