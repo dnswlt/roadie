@@ -14,10 +14,18 @@ import type {
   Snapshot,
 } from "./types";
 
+// clientId identifies this tab. It rides on every request as X-Client-Id so the
+// server can echo it back in change events, letting this tab ignore the events
+// its own edits cause (see events.ts).
+export const clientId =
+  typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random());
+
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "X-Client-Id": clientId };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetch(url, {
     method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {

@@ -1256,6 +1256,34 @@ dialog input:focus {
   opacity: 0;
 }
 
+/* "Updated elsewhere · Refresh" pill: shown when a live change arrived while it
+   was unsafe to auto-refresh (a drag, a focused field). Top-center so it's
+   noticed without covering the edit panel; uses the notice tone. */
+.stale-pill {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--notice);
+  border: none;
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+  cursor: pointer;
+}
+
+.stale-pill:hover {
+  filter: brightness(1.06);
+}
+
 /* Labels */
 
 /* Tag editor in the panel: chips and the add-input share one bordered box and

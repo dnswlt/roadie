@@ -74,6 +74,12 @@ class AppState {
   history: Snapshot[] | null = null;
   preview: { snapshotId: number; createdAt: string } | null = null;
 
+  // Set when an SSE change event arrived while it was unsafe to auto-refresh
+  // (a drag, a focused edit field, or a snapshot preview). Drives the "Updated
+  // elsewhere · Refresh" pill; cleared once the pending refresh is applied. See
+  // events.ts.
+  stale = false;
+
   private listeners: Array<() => void> = [];
 
   subscribe(fn: () => void): void {

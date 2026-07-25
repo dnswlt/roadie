@@ -65,6 +65,14 @@ let drag: ItemDrag | LaneDrag | null = null;
 let tooltip: HTMLElement | null = null;
 let chartEl: HTMLElement | null = null;
 
+// isDragging reports whether a pointer gesture is actually in progress (past
+// its start threshold). The live-update safe-gate uses it to defer a remote
+// refresh until the gesture completes, rather than yanking the chart out from
+// under a drag.
+export function isDragging(): boolean {
+  return drag?.started === true;
+}
+
 export function initDnd(chart: HTMLElement): void {
   chartEl = chart;
   chart.addEventListener("pointerdown", onPointerDown);

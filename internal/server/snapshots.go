@@ -56,19 +56,23 @@ func byMilestoneID(s *Server, r *http.Request) (int64, error) {
 
 // snap wraps a mutating handler so the affected roadmap is auto-snapshotted
 // *before* the mutation is applied — capturing the last-good state one can go
-// back to. Capture is best-effort: a snapshot failure is logged and never
-// blocks the user's edit, and an unresolvable roadmap (e.g. a delete that will
-// 404) is simply skipped. The policy lives here in the route table rather than
-// scattered through handler bodies.
+// back to — and so its SSE subscribers are notified *after* it succeeds, so
+// other viewers refetch. Capture is best-effort: a snapshot failure is logged
+// and never blocks the user's edit, and an unresolvable roadmap (e.g. a delete
+// that will 404) is simply skipped. The roadmap id is resolved up front because
+// a delete makes it unresolvable afterwards. The policy lives here in the route
+// table rather than scattered through handler bodies.
 func (s *Server) snap(mode snapMode, resolve roadmapResolver, h http.HandlerFunc) http.HandlerFunc {
-	if mode == snapNone {
-		return h
-	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if rid, err := resolve(s, r); err == nil {
+		rid, rerr := resolve(s, r)
+		if rerr == nil && mode != snapNone {
 			s.autoSnapshot(r.Context(), rid, mode)
 		}
-		h(w, r)
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		h(rec, r)
+		if rerr == nil && rec.status < 300 {
+			s.hub.broadcast(rid, r.Header.Get(clientIDHeader))
+		}
 	}
 }
 
@@ -143,6 +147,9 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	// Restore isn't snap-wrapped (the store captures its own pre-restore state),
+	// so notify subscribers here that the roadmap's contents changed.
+	s.hub.broadcast(rm.ID, r.Header.Get(clientIDHeader))
 	writeJSON(w, http.StatusOK, rm)
 }
 

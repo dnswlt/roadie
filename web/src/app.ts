@@ -3,6 +3,7 @@ import { actions } from "./actions";
 import { LANE_COLOR_ORDER, laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { initDnd } from "./dnd";
+import { initEvents, refreshNow } from "./events";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { LABEL_W } from "./layout";
@@ -55,6 +56,24 @@ function render(): void {
   renderChart(chart);
   renderPanel(panel);
   renderHistory(historyEl, snapshotBanner);
+  renderStalePill();
+}
+
+// renderStalePill shows/hides the "Updated elsewhere" affordance, raised when a
+// remote change arrived while it was unsafe to auto-refresh (see events.ts).
+function renderStalePill(): void {
+  const existing = document.getElementById("stale-pill");
+  if (!state.stale) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const pill = document.createElement("button");
+  pill.id = "stale-pill";
+  pill.className = "stale-pill";
+  pill.textContent = "Updated elsewhere · Refresh";
+  pill.addEventListener("click", refreshNow);
+  document.body.appendChild(pill);
 }
 
 function renderTopbar(): void {
@@ -782,6 +801,7 @@ async function boot(): Promise<void> {
   wireChart();
   wirePanelResize();
   initDnd(chart);
+  initEvents(panel);
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       // Escape backs out of history browsing first, then clears any selection —

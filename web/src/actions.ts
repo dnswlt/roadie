@@ -3,6 +3,7 @@
 // Creates wait for the server (it assigns the ID).
 
 import { api } from "./api";
+import { connectEvents } from "./events";
 import { state } from "./state";
 import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
@@ -43,6 +44,7 @@ async function optimistic(mutate: () => void, call: () => Promise<unknown>): Pro
 async function reloadLive(): Promise<void> {
   if (!state.current) return;
   state.current = await api.getRoadmap(state.current.id);
+  state.stale = false; // fresh live data supersedes any pending remote change
   state.clearSelection();
 }
 
@@ -116,16 +118,39 @@ export const actions = {
       state.clearSelection();
       state.history = null; // switching roadmaps exits history browsing
       state.preview = null;
+      state.stale = false; // a fresh load can't be stale
       state.focusLabel = null; // labels are per-roadmap; don't carry focus across
       state.loadHiddenLanes();
       state.loadCollapsed();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
       setRoadmapUrl(state.current);
+      connectEvents(id); // (re)subscribe to this roadmap's live change stream
       state.notify();
     } catch (e) {
       toast(errMsg(e), true);
     }
+  },
+
+  // refreshFromServer re-fetches the live roadmap after a remote change, keeping
+  // the user's selection and view prefs where the rows they point at still
+  // exist (unlike selectRoadmap, which resets everything). Driven by the SSE
+  // change listener; no-ops while previewing a snapshot. Throws on failure so
+  // the caller can leave `stale` set and retry on the next event.
+  async refreshFromServer(): Promise<void> {
+    if (!state.current || state.preview) return;
+    state.current = await api.getRoadmap(state.current.id);
+    // Drop selections whose targets vanished remotely.
+    for (const sid of [...state.selectedItemIds]) {
+      if (!state.findItem(sid)) state.deselectItem(sid);
+    }
+    if (state.selectedMilestoneId !== null && !state.findMilestone(state.selectedMilestoneId)) {
+      state.selectedMilestoneId = null;
+    }
+    state.loadHiddenLanes(); // prune view prefs for lanes/parents that changed
+    state.loadCollapsed();
+    state.stale = false;
+    state.notify();
   },
 
   async createRoadmap(name: string): Promise<void> {

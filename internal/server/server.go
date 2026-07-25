@@ -29,10 +29,14 @@ type Server struct {
 	// burst of concurrent mutations into one snapshot. See autoSnapshot.
 	snapMu   sync.Mutex
 	lastAuto map[int64]time.Time
+
+	// hub fans change notifications out to a roadmap's SSE subscribers, so an
+	// edit by one user prompts other viewers to refetch. See events.go.
+	hub *hub
 }
 
 func New(st *store.Store, static fs.FS) *Server {
-	s := &Server{store: st, mux: http.NewServeMux(), lastAuto: map[int64]time.Time{}}
+	s := &Server{store: st, mux: http.NewServeMux(), lastAuto: map[int64]time.Time{}, hub: newHub()}
 
 	// Liveness: the process is up. Deliberately does not touch the database —
 	// a DB blip shouldn't get healthy pods killed and restarted.
@@ -75,6 +79,10 @@ func New(st *store.Store, static fs.FS) *Server {
 
 	// Snapshots (version history). Restore captures the pre-restore state in the
 	// store, so it is deliberately not wrapped with s.snap.
+	// Live change notifications (SSE): viewers of a roadmap subscribe here and
+	// are told when it changes, so they can refetch. See events.go.
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/events", s.handleEvents)
+
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/snapshots", s.listSnapshots)
 	s.mux.HandleFunc("GET /api/snapshots/{id}", s.getSnapshot)
 	s.mux.HandleFunc("POST /api/snapshots/{id}/restore", s.restoreSnapshot)
