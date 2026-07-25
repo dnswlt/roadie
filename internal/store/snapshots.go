@@ -11,11 +11,6 @@ import (
 	"github.com/dnswlt/roadie/internal/model"
 )
 
-// maxAutoSnapshots caps how many auto snapshots are kept per roadmap. Older
-// ones are pruned on each new auto capture. Named (manual) snapshots are never
-// pruned and do not count against this cap.
-const maxAutoSnapshots = 200
-
 // snapshotMetaCols are the columns returned for snapshot listings; the data
 // blob is deliberately excluded so listings stay cheap.
 const snapshotMetaCols = "id, roadmap_id, name, kind, created_at"
@@ -30,7 +25,7 @@ func scanSnapshot(r rowScanner) (model.Snapshot, error) {
 // snapshot. kind is model.SnapshotAuto or model.SnapshotManual; name is
 // optional (nil for auto). The payload is the same RoadmapExport envelope the
 // export feature produces, JSON-encoded into the data column. Creating an auto
-// snapshot also prunes older auto snapshots down to maxAutoSnapshots.
+// snapshot also downsamples older auto snapshots (see pruneAutoSnapshots).
 func (s *Store) CreateSnapshot(ctx context.Context, roadmapID int64, kind string, name *string) (model.Snapshot, error) {
 	if kind != model.SnapshotAuto && kind != model.SnapshotManual {
 		return model.Snapshot{}, invalidf("invalid snapshot kind %q", kind)
@@ -88,18 +83,32 @@ func insertSnapshot(ctx context.Context, tx pgx.Tx, roadmapID int64, kind string
 		roadmapID, name, kind, model.ExportVersion, data))
 }
 
-// pruneAutoSnapshots deletes auto snapshots of roadmapID beyond the newest
-// maxAutoSnapshots. Named (manual) snapshots are untouched.
+// pruneAutoSnapshots downsamples roadmapID's auto snapshots by age: everything
+// from the last day is kept, older snapshots are thinned to one per hour for the
+// past week and one per day beyond that (kept forever). Unlike a flat
+// trailing-count window, a busy recent session can't evict a quieter older
+// period. Named (manual) snapshots are never touched. Runs on every auto
+// capture, so retention is maintained incrementally.
 func pruneAutoSnapshots(ctx context.Context, tx pgx.Tx, roadmapID int64) error {
-	_, err := tx.Exec(ctx,
-		`DELETE FROM snapshots
-		 WHERE roadmap_id = $1 AND kind = $2 AND id NOT IN (
-		     SELECT id FROM snapshots
-		     WHERE roadmap_id = $1 AND kind = $2
-		     ORDER BY created_at DESC, id DESC
-		     LIMIT $3
-		 )`,
-		roadmapID, model.SnapshotAuto, maxAutoSnapshots)
+	// Candidates are auto snapshots older than a day; recent ones are kept in full
+	// by never entering the set. Each candidate is bucketed by a granularity that
+	// coarsens with age (hourly in the last week, daily before that), and the
+	// newest per bucket is kept — a plain DISTINCT ON, no window function.
+	_, err := tx.Exec(ctx, `
+		WITH candidate AS (
+		    SELECT id, date_trunc(
+		               CASE WHEN created_at > now() - interval '7 days' THEN 'hour'
+		                    ELSE 'day' END, created_at) AS bucket
+		    FROM snapshots
+		    WHERE roadmap_id = $1 AND kind = $2
+		      AND created_at <= now() - interval '1 day'
+		),
+		keep AS (
+		    SELECT DISTINCT ON (bucket) id FROM candidate ORDER BY bucket, id DESC
+		)
+		DELETE FROM snapshots
+		WHERE id IN (SELECT id FROM candidate) AND id NOT IN (SELECT id FROM keep)`,
+		roadmapID, model.SnapshotAuto)
 	return err
 }
 

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/dnswlt/roadie/internal/model"
 )
@@ -163,23 +164,79 @@ func TestSnapshotRenamePromotesToManual(t *testing.T) {
 	}
 }
 
-func TestSnapshotPruneKeepsManual(t *testing.T) {
+// insertAutoSnapshotAt inserts a bare auto snapshot with an explicit created_at,
+// bypassing CreateSnapshot (and its prune) so a synthetic history can be laid
+// out before pruning is exercised. The payload is a throwaway blob — these
+// snapshots are only ever counted, never decoded.
+func insertAutoSnapshotAt(t *testing.T, roadmapID int64, at time.Time) int64 {
+	t.Helper()
+	var id int64
+	if err := testStore.pool.QueryRow(context.Background(),
+		`INSERT INTO snapshots (roadmap_id, kind, format_version, data, created_at)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		roadmapID, model.SnapshotAuto, model.ExportVersion, []byte("{}"), at).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// runPrune runs pruneAutoSnapshots for roadmapID in its own committed transaction.
+func runPrune(t *testing.T, roadmapID int64) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := testStore.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if err := pruneAutoSnapshots(ctx, tx, roadmapID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSnapshotTieredPrune(t *testing.T) {
 	ctx := context.Background()
 	rm := newRoadmap(t)
-	seedSmallRoadmap(t, rm.ID)
+	now := time.Now().UTC()
 
-	// A named snapshot that must survive pruning.
+	// A named snapshot: never counted against the policy, must always survive.
 	kept, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, strPtr("keep me"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Create more auto snapshots than the cap; the oldest autos are pruned.
-	for i := 0; i < maxAutoSnapshots+5; i++ {
-		if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotAuto, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// Lay out a synthetic auto history spanning every tier. Same-bucket members
+	// are placed a couple of minutes apart (never straddling a bucket boundary in
+	// any timezone); cross-bucket members are separated by whole hours/days, well
+	// clear of the tier cutoffs so the test doesn't race the wall clock.
+
+	// < 1 day (keep all): 3 captures at distinct seconds -> 3 survivors.
+	insertAutoSnapshotAt(t, rm.ID, now.Add(-10*time.Minute))
+	insertAutoSnapshotAt(t, rm.ID, now.Add(-10*time.Minute-5*time.Second))
+	insertAutoSnapshotAt(t, rm.ID, now.Add(-20*time.Minute))
+
+	// 1–7 days (hourly): two in one hour + one 3h earlier -> 2 survivors.
+	h := now.Add(-2 * 24 * time.Hour).Truncate(time.Hour).Add(15 * time.Minute)
+	insertAutoSnapshotAt(t, rm.ID, h)
+	insertAutoSnapshotAt(t, rm.ID, h.Add(2*time.Minute))
+	insertAutoSnapshotAt(t, rm.ID, h.Add(-3*time.Hour))
+
+	// Older than a week (daily): two in one day + one the next day -> 2 survivors.
+	d := now.Add(-30 * 24 * time.Hour).Truncate(24 * time.Hour).Add(12 * time.Hour)
+	insertAutoSnapshotAt(t, rm.ID, d)
+	insertAutoSnapshotAt(t, rm.ID, d.Add(2*time.Minute))
+	insertAutoSnapshotAt(t, rm.ID, d.Add(25*time.Hour))
+
+	// Much older (still daily, kept forever): two in one day + one the next -> 2.
+	o := now.Add(-200 * 24 * time.Hour).Truncate(24 * time.Hour).Add(12 * time.Hour)
+	insertAutoSnapshotAt(t, rm.ID, o)
+	insertAutoSnapshotAt(t, rm.ID, o.Add(2*time.Minute))
+	insertAutoSnapshotAt(t, rm.ID, o.Add(25*time.Hour))
+
+	runPrune(t, rm.ID)
 
 	list, err := testStore.ListSnapshots(ctx, rm.ID)
 	if err != nil {
@@ -198,8 +255,9 @@ func TestSnapshotPruneKeepsManual(t *testing.T) {
 			foundKept = true
 		}
 	}
-	if autos != maxAutoSnapshots {
-		t.Errorf("auto snapshots after prune: want %d, got %d", maxAutoSnapshots, autos)
+	// 3 (day) + 2 (hourly) + 2 (daily) + 2 (daily forever) = 9 auto survivors.
+	if autos != 9 {
+		t.Errorf("auto snapshots after tiered prune: want 9, got %d", autos)
 	}
 	if manuals != 1 || !foundKept {
 		t.Errorf("manual snapshot was pruned (manuals=%d, found=%v)", manuals, foundKept)
