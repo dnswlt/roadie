@@ -36,13 +36,26 @@ type hub struct {
 	mu   sync.Mutex
 	subs map[int64]map[chan changeEvent]struct{}
 	rev  map[int64]int64
+	// done is closed on server shutdown to release the SSE handlers: their
+	// long-lived connections are never idle, so without this signal a graceful
+	// srv.Shutdown blocks until its timeout (Shutdown does not cancel in-flight
+	// request contexts). Wired via Server.Shutdown / http.Server.RegisterOnShutdown.
+	done     chan struct{}
+	closeOne sync.Once
 }
 
 func newHub() *hub {
 	return &hub{
 		subs: map[int64]map[chan changeEvent]struct{}{},
 		rev:  map[int64]int64{},
+		done: make(chan struct{}),
 	}
+}
+
+// close signals every SSE handler to return. Idempotent: RegisterOnShutdown
+// fires once, but a second call (e.g. a test) must not panic on a double close.
+func (h *hub) close() {
+	h.closeOne.Do(func() { close(h.done) })
 }
 
 func (h *hub) subscribe(roadmapID int64) chan changeEvent {
@@ -122,6 +135,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.hub.done: // server shutting down: release the connection
+			return
 		case ev := <-ch:
 			b, err := json.Marshal(ev)
 			if err != nil {
@@ -134,6 +149,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// Shutdown releases the live SSE handlers so a graceful http.Server shutdown
+// isn't stalled by their long-lived connections. Register it with
+// srv.RegisterOnShutdown so it fires when Shutdown begins.
+func (s *Server) Shutdown() {
+	s.hub.close()
 }
 
 // statusRecorder captures the response status so the snap wrapper can broadcast

@@ -1,6 +1,12 @@
 package server
 
-import "testing"
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
 
 func TestHubBroadcastReachesSubscribers(t *testing.T) {
 	h := newHub()
@@ -53,6 +59,36 @@ func TestHubUnsubscribeStopsDelivery(t *testing.T) {
 	case <-ch:
 		t.Fatal("received an event after unsubscribing")
 	default:
+	}
+}
+
+// TestServerShutdownReleasesSSE guards against the graceful-shutdown stall:
+// an SSE connection is never idle, so without the shutdown signal srv.Shutdown
+// would block until its timeout. Shutdown() must release the handler at once.
+func TestServerShutdownReleasesSSE(t *testing.T) {
+	app := New(nil, nil) // the events route touches neither store nor static
+	ts := httptest.NewServer(app)
+	defer ts.Close()
+
+	// http.Get returns once headers arrive, i.e. after the handler's first
+	// flush — so by here it is running and subscribed.
+	resp, err := http.Get(ts.URL + "/api/roadmaps/1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	app.Shutdown()
+
+	done := make(chan struct{})
+	go func() {
+		io.Copy(io.Discard, resp.Body) // returns when the handler releases the conn
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SSE handler did not release after Shutdown")
 	}
 }
 

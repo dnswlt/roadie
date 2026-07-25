@@ -70,13 +70,18 @@ func run() error {
 	// write, which would sever long-lived SSE streams. If a non-streaming route
 	// ever needs slow-read protection, set a per-connection deadline in that
 	// handler via http.NewResponseController(w).SetWriteDeadline.
+	app := server.New(st, static)
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           server.New(st, static),
+		Handler:           app,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	// Long-lived SSE connections are never idle, so without a nudge they'd block
+	// srv.Shutdown until its timeout. This fires when Shutdown begins and tells
+	// the SSE handlers to return, letting their connections drain immediately.
+	srv.RegisterOnShutdown(app.Shutdown)
 
 	// Register the signal handler before serving so a fast SIGTERM isn't missed.
 	// k8s sends it on rollouts, scale-down, and node drains, then SIGKILLs after
