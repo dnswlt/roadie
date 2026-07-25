@@ -242,6 +242,13 @@ body {
   position: relative;
 }
 
+/* `hidden` is styled per component here, not as a global utility — a wrap that
+   is hidden until its feature exists (the account menu, with auth off) needs
+   its own rule. */
+.menu-wrap.hidden {
+  display: none;
+}
+
 .menu {
   position: absolute;
   top: calc(100% + 6px);
