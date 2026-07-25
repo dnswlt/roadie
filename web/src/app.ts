@@ -78,7 +78,7 @@ function renderTopbar(): void {
   // Highlight the snap button when a grid (not plain Day) is actually engaged.
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
-  $("snap-menu").title = `Snap to ${snapLabel} (hold Alt to bypass)`;
+  $("snap-menu").title = `Snap to ${snapLabel} (Shift: this grid only · Alt: off)`;
 }
 
 // setZoom keeps the date under the viewport center fixed while zooming.

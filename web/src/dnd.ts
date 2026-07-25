@@ -309,14 +309,14 @@ function moveBounds(d: ItemDrag, dayDelta: number): [number, number] {
 }
 
 // snapMoveToItems adjusts a move's day-offset so that whichever of the two
-// (rigidly shifted) edge boundaries is closest to an item boundary lands
-// exactly on it, within SNAP_PX. Returns dayDelta unchanged when nothing is
-// close enough.
-function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number): number {
+// (rigidly shifted) edge boundaries is closest to a feature boundary in `cands`
+// lands exactly on it, within SNAP_PX. Returns dayDelta unchanged when nothing
+// is close enough (including when `cands` is empty — Shift/grid-only).
+function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number, cands: number[]): number {
   let best = dayDelta;
   let bestDist = SNAP_PX + 1;
   for (const edge of moveBounds(d, dayDelta)) {
-    for (const c of d.snapBounds) {
+    for (const c of cands) {
       const dist = Math.abs(edge - c) * px;
       if (dist <= SNAP_PX && dist < bestDist) {
         bestDist = dist;
@@ -327,13 +327,14 @@ function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number): number {
   return best;
 }
 
-// snapMoveDelta resolves a move. Item snapping wins when an edge boundary is
-// within SNAP_PX of a real item boundary; otherwise the offset is nudged so
-// whichever edge boundary is nearest a `grid` line lands exactly on it (duration
-// preserved). The move rides the grid but "clicks" onto neighbours. An identity
-// grid (see gridSnapper) leaves the delta unchanged after item snapping.
-function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, grid: (day: number) => number): number {
-  const item = snapMoveToItems(d, dayDelta, px);
+// snapMoveDelta resolves a move. Feature snapping (to a boundary in `cands`) wins
+// when an edge boundary is within SNAP_PX of one; otherwise the offset is nudged
+// so whichever edge boundary is nearest a `grid` line lands exactly on it
+// (duration preserved). The move rides the grid but "clicks" onto neighbours.
+// With empty `cands` (Shift) it is pure grid snapping; with an identity grid
+// ("day" mode) it is pure feature snapping; with both, free per-day movement.
+function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, cands: number[], grid: (day: number) => number): number {
+  const item = snapMoveToItems(d, dayDelta, px, cands);
   if (item !== dayDelta) return item;
   let best = dayDelta;
   let bestDist = Infinity;
@@ -355,6 +356,7 @@ function onPointerMove(e: PointerEvent): void {
     return;
   }
   const bypass = e.altKey; // hold Alt/Option to suppress snapping and coarse stepping
+  const gridOnly = e.shiftKey; // hold Shift to snap only to the selected granularity (drop feature magnets)
   const d = drag;
   const dx = e.clientX - d.px;
   const dy = e.clientY - d.py;
@@ -374,11 +376,15 @@ function onPointerMove(e: PointerEvent): void {
 
   const px = currentScale().pxPerDay;
   const grid = gridSnapper(bypass, d.scheduleBounds);
+  // Feature magnets (other items' edges, milestones, today). Shift drops them so
+  // only the selected granularity's grid snaps — calmer when a coarse grid
+  // (quarter / schedule) would otherwise fight nearby features.
+  const cands = gridOnly ? [] : d.snapBounds;
   const dayDelta = Math.round(dx / px);
 
   switch (d.mode) {
     case "move": {
-      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px, grid);
+      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px, cands, grid);
       d.newStart = d.startDay + md;
       d.newEnd = d.endDay + md;
       // Group drag is horizontal only; a single drag follows the pointer's Y.
@@ -391,7 +397,7 @@ function onPointerMove(e: PointerEvent): void {
     case "resize-l": {
       // The left edge is the start boundary itself.
       let s = d.startDay + dayDelta;
-      if (!bypass) s = snapBoundary(s, d.snapBounds, px, grid);
+      if (!bypass) s = snapBoundary(s, cands, px, grid);
       d.newStart = Math.min(s, d.endDay);
       d.newEnd = d.endDay;
       const shift = (d.newStart - d.startDay) * px;
@@ -403,7 +409,7 @@ function onPointerMove(e: PointerEvent): void {
     case "resize-r": {
       // The right edge lives at end + 1; snap there, then convert back.
       let eb = d.endDay + 1 + dayDelta;
-      if (!bypass) eb = snapBoundary(eb, d.snapBounds, px, grid);
+      if (!bypass) eb = snapBoundary(eb, cands, px, grid);
       d.newStart = d.startDay;
       d.newEnd = Math.max(eb - 1, d.startDay);
       d.barEl.style.width = `${d.origWidth + (d.newEnd - d.endDay) * px}px`;
