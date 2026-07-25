@@ -8,6 +8,7 @@ import { icons } from "./icons";
 import { LABEL_W } from "./layout";
 import { currentScale, renderChart } from "./render";
 import { deleteSelection, renderPanel } from "./panel";
+import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
 import { readUrl, type UrlTarget } from "./url";
@@ -31,7 +32,23 @@ const SNAP_LABELS: Record<SnapMode, string> = {
   week: "Week (Mon)",
   month: "Month (1st)",
   quarter: "Quarter",
+  schedule: "Schedule",
 };
+
+// hasSchedule reports whether the current roadmap defines a schedule; the
+// "schedule" snap mode and band only apply then.
+function hasSchedule(): boolean {
+  return (state.current?.periods.length ?? 0) > 0;
+}
+
+// snapActive reports whether snapping visibly does something, for the magnet
+// button highlight: any grid but "day", except "schedule" on a roadmap without
+// one (where it degrades to free placement).
+function snapActive(): boolean {
+  if (state.snapMode === "day") return false;
+  if (state.snapMode === "schedule") return hasSchedule();
+  return true;
+}
 
 function render(): void {
   renderTopbar();
@@ -52,14 +69,16 @@ function renderTopbar(): void {
   ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
   ($("rm-duplicate") as HTMLButtonElement).disabled = !state.current;
   ($("rm-history") as HTMLButtonElement).disabled = !state.current;
+  ($("rm-schedule") as HTMLButtonElement).disabled = !state.current;
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focusLabel !== null);
   $("focus-menu").title = state.focusLabel ? `Focus: ${state.focusLabel}` : "Focus on a label";
-  // Highlight the snap button when a calendar grid (not plain Day) is engaged.
-  $("snap-menu").classList.toggle("active", state.snapMode !== "day");
-  $("snap-menu").title = `Snap to ${SNAP_LABELS[state.snapMode]} (hold Alt to bypass)`;
+  // Highlight the snap button when a grid (not plain Day) is actually engaged.
+  $("snap-menu").classList.toggle("active", snapActive());
+  const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
+  $("snap-menu").title = `Snap to ${snapLabel} (hold Alt to bypass)`;
 }
 
 // setZoom keeps the date under the viewport center fixed while zooming.
@@ -136,12 +155,16 @@ function buildRoadmapMenu(pop: HTMLElement): void {
 }
 
 // buildSnapMenu (re)populates the snap-grid popover: one row per mode, the
-// active one check-marked. Picking a mode applies it and closes the menu.
+// active one check-marked. Picking a mode applies it and closes the menu. The
+// "Schedule" row is disabled until the roadmap defines a schedule (edited from
+// the roadmap menu, since the schedule is roadmap data, not a snap setting).
 function buildSnapMenu(pop: HTMLElement): void {
   pop.replaceChildren();
-  const modes: SnapMode[] = ["day", "week", "month", "quarter"];
+  const modes: SnapMode[] = ["day", "week", "month", "quarter", "schedule"];
+  const scheduleReady = hasSchedule();
   for (const mode of modes) {
-    const active = state.snapMode === mode;
+    const disabled = mode === "schedule" && !scheduleReady;
+    const active = state.snapMode === mode && !disabled;
     const b = document.createElement("button");
     b.className = active ? "menu-item is-active" : "menu-item";
     const mark = document.createElement("span");
@@ -150,14 +173,75 @@ function buildSnapMenu(pop: HTMLElement): void {
     const name = document.createElement("span");
     name.textContent = SNAP_LABELS[mode];
     b.append(mark, name);
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      setSnapMode(mode);
-      pop.classList.add("hidden");
-      renderTopbar();
-    });
+    if (disabled) {
+      b.disabled = true;
+      b.title = "Define a schedule first (roadmap menu → Edit schedule…)";
+    } else {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setSnapMode(mode);
+        pop.classList.add("hidden");
+        renderTopbar();
+      });
+    }
     pop.append(b);
   }
+}
+
+// openScheduleEditor shows the roadmap's schedule in a textarea (one period per
+// line, START END LABEL) and saves it as a full replace. Parse errors are shown
+// inline and keep the dialog open; a server rejection (e.g. overlap) toasts and
+// also keeps it open, so nothing typed is lost.
+async function openScheduleEditor(): Promise<void> {
+  const rm = state.current;
+  if (!rm) return;
+  const dlg = document.getElementById("dialog") as HTMLDialogElement;
+  dlg.replaceChildren();
+
+  const h = document.createElement("h3");
+  h.textContent = "Edit schedule";
+  const help = document.createElement("p");
+  help.className = "dialog-help";
+  help.textContent =
+    "One period per line: START END LABEL. Dates are YYYY-MM-DD, end inclusive. Blank lines and # comments are ignored. An empty list clears the schedule.";
+  const ta = document.createElement("textarea");
+  ta.className = "schedule-editor";
+  ta.rows = 10;
+  ta.spellcheck = false;
+  ta.value = serializeSchedule(rm.periods);
+  ta.placeholder = "2026-01-05 2026-01-16 Sprint 1";
+  const errBox = document.createElement("div");
+  errBox.className = "dialog-errors";
+
+  const row = document.createElement("div");
+  row.className = "dialog-actions";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn";
+  cancel.textContent = "Cancel";
+  const ok = document.createElement("button");
+  ok.type = "button";
+  ok.className = "btn btn-primary";
+  ok.textContent = "Save";
+  row.append(cancel, ok);
+  dlg.append(h, help, ta, errBox, row);
+
+  cancel.addEventListener("click", () => dlg.close());
+  ok.addEventListener("click", async () => {
+    const { periods, errors } = parseSchedule(ta.value);
+    if (errors.length > 0) {
+      errBox.textContent = errors.join("\n");
+      return;
+    }
+    errBox.textContent = "";
+    ok.disabled = true;
+    const saved = await actions.replaceSchedule(periods);
+    ok.disabled = false;
+    if (saved) dlg.close();
+  });
+
+  dlg.showModal();
+  ta.focus();
 }
 
 // setSnapMode records the drag-snap grid and persists it globally (like zoom).
@@ -205,6 +289,7 @@ function injectIcons(): void {
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
   $("rm-history").prepend(icons.history(14));
+  $("rm-schedule").prepend(icons.calendar(14));
   $("rm-export").prepend(icons.download(14));
   $("rm-import").prepend(icons.upload(14));
   $("rm-delete").prepend(icons.trash(14));
@@ -284,6 +369,10 @@ function wireTopbar(): void {
   $("rm-history").addEventListener("click", () => {
     menuPop.classList.add("hidden");
     void actions.openHistory();
+  });
+  $("rm-schedule").addEventListener("click", () => {
+    menuPop.classList.add("hidden");
+    void openScheduleEditor();
   });
   $("rm-export").addEventListener("click", () => {
     menuPop.classList.add("hidden");
@@ -663,7 +752,13 @@ async function boot(): Promise<void> {
     state.pxPerDay = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, storedZoom));
   }
   const storedSnap = localStorage.getItem("roadie.snap");
-  if (storedSnap === "day" || storedSnap === "week" || storedSnap === "month" || storedSnap === "quarter") {
+  if (
+    storedSnap === "day" ||
+    storedSnap === "week" ||
+    storedSnap === "month" ||
+    storedSnap === "quarter" ||
+    storedSnap === "schedule"
+  ) {
     state.snapMode = storedSnap;
   }
   const storedWidth = Number(localStorage.getItem("roadie.panelWidth"));

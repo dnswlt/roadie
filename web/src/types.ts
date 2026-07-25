@@ -48,8 +48,26 @@ export interface LaneFull extends Lane {
   milestones: Milestone[];
 }
 
+// A named span in a roadmap's schedule (a sprint, PI, ...). endDate is
+// inclusive. Periods are roadmap-scoped and ordered by start date, no rank.
+export interface SchedulePeriod {
+  id: number;
+  label: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD, inclusive
+}
+
+// NewSchedulePeriod is one period sent to the server on a full-schedule
+// replace; the server assigns ids.
+export interface NewSchedulePeriod {
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
 export interface RoadmapFull extends Roadmap {
   lanes: LaneFull[];
+  periods: SchedulePeriod[];
 }
 
 // Snapshot metadata (no payload) for the version-history list. `name` is set

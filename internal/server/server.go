@@ -68,6 +68,7 @@ func New(st *store.Store, static fs.FS) *Server {
 	s.mux.HandleFunc("POST /api/lanes/{id}/items", s.snap(snapThrottle, byLaneID, s.createItem))
 	s.mux.HandleFunc("PATCH /api/items/{id}", s.snap(snapThrottle, byItemID, s.patchItem))
 	s.mux.HandleFunc("DELETE /api/items/{id}", s.snap(snapForce, byItemID, s.deleteItem))
+	s.mux.HandleFunc("PUT /api/roadmaps/{id}/schedule", s.snap(snapThrottle, byRoadmapID, s.putSchedule))
 	s.mux.HandleFunc("POST /api/lanes/{id}/milestones", s.snap(snapThrottle, byLaneID, s.createMilestone))
 	s.mux.HandleFunc("PATCH /api/milestones/{id}", s.snap(snapThrottle, byMilestoneID, s.patchMilestone))
 	s.mux.HandleFunc("DELETE /api/milestones/{id}", s.snap(snapForce, byMilestoneID, s.deleteMilestone))
@@ -478,4 +479,29 @@ func (s *Server) deleteMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Schedule
+
+// putSchedule replaces a roadmap's entire schedule with the posted periods (an
+// empty list clears it) and returns the stored periods, ordered by start date.
+func (s *Server) putSchedule(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var req struct {
+		Periods []store.SchedulePeriodInput `json:"periods"`
+	}
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	periods, err := s.store.ReplaceSchedule(r.Context(), id, req.Periods)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, periods)
 }

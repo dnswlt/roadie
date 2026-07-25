@@ -115,6 +115,12 @@ export const icons = {
     ),
   rotateCcw: (size = 16) =>
     svg(`<path d="M3 12a9 9 0 1 0 3-7.7L3 8"/><path d="M3 3v5h5"/>`, size),
+  calendar: (size = 16) =>
+    svg(
+      `<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/>` +
+        `<path d="M8 2v4"/><path d="M16 2v4"/>`,
+      size,
+    ),
   eyeOff: (size = 16) =>
     svg(
       `<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68"/>` +

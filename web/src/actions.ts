@@ -6,7 +6,7 @@ import { api } from "./api";
 import { state } from "./state";
 import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
-import type { Item, ItemFull, ItemPatch, MilestonePatch } from "./types";
+import type { Item, ItemFull, ItemPatch, MilestonePatch, NewSchedulePeriod } from "./types";
 import { setRoadmapUrl } from "./url";
 
 // Default item length, in days added to the start (end date is inclusive, so
@@ -445,6 +445,24 @@ export const actions = {
       },
       () => api.deleteMilestone(id),
     );
+  },
+
+  // replaceSchedule swaps the roadmap's entire schedule for `periods` (an empty
+  // list clears it). Server-authoritative (it assigns ids and rejects overlaps),
+  // so it is not optimistic: the returned, validated periods replace state.
+  // Returns true on success so the caller (the editor dialog) can stay open on
+  // error. No-op while previewing a snapshot.
+  async replaceSchedule(periods: NewSchedulePeriod[]): Promise<boolean> {
+    if (state.preview || !state.current) return false;
+    try {
+      const saved = await api.replaceSchedule(state.current.id, periods);
+      state.current.periods = saved;
+      state.notify();
+      return true;
+    } catch (e) {
+      toast(errMsg(e), true);
+      return false;
+    }
   },
 
   // Version history (snapshots).

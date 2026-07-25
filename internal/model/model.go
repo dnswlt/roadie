@@ -106,10 +106,21 @@ type LaneFull struct {
 	Milestones []Milestone `json:"milestones"`
 }
 
+// SchedulePeriod is one named span in a roadmap's schedule (a sprint, PI, ...).
+// It has an inclusive end date and, like milestones, no rank: periods are
+// positioned purely by their dates. A period belongs to the roadmap, not a lane.
+type SchedulePeriod struct {
+	ID        int64  `json:"id"`
+	Label     string `json:"label"`
+	StartDate Date   `json:"startDate"`
+	EndDate   Date   `json:"endDate"`
+}
+
 // RoadmapFull is the complete payload the frontend works with.
 type RoadmapFull struct {
 	Roadmap
-	Lanes []LaneFull `json:"lanes"`
+	Lanes   []LaneFull       `json:"lanes"`
+	Periods []SchedulePeriod `json:"periods"`
 }
 
 // Export format markers. The on-disk file is a small envelope around a

@@ -6,10 +6,10 @@
 
 import { actions } from "./actions";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
+import { nearestBoundary, scheduleBounds } from "./schedule";
 import { state } from "./state";
 import { currentScale } from "./render";
 import { dayOf, formatDay, isoOf, snapToGrid, todayDay, xOf } from "./timescale";
-import type { SnapMode } from "./timescale";
 import type { ItemFull, ItemPatch, LaneFull } from "./types";
 
 type Mode = "move" | "resize-l" | "resize-r";
@@ -42,6 +42,7 @@ interface ItemDrag {
   dropParentId: number | null;
   dropRank: number | null; // insertion index in the drop container; null = keep/append
   snapBounds: number[]; // candidate boundary positions a dragged edge snaps to
+  scheduleBounds: number[]; // schedule-period boundaries, the grid for "schedule" snap mode
   // A single-item drag is just a group drag of one member: `members` are the
   // elements translated as a live preview, and the drag snaps around one
   // anchor (this item). A group drag (isGroup) shifts several items in time
@@ -164,6 +165,7 @@ function onPointerDown(e: PointerEvent): void {
     dropParentId: loc.item.parentId,
     dropRank: null,
     snapBounds: collectSnapBounds(loc.lane, exclude),
+    scheduleBounds: state.current ? scheduleBounds(state.current.periods) : [],
     isGroup,
     members,
     memberIds: [...exclude],
@@ -276,15 +278,28 @@ function snapEdge(day: number, cands: number[], px: number): number {
   return best;
 }
 
+// gridSnapper resolves the coarse grid a dragged edge falls to when no item edge
+// is close, as a pure day->day function. Alt (bypass) disables the grid; the
+// "schedule" mode snaps to the roadmap's schedule-period boundaries, degrading to
+// free placement when it has none; every other mode uses its calendar grid.
+function gridSnapper(bypass: boolean, bounds: number[]): (day: number) => number {
+  if (bypass) return (d) => d;
+  const mode = state.snapMode;
+  if (mode === "schedule") {
+    return bounds.length === 0 ? (d) => d : (d) => nearestBoundary(d, bounds);
+  }
+  return (d) => snapToGrid(d, mode);
+}
+
 // snapBoundary resolves a single dragged/resized edge, given as a boundary
 // position. Item-edge snapping (radius-limited) takes priority — aligning to a
 // real item is the strongest intent — and only when no item boundary is close
-// does the edge fall to the calendar grid. In "day" mode the grid is the
-// identity, so this is pure item snapping.
-function snapBoundary(bound: number, cands: number[], px: number, mode: SnapMode): number {
+// does the edge fall to the `grid` (see gridSnapper). With the identity grid
+// ("day" mode / Alt) this is pure item snapping.
+function snapBoundary(bound: number, cands: number[], px: number, grid: (day: number) => number): number {
   const item = snapEdge(bound, cands, px);
   if (item !== bound) return item;
-  return snapToGrid(bound, mode);
+  return grid(bound);
 }
 
 // moveBounds returns the dragged bar's two edge boundaries after a rigid shift
@@ -314,16 +329,16 @@ function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number): number {
 
 // snapMoveDelta resolves a move. Item snapping wins when an edge boundary is
 // within SNAP_PX of a real item boundary; otherwise the offset is nudged so
-// whichever edge boundary is nearest a calendar-grid line lands exactly on it
-// (duration preserved). The move rides the grid but "clicks" onto neighbours.
-function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, mode: SnapMode): number {
+// whichever edge boundary is nearest a `grid` line lands exactly on it (duration
+// preserved). The move rides the grid but "clicks" onto neighbours. An identity
+// grid (see gridSnapper) leaves the delta unchanged after item snapping.
+function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, grid: (day: number) => number): number {
   const item = snapMoveToItems(d, dayDelta, px);
   if (item !== dayDelta) return item;
-  if (mode === "day") return dayDelta;
   let best = dayDelta;
   let bestDist = Infinity;
   for (const edge of moveBounds(d, dayDelta)) {
-    const g = snapToGrid(edge, mode);
+    const g = grid(edge);
     const dist = Math.abs(g - edge);
     if (dist < bestDist) {
       bestDist = dist;
@@ -358,12 +373,12 @@ function onPointerMove(e: PointerEvent): void {
   }
 
   const px = currentScale().pxPerDay;
-  const mode: SnapMode = bypass ? "day" : state.snapMode;
+  const grid = gridSnapper(bypass, d.scheduleBounds);
   const dayDelta = Math.round(dx / px);
 
   switch (d.mode) {
     case "move": {
-      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px, mode);
+      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px, grid);
       d.newStart = d.startDay + md;
       d.newEnd = d.endDay + md;
       // Group drag is horizontal only; a single drag follows the pointer's Y.
@@ -376,7 +391,7 @@ function onPointerMove(e: PointerEvent): void {
     case "resize-l": {
       // The left edge is the start boundary itself.
       let s = d.startDay + dayDelta;
-      if (!bypass) s = snapBoundary(s, d.snapBounds, px, mode);
+      if (!bypass) s = snapBoundary(s, d.snapBounds, px, grid);
       d.newStart = Math.min(s, d.endDay);
       d.newEnd = d.endDay;
       const shift = (d.newStart - d.startDay) * px;
@@ -388,7 +403,7 @@ function onPointerMove(e: PointerEvent): void {
     case "resize-r": {
       // The right edge lives at end + 1; snap there, then convert back.
       let eb = d.endDay + 1 + dayDelta;
-      if (!bypass) eb = snapBoundary(eb, d.snapBounds, px, mode);
+      if (!bypass) eb = snapBoundary(eb, d.snapBounds, px, grid);
       d.newStart = d.startDay;
       d.newEnd = Math.max(eb - 1, d.startDay);
       d.barEl.style.width = `${d.origWidth + (d.newEnd - d.endDay) * px}px`;

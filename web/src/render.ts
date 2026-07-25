@@ -5,6 +5,7 @@ import { laneColorValue } from "./colors";
 import { icons } from "./icons";
 import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
 import { extractUrls } from "./links";
+import { scheduleBounds } from "./schedule";
 import { state } from "./state";
 import {
   chartWidth,
@@ -16,7 +17,7 @@ import {
   xOf,
   type Scale,
 } from "./timescale";
-import type { Item, ItemFull, LaneFull, Milestone } from "./types";
+import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./types";
 
 let scale: Scale = { startDay: 0, endDay: 0, pxPerDay: 3 };
 
@@ -57,21 +58,19 @@ export function renderChart(container: HTMLElement): void {
   const grid = div("grid");
   grid.style.width = `${LABEL_W + w}px`;
 
-  // Time axis header: quarters row + months row.
+  // Time axis header. Two rows: a coarse top row + the months row. When the
+  // roadmap defines a schedule, its period band replaces the quarter row (and
+  // the months then carry the year, since the quarter row otherwise owns it).
+  const hasSchedule = rm.periods.length > 0;
   const thead = div("thead");
   const corner = div("corner");
   corner.textContent = "Contexts";
   const thRows = div("th-rows");
   thRows.style.width = `${w}px`;
-  const qRow = div("th-row th-quarters");
-  for (const t of quarterTicks(scale)) {
-    const cell = div("th-cell");
-    cell.style.width = `${t.days * scale.pxPerDay}px`;
-    cell.textContent = t.days * scale.pxPerDay >= 44 ? t.label : "";
-    qRow.append(cell);
-  }
+
+  const topRow = hasSchedule ? renderScheduleRow(rm.periods) : renderQuarterRow();
   const mRow = div("th-row th-months");
-  for (const t of monthTicks(scale)) {
+  for (const t of monthTicks(scale, hasSchedule)) {
     const cell = div("th-cell");
     const cw = t.days * scale.pxPerDay;
     cell.style.width = `${cw}px`;
@@ -86,7 +85,7 @@ export function renderChart(container: HTMLElement): void {
     marker.title = "Today";
     thRows.append(marker);
   }
-  thRows.append(qRow, mRow);
+  thRows.append(topRow, mRow);
   thead.append(corner, thRows);
 
   // Lanes (hidden ones are skipped — see the eye menu in the topbar).
@@ -134,6 +133,46 @@ export function renderChart(container: HTMLElement): void {
   }
 }
 
+// SCHEDULE_LABEL_PX: hide a period's label below this width, like the months
+// row — the boundaries still show, so the rhythm reads; the full label is on the
+// span's title. Slightly wider than the months threshold since it centers.
+const SCHEDULE_LABEL_PX = 40;
+
+// renderQuarterRow builds the default coarse header row: contiguous quarter
+// cells (Q1 2026, ...), the sole place the year appears when there's no schedule.
+function renderQuarterRow(): HTMLElement {
+  const row = div("th-row th-quarters");
+  for (const t of quarterTicks(scale)) {
+    const cell = div("th-cell");
+    cell.style.width = `${t.days * scale.pxPerDay}px`;
+    cell.textContent = t.days * scale.pxPerDay >= 44 ? t.label : "";
+    row.append(cell);
+  }
+  return row;
+}
+
+// renderScheduleRow builds the schedule band that replaces the quarter row when
+// a schedule is defined. Unlike quarters/months it does not tile the axis:
+// periods are sparse (gaps are real, and they need not align to the chart edge),
+// so each is an absolutely-positioned span; a bar owns [xOf(start), xOf(end+1)).
+function renderScheduleRow(periods: SchedulePeriod[]): HTMLElement {
+  const row = div("th-row th-schedule");
+  // Alternating fills (zebra) so adjacent periods — which touch with no gap —
+  // read as distinct. Periods arrive ordered by start date, so index parity is
+  // chronological parity.
+  periods.forEach((p, i) => {
+    const left = xOf(scale, dayOf(p.startDate));
+    const width = xOf(scale, dayOf(p.endDate) + 1) - left;
+    const span = div(i % 2 === 1 ? "th-period th-period-alt" : "th-period");
+    span.style.left = `${left}px`;
+    span.style.width = `${width}px`;
+    span.title = p.label;
+    if (width >= SCHEDULE_LABEL_PX) span.textContent = p.label;
+    row.append(span);
+  });
+  return row;
+}
+
 function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   const layout = layoutLane(lane, scale, (id) => state.isCollapsed(id));
   const laneEl = div("lane");
@@ -165,11 +204,21 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   canvas.style.width = `${chartW}px`;
   canvas.style.height = `${layout.height}px`;
 
-  // Month gridlines; quarter starts slightly stronger.
+  // Month gridlines. Normally the quarter starts are drawn slightly stronger;
+  // when a schedule is active its period boundaries take that emphasis instead
+  // (added below), so the whole board aligns to the planning rhythm.
+  const periods = state.current?.periods ?? [];
+  const hasSchedule = periods.length > 0;
   for (const t of monthTicks(scale)) {
     const d = new Date(t.day * 86_400_000);
-    const gl = div(d.getUTCDate() === 1 && d.getUTCMonth() % 3 === 0 ? "gl gl-q" : "gl");
+    const strong = !hasSchedule && d.getUTCDate() === 1 && d.getUTCMonth() % 3 === 0;
+    const gl = div(strong ? "gl gl-q" : "gl");
     gl.style.left = `${xOf(scale, t.day)}px`;
+    canvas.append(gl);
+  }
+  for (const b of scheduleBounds(periods)) {
+    const gl = div("gl gl-q");
+    gl.style.left = `${xOf(scale, b)}px`;
     canvas.append(gl);
   }
 

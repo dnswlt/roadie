@@ -150,7 +150,27 @@ func (s *Store) GetSnapshotContents(ctx context.Context, snapID int64) (model.Ro
 	if err := json.Unmarshal(data, &exp); err != nil {
 		return model.RoadmapFull{}, fmt.Errorf("decode snapshot %d: %w", snapID, err)
 	}
-	return exp.Roadmap, nil
+	return normalizeSnapshotContents(exp.Roadmap), nil
+}
+
+// normalizeSnapshotContents upgrades a decoded snapshot payload to the current
+// client-facing shape. A snapshot stores whatever RoadmapFull looked like when
+// it was captured, so a blob taken before a collection field existed decodes
+// with that field as a nil slice (JSON null / absent). The client contract is
+// "no nulls: every collection is a present array", which the live read path
+// (getRoadmapFull) already upholds; this is the equivalent backward-compat layer
+// for historical blobs.
+//
+// Only a collection added *after* the snapshot feature can actually be absent
+// from a stored blob — currently just Periods. Every earlier collection (lanes,
+// items, milestones, labels) predates snapshots, so all blobs already carry it;
+// no guard is needed for those. Add a line here when a new collection is
+// introduced after this point.
+func normalizeSnapshotContents(full model.RoadmapFull) model.RoadmapFull {
+	if full.Periods == nil {
+		full.Periods = []model.SchedulePeriod{}
+	}
+	return full
 }
 
 // RenameSnapshot sets a snapshot's name and promotes it to a manual snapshot,
@@ -235,6 +255,11 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 	}
 
 	if _, err := tx.Exec(ctx, `DELETE FROM lanes WHERE roadmap_id = $1`, roadmapID); err != nil {
+		return model.Roadmap{}, err
+	}
+	// The schedule is roadmap-scoped, so the lane cascade above does not clear it;
+	// remove it explicitly before insertRoadmapContents re-inserts the snapshot's.
+	if _, err := tx.Exec(ctx, `DELETE FROM schedule_periods WHERE roadmap_id = $1`, roadmapID); err != nil {
 		return model.Roadmap{}, err
 	}
 	if err := s.insertRoadmapContents(ctx, tx, roadmapID, exp.Roadmap); err != nil {

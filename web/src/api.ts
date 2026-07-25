@@ -7,8 +7,10 @@ import type {
   MilestonePatch,
   NewItem,
   NewMilestone,
+  NewSchedulePeriod,
   Roadmap,
   RoadmapFull,
+  SchedulePeriod,
   Snapshot,
 } from "./types";
 
@@ -65,4 +67,7 @@ export const api = {
   updateMilestone: (id: number, patch: MilestonePatch) =>
     req<Milestone>("PATCH", `/api/milestones/${id}`, patch),
   deleteMilestone: (id: number) => req<void>("DELETE", `/api/milestones/${id}`),
+
+  replaceSchedule: (roadmapId: number, periods: NewSchedulePeriod[]) =>
+    req<SchedulePeriod[]>("PUT", `/api/roadmaps/${roadmapId}/schedule`, { periods }),
 };

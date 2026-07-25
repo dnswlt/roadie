@@ -32,12 +32,13 @@ export function xOf(scale: Scale, day: number): number {
   return (day - scale.startDay) * scale.pxPerDay;
 }
 
-// SnapMode is the calendar grid a dragged/resized edge snaps to when it isn't
-// caught by a nearby item edge. "day" = no grid (free per-day placement). See
-// snapToGrid and dnd.ts. This is a user-chosen view preference, not zoom-derived:
-// the right grain for a roadmap depends on how you're planning, not how far
-// you've zoomed.
-export type SnapMode = "day" | "week" | "month" | "quarter";
+// SnapMode is the grid a dragged/resized edge snaps to when it isn't caught by a
+// nearby item edge. "day" = no grid (free per-day placement); "schedule" snaps
+// to the roadmap's own schedule-period boundaries (see dnd.ts) and is only
+// meaningful when a schedule is defined. See snapToGrid and dnd.ts. This is a
+// user-chosen view preference, not zoom-derived: the right grain for a roadmap
+// depends on how you're planning, not how far you've zoomed.
+export type SnapMode = "day" | "week" | "month" | "quarter" | "schedule";
 
 // weekStart returns the day number of the Monday on or before `day`. Day 0
 // (1970-01-01) is a Thursday, so the ISO weekday (Mon=0..Sun=6) is (day+3) mod 7.
@@ -102,6 +103,11 @@ export function computeRange(rm: RoadmapFull | null, today: number): { startDay:
         max = Math.max(max, d);
       }
     }
+    // Schedule periods can extend past the work, so the band stays fully visible.
+    for (const p of rm.periods) {
+      min = Math.min(min, dayOf(p.startDate));
+      max = Math.max(max, dayOf(p.endDate));
+    }
   }
   return { startDay: monthStart(min, -1), endDay: monthStart(max, 3) - 1 };
 }
@@ -144,7 +150,10 @@ export interface Tick {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export function monthTicks(scale: Scale): Tick[] {
+// monthTicks returns one tick per visible month. With withYear the label carries
+// a 2-digit year ("Jan 26") — used when the schedule band replaces the quarter
+// row, which is otherwise the only place the year is shown.
+export function monthTicks(scale: Scale, withYear = false): Tick[] {
   const ticks: Tick[] = [];
   let day = monthStart(scale.startDay, 0);
   while (day <= scale.endDay) {
@@ -152,7 +161,9 @@ export function monthTicks(scale: Scale): Tick[] {
     const d = new Date(day * MS_PER_DAY);
     const from = Math.max(day, scale.startDay);
     const to = Math.min(next - 1, scale.endDay);
-    ticks.push({ day: from, days: to - from + 1, label: MONTHS[d.getUTCMonth()] ?? "" });
+    const month = MONTHS[d.getUTCMonth()] ?? "";
+    const label = withYear ? `${month} ${String(d.getUTCFullYear()).slice(2)}` : month;
+    ticks.push({ day: from, days: to - from + 1, label });
     day = next;
   }
   return ticks;

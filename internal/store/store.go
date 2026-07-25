@@ -351,6 +351,11 @@ func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull
 	if err := msRows.Err(); err != nil {
 		return full, err
 	}
+
+	full.Periods, err = getSchedule(ctx, q, id)
+	if err != nil {
+		return full, err
+	}
 	return full, nil
 }
 
@@ -498,7 +503,9 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 			}
 		}
 	}
-	return nil
+	// The schedule is roadmap-scoped (not under any lane), so it is inserted once
+	// here rather than per lane.
+	return insertSchedulePeriods(ctx, tx, roadmapID, src.Periods)
 }
 
 // Lanes
