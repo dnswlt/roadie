@@ -1,0 +1,15 @@
+[
+  {
+    "ClientId": "roadie-dev",
+    "ClientName": "Roadie (local development)",
+    "Description": "Mirrors how Roadie is registered in Entra: a confidential web client using the authorization code flow with PKCE.",
+    "AllowedGrantTypes": ["authorization_code"],
+    "RequirePkce": true,
+    "RequireClientSecret": true,
+    "ClientSecrets": ["roadie-dev-secret"],
+    "RedirectUris": ["http://localhost:8080/auth/callback"],
+    "AllowedScopes": ["openid", "profile", "email"],
+    "AllowOfflineAccess": false,
+    "AllowAccessTokensViaBrowser": false
+  }
+]

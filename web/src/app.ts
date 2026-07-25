@@ -1,5 +1,6 @@
 import "./styles.css";
 import { actions } from "./actions";
+import { api } from "./api";
 import { LANE_COLOR_ORDER, laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { initDnd } from "./dnd";
@@ -12,6 +13,7 @@ import { deleteSelection, renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
+import type { Me } from "./types";
 import { readUrl, type UrlTarget } from "./url";
 
 function $(id: string): HTMLElement {
@@ -351,6 +353,21 @@ function wirePanelResize(): void {
   });
 }
 
+// renderAccount fills in the account menu, and reveals it at all, only on an
+// authenticated deployment. Called once from boot rather than from render():
+// who we are cannot change without a page load.
+function renderAccount(me: Me): void {
+  if (me.mode === "open") return;
+  $("account-wrap").classList.remove("hidden");
+  const who = $("account-who");
+  const name = document.createElement("strong");
+  name.textContent = me.name || "Signed in";
+  who.replaceChildren(name);
+  // The email is worth showing only when it adds something to the display name.
+  if (me.email && me.email !== me.name) who.append(me.email);
+  $("account-menu").title = me.name ? `Signed in as ${me.name}` : "Account";
+}
+
 function injectIcons(): void {
   $("rm-new").prepend(icons.plus(14));
   $("rm-menu").append(icons.dots(18));
@@ -368,6 +385,8 @@ function injectIcons(): void {
   $("zoom-in").append(icons.zoomIn());
   $("zoom-out").append(icons.zoomOut());
   $("help-menu").append(icons.help(18));
+  $("account-menu").append(icons.user(18));
+  $("account-signout").prepend(icons.signOut(14));
 }
 
 function wireTopbar(): void {
@@ -376,7 +395,8 @@ function wireTopbar(): void {
   const visPop = $("lane-vis-pop");
   const focusPop = $("focus-pop");
   const snapPop = $("snap-pop");
-  const allPops = [rmPop, menuPop, visPop, focusPop, snapPop];
+  const accountPop = $("account-pop");
+  const allPops = [rmPop, menuPop, visPop, focusPop, snapPop, accountPop];
   // Close every top-bar popover except the one being opened.
   const closeOthers = (keep: HTMLElement): void => {
     for (const p of allPops) if (p !== keep) p.classList.add("hidden");
@@ -411,6 +431,20 @@ function wireTopbar(): void {
     snapPop.classList.toggle("hidden");
   });
   $("help-menu").addEventListener("click", () => openHelpDialog());
+  $("account-menu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeOthers(accountPop);
+    accountPop.classList.toggle("hidden");
+  });
+  $("account-signout").addEventListener("click", () => {
+    // Land on the dedicated signed-out page, not "/": going home would hit the
+    // login redirect and, with the provider session still alive, sign us
+    // straight back in — making the button look broken.
+    void api.logout().then(
+      () => location.assign("/auth/signed-out"),
+      () => location.assign("/auth/signed-out"),
+    );
+  });
   document.addEventListener("click", (e) => {
     // Close each popup unless the click landed inside its own menu wrap.
     const wrap = (e.target as HTMLElement).closest(".menu-wrap");
@@ -841,6 +875,11 @@ async function boot(): Promise<void> {
 
   // Capture the deep link before anything can rewrite the address bar.
   const target = readUrl();
+
+  // First call of the session, and on an authenticated deployment also the
+  // gate: reaching the app with an expired session gets a 401 here, and the
+  // api layer navigates to the login flow instead of returning.
+  renderAccount(await api.me());
 
   await actions.loadRoadmaps();
 

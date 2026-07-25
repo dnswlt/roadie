@@ -10,7 +10,7 @@
 // "Updated elsewhere · Refresh" pill and flush once the user finishes.
 
 import { actions } from "./actions";
-import { clientId } from "./api";
+import { api, clientId } from "./api";
 import { isDragging } from "./dnd";
 import { state } from "./state";
 
@@ -18,10 +18,15 @@ import { state } from "./state";
 // children, a multi-select shift arriving as several pings) into one refetch.
 const REFRESH_DEBOUNCE_MS = 250;
 
+// AUTH_PROBE_DELAY_MS is how long a dropped stream is given to come back on its
+// own before we suspect the session rather than the network. See onerror below.
+const AUTH_PROBE_DELAY_MS = 2000;
+
 let source: EventSource | null = null;
 let sourceRoadmapId: number | null = null;
 let panelEl: HTMLElement | null = null;
 let refreshTimer: number | undefined;
+let authProbeTimer: number | undefined;
 
 // initEvents records the edit-panel element (for the safe-gate) and wires the
 // listeners that flush a deferred refresh once the user stops editing.
@@ -59,6 +64,19 @@ export function connectEvents(roadmapId: number): void {
     // them, and refetching would fight the user's in-flight typing.
     if (ev.origin === clientId) return;
     requestRefresh();
+  };
+  // EventSource reconnects by itself and never tells us why a connection
+  // failed, so on an authenticated deployment an expired session turns into a
+  // silent retry loop: every attempt is answered with 401 and the tab just
+  // stops receiving updates. Probe once the outage looks persistent rather
+  // than transient — api.me() redirects into the login flow on a 401 and is a
+  // cheap no-op otherwise.
+  source.onerror = () => {
+    clearTimeout(authProbeTimer);
+    authProbeTimer = window.setTimeout(() => {
+      if (source?.readyState === EventSource.OPEN) return; // it came back; nothing to do
+      void api.me().catch(() => {});
+    }, AUTH_PROBE_DELAY_MS);
   };
 }
 

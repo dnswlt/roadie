@@ -51,6 +51,15 @@
         <button id="zoom-in" class="icon-btn" title="Zoom in (Ctrl+scroll)"></button>
       </div>
       <button id="help-menu" class="icon-btn" title="Help"></button>
+      <!-- Shown only when the server runs with authentication; on an open
+           deployment there is no account concept to expose. -->
+      <div class="menu-wrap hidden" id="account-wrap">
+        <button id="account-menu" class="icon-btn" title="Account"></button>
+        <div id="account-pop" class="menu hidden">
+          <div id="account-who" class="menu-head"></div>
+          <button id="account-signout" class="menu-item">Sign out</button>
+        </div>
+      </div>
     </header>
     <div class="main">
       <div id="snapshot-banner" class="snapshot-banner hidden"></div>

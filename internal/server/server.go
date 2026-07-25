@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dnswlt/roadie/internal/auth"
 	"github.com/dnswlt/roadie/internal/model"
 	"github.com/dnswlt/roadie/internal/store"
 )
@@ -22,6 +23,17 @@ import (
 type Server struct {
 	store *store.Store
 	mux   *http.ServeMux
+
+	// auth is nil when the server runs unauthenticated, which is the default
+	// and the only mode Roadie had before OIDC: everyone may see and edit
+	// everything, and auth.From reports an anonymous identity. Handlers never
+	// consult this field — they read the identity from the request context,
+	// which is populated either way.
+	auth *auth.Authenticator
+
+	// handler is mux wrapped in the middleware chain built by New; ServeHTTP
+	// delegates to it.
+	handler http.Handler
 
 	// lastAuto records when each roadmap was last auto-snapshotted, so the
 	// capture throttle (autoSnapshot) is an in-process check rather than a DB
@@ -35,8 +47,22 @@ type Server struct {
 	hub *hub
 }
 
-func New(st *store.Store, static fs.FS) *Server {
+// Option configures a Server. Options keep New's signature stable as optional
+// subsystems (so far: authentication) are added.
+type Option func(*Server)
+
+// WithAuth turns on authentication: every request outside the login flow and
+// the k8s probes needs a session, and the caller's identity is put into the
+// request context. Without it the server stays fully open, as before.
+func WithAuth(a *auth.Authenticator) Option {
+	return func(s *Server) { s.auth = a }
+}
+
+func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s := &Server{store: st, mux: http.NewServeMux(), lastAuto: map[int64]time.Time{}, hub: newHub()}
+	for _, opt := range opts {
+		opt(s)
+	}
 
 	// Liveness: the process is up. Deliberately does not touch the database —
 	// a DB blip shouldn't get healthy pods killed and restarted.
@@ -55,6 +81,10 @@ func New(st *store.Store, static fs.FS) *Server {
 		}
 		w.Write([]byte("ok"))
 	})
+
+	// Who am I / is auth even on. The frontend asks once at startup so the UI
+	// learns the mode at runtime instead of at build time.
+	s.mux.HandleFunc("GET /api/me", s.getMe)
 
 	s.mux.HandleFunc("GET /api/roadmaps", s.listRoadmaps)
 	s.mux.HandleFunc("POST /api/roadmaps", s.createRoadmap)
@@ -89,11 +119,74 @@ func New(st *store.Store, static fs.FS) *Server {
 	s.mux.HandleFunc("DELETE /api/snapshots/{id}", s.deleteSnapshot)
 
 	s.mux.Handle("/", http.FileServerFS(static))
+
+	s.handler = s.mux
+	if s.auth != nil {
+		s.auth.Routes(s.mux)
+		// Order matters: the CSRF check sits inside the auth middleware, so it
+		// only ever sees requests that already carry a valid session.
+		s.handler = s.auth.Middleware(requireClientHeader(s.mux))
+	}
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
+}
+
+// requireClientHeader rejects mutating API calls that omit X-Client-Id.
+//
+// This is a CSRF defence, and it is only installed alongside authentication:
+// with auth off there is no ambient authority to forge, and demanding the
+// header would break plain curl against an API that is open by design.
+//
+// The header is already sent by every frontend request (web/src/api.ts) for
+// SSE echo suppression, so this costs the client nothing. Its value here is
+// that a custom header cannot be set on a cross-origin request without a
+// preflight, and Roadie serves no CORS headers, so the preflight fails and the
+// forged request is never sent. It backs up SameSite=Lax on the session cookie
+// rather than replacing it.
+func requireClientHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			// Safe methods: no state change to forge.
+		default:
+			if strings.HasPrefix(r.URL.Path, "/api/") && r.Header.Get(clientIDHeader) == "" {
+				writeJSON(w, http.StatusForbidden, map[string]string{
+					"error": "missing " + clientIDHeader + " header",
+				})
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// meResponse tells the frontend whether authentication is on and, if so, who
+// the user is. Mode is what the UI keys off: with "open" it renders exactly as
+// Roadie always has, with no account affordances at all.
+type meResponse struct {
+	Mode          string `json:"mode"` // "open" or "oidc"
+	Authenticated bool   `json:"authenticated"`
+	Name          string `json:"name,omitempty"`
+	Email         string `json:"email,omitempty"`
+}
+
+func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
+	if s.auth == nil {
+		writeJSON(w, http.StatusOK, meResponse{Mode: "open"})
+		return
+	}
+	// Reaching here with auth on means the middleware admitted the request, so
+	// there is always an identity.
+	id := auth.From(r.Context())
+	writeJSON(w, http.StatusOK, meResponse{
+		Mode:          "oidc",
+		Authenticated: true,
+		Name:          id.Name,
+		Email:         id.Email,
+	})
 }
 
 // Helpers

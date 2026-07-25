@@ -113,3 +113,14 @@ export interface MilestonePatch {
   description?: string;
   date?: string;
 }
+
+// Me mirrors the server's /api/me response. mode tells the UI whether this
+// deployment authenticates at all: with "open" there is no account concept and
+// no sign-in affordance is shown. Reaching the app at all with mode "oidc"
+// implies authenticated, since the server gates every route.
+export interface Me {
+  mode: "open" | "oidc";
+  authenticated: boolean;
+  name?: string;
+  email?: string;
+}

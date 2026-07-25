@@ -10,7 +10,16 @@ else
     DC_CMD := docker compose
 endif
 
-.PHONY: dev kill-watch build test check db-up db-down frontend frontend-watch \
+# Which provider `make dev-oidc` authenticates against. The defaults match the
+# throwaway one in dev/oidc (start it with `make -C dev/oidc up`); override them
+# to point at any other provider.
+OIDC_ISSUER ?= http://localhost:4011
+OIDC_CLIENT_ID ?= roadie-dev
+OIDC_CLIENT_SECRET ?= roadie-dev-secret
+# Roadie's own listen address — the same one `make dev` uses.
+OIDC_ADDR ?= localhost:8080
+
+.PHONY: dev dev-oidc kill-watch build test check db-up db-down frontend frontend-watch \
 	docker-build docker-up docker-down
 
 db-up:
@@ -52,6 +61,28 @@ dev:
 	@trap 'kill 0' EXIT; \
 	npm run --prefix web watch & \
 	DATABASE_URL=$(DATABASE_URL) go run ./cmd/roadie -dev -seed
+
+# Like `dev`, but with authentication on. Serves on the same address as `make
+# dev`, so bookmarks and per-origin localStorage carry over.
+#
+# This runs Roadie only; the provider has to be up already
+# (`make -C dev/oidc up`).
+#
+# SESSION_KEY is deliberately not set: roadie then generates a random one per
+# run, so no secret is baked into the repo. The only cost is being logged out
+# on restart. Export SESSION_KEY yourself to keep a session across restarts.
+dev-oidc:
+	@curl -s --max-time 3 -o /dev/null $(OIDC_ISSUER)/.well-known/openid-configuration \
+		|| { echo "no OIDC provider at $(OIDC_ISSUER) — run 'make -C dev/oidc up'"; exit 1; }
+	npm run --prefix web build
+	@trap 'kill 0' EXIT; \
+	npm run --prefix web watch & \
+	DATABASE_URL=$(DATABASE_URL) \
+	OIDC_ISSUER=$(OIDC_ISSUER) \
+	OIDC_CLIENT_ID=$(OIDC_CLIENT_ID) \
+	OIDC_CLIENT_SECRET=$(OIDC_CLIENT_SECRET) \
+	go run ./cmd/roadie -dev -seed -addr=$(OIDC_ADDR) -auth=oidc \
+		-oidc-redirect-url=http://$(OIDC_ADDR)/auth/callback
 
 # Fallback: kill stray esbuild watchers left over from an interrupted `make dev`.
 kill-watch:

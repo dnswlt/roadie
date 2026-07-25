@@ -1,0 +1,41 @@
+# Self-contained: its own compose project, kept out of the repository's root
+# compose.yaml so the normal dev path — db-up, dev, docker-up — never touches
+# it. Driven by dev/oidc's own Makefile.
+#
+# The project name is pinned rather than defaulted from the directory name:
+# "oidc" is a name other checkouts use too, and colliding projects end up
+# sharing a network, so `down` then fails with "Resource is still in use"
+# because the other project's container is still attached.
+name: roadie-oidc
+
+services:
+  # HTTP only, deliberately: with a self-signed certificate the browser stops
+  # at an interstitial on the login redirect, and no server-side flag can fix
+  # that. See README.md here for the rest of the reasoning.
+  oidc:
+    image: soluto/oidc-server-mock:latest
+    container_name: roadie-oidc
+    platform: linux/amd64
+    ports:
+      - "4011:80"
+    environment:
+      ASPNETCORE_URLS: http://+:80
+      ASPNETCORE_ENVIRONMENT: Development
+      CLIENTS_CONFIGURATION_PATH: /config/clients.json
+      USERS_CONFIGURATION_PATH: /config/users.json
+      # Without this the provider issues its session cookies as SameSite=None,
+      # which browsers reject unless they are also Secure — i.e. unless the
+      # provider is on HTTPS. The cookie is dropped, the authorize step sees no
+      # session, and the login form reappears forever. (curl ignores SameSite,
+      # so scripted flows pass regardless and hide the problem.) Lax is correct
+      # here anyway: the login redirect is a top-level GET navigation.
+      SERVER_OPTIONS_INLINE: |
+        {
+          "Authentication": {
+            "CookieSameSiteMode": "Lax",
+            "CheckSessionCookieSameSiteMode": "Lax"
+          }
+        }
+    volumes:
+      - ./clients.json:/config/clients.json:ro
+      - ./users.json:/config/users.json:ro

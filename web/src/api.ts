@@ -3,6 +3,7 @@ import type {
   ItemPatch,
   Lane,
   LanePatch,
+  Me,
   Milestone,
   MilestonePatch,
   NewItem,
@@ -20,6 +21,22 @@ import type {
 export const clientId =
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random());
 
+// signingIn guards against a burst of parallel 401s each starting their own
+// navigation; the first one wins and the rest just stop.
+let signingIn = false;
+
+// toLogin sends the browser into the OIDC flow, coming back to wherever we
+// were. Reached when the session expired under us (the server answers XHR with
+// 401 rather than a redirect, since a redirect to the provider would only show
+// up as an opaque CORS failure). Never returns in practice — the promise it
+// leaves pending is abandoned by the navigation.
+export function toLogin(): void {
+  if (signingIn) return;
+  signingIn = true;
+  const next = location.pathname + location.search + location.hash;
+  location.assign(`/auth/login?next=${encodeURIComponent(next)}`);
+}
+
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "X-Client-Id": clientId };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -28,6 +45,10 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401) {
+    toLogin();
+    throw new Error("not signed in");
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -43,6 +64,9 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
+  me: () => req<Me>("GET", "/api/me"),
+  logout: () => req<void>("POST", "/auth/logout"),
+
   listRoadmaps: () => req<Roadmap[]>("GET", "/api/roadmaps"),
   createRoadmap: (name: string) => req<Roadmap>("POST", "/api/roadmaps", { name }),
   getRoadmap: (id: number) => req<RoadmapFull>("GET", `/api/roadmaps/${id}`),

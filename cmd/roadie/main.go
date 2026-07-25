@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/dnswlt/roadie/internal/auth"
 	"github.com/dnswlt/roadie/internal/server"
 	"github.com/dnswlt/roadie/internal/store"
 	"github.com/dnswlt/roadie/web"
@@ -32,6 +35,10 @@ func run() error {
 	addr := flag.String("addr", "localhost:8080", "listen address")
 	dev := flag.Bool("dev", false, "serve frontend from web/dist on disk instead of the embedded copy")
 	seed := flag.Bool("seed", false, "create a demo roadmap if the database is empty")
+	authMode := flag.String("auth", "off", `authentication mode: "off" (everyone may edit anonymously) or "oidc"`)
+	redirectURL := flag.String("oidc-redirect-url", "", "public URL of this server's /auth/callback (required with -auth=oidc)")
+	sessionTTL := flag.Duration("session-ttl", auth.DefaultSessionTTL, "how long a login lasts before re-authentication")
+	insecureTLS := flag.Bool("oidc-insecure-tls", false, "skip TLS verification when talking to the OIDC provider (local mocks only, never in production)")
 	flag.Parse()
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -70,7 +77,12 @@ func run() error {
 	// write, which would sever long-lived SSE streams. If a non-streaming route
 	// ever needs slow-read protection, set a per-connection deadline in that
 	// handler via http.NewResponseController(w).SetWriteDeadline.
-	app := server.New(st, static)
+	opts, err := authOptions(ctx, *authMode, *redirectURL, *sessionTTL, *insecureTLS)
+	if err != nil {
+		return err
+	}
+
+	app := server.New(st, static, opts...)
 	srv := &http.Server{
 		Addr:              *addr,
 		Handler:           app,
@@ -113,4 +125,63 @@ func run() error {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	return nil
+}
+
+// authOptions resolves the -auth mode into server options.
+//
+// The mode is an explicit flag rather than something inferred from whether the
+// OIDC environment happens to be set: a typo in OIDC_ISSUER must fail startup,
+// not quietly leave the server unauthenticated. Everything except the mode and
+// the public callback URL comes from the environment, because flag values are
+// visible to anyone who can run ps.
+func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duration, insecureTLS bool) ([]server.Option, error) {
+	switch mode {
+	case "off":
+		log.Print("auth: DISABLED — all requests are anonymous and may edit everything")
+		return nil, nil
+	case "oidc":
+	default:
+		return nil, fmt.Errorf("invalid -auth %q (want \"off\" or \"oidc\")", mode)
+	}
+
+	key, err := sessionKey()
+	if err != nil {
+		return nil, err
+	}
+	issuer := os.Getenv("OIDC_ISSUER")
+	a, err := auth.New(ctx, auth.Config{
+		Issuer:       issuer,
+		ClientID:     os.Getenv("OIDC_CLIENT_ID"),
+		ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+		RedirectURL:  redirectURL,
+		SessionKey:   key,
+		SessionTTL:   ttl,
+		InsecureTLS:  insecureTLS,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("auth: %w", err)
+	}
+	if insecureTLS {
+		log.Print("auth: WARNING — TLS verification to the OIDC provider is disabled")
+	}
+	log.Printf("auth: oidc (issuer=%s, session=%s)", issuer, ttl)
+	return []server.Option{server.WithAuth(a)}, nil
+}
+
+// sessionKey reads the 32-byte cookie sealing key from SESSION_KEY, e.g.
+// `openssl rand -base64 32`. Generating one when it is unset keeps a
+// single-instance deployment working out of the box, at the cost of logging
+// everyone out on restart — and of being wrong for more than one replica,
+// which is why it warns.
+func sessionKey() ([]byte, error) {
+	raw := strings.TrimSpace(os.Getenv("SESSION_KEY"))
+	if raw == "" {
+		log.Print("auth: WARNING — SESSION_KEY is unset; using a random key, so sessions end at restart and cannot be shared between replicas")
+		return auth.NewSessionKey(), nil
+	}
+	key, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("SESSION_KEY is not valid base64: %w", err)
+	}
+	return key, nil
 }

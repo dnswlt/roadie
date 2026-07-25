@@ -255,8 +255,10 @@ body {
   padding: 5px;
 }
 
-/* The snap button sits near the right edge, so its popover grows leftward. */
-#snap-pop {
+/* The snap and account buttons sit at the right edge, so their popovers grow
+   leftward — anchored left they would open off-screen. */
+#snap-pop,
+#account-pop {
   left: auto;
   right: 0;
 }
@@ -380,6 +382,21 @@ kbd {
 .menu-empty {
   padding: 7px 10px;
   color: var(--ink-2);
+}
+
+/* Non-interactive caption at the top of a menu — the signed-in user. */
+.menu-head {
+  padding: 7px 10px 9px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--grid);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.menu-head strong {
+  display: block;
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .lane-vis-name {
