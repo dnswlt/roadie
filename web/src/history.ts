@@ -123,28 +123,26 @@ function dayHeader(g: DayGroup, expanded: boolean): HTMLButtonElement {
   return b;
 }
 
-// lastEditorBlock shows who most recently touched the roadmap, and only that.
-// The full author list deliberately does not appear here: it is unbounded — a
+// lastEditorLabel describes the live roadmap's most recent edit, e.g. "2h ago
+// by Alice Anderson". It is the subtitle of the "Current version" row: that
+// row's job is to say how the live roadmap differs from the snapshots under it,
+// and who touched it last does that with a fact rather than a slogan. Time
+// leads, matching the snapshot rows below, where time is the primary label.
+//
+// Only the last editor appears here. The full author list is unbounded — a
 // long-running roadmap reaches dozens of names — and this sidebar is 280px of
-// scrubbing UI, where a wall of names pushes the version list out of sight.
-// The complete list, with per-author first/last dates, lives in the roadmap
+// scrubbing UI, so the complete list with per-author dates lives in the roadmap
 // info dialog instead (info.ts).
 //
-// Returns null when nobody is recorded, so the block disappears rather than
-// showing an empty line. That is the normal case with auth off, where there is
-// no identity to attribute an edit to.
-function lastEditorBlock(cs: Contributor[]): HTMLElement | null {
+// Returns null when nobody is recorded, which is the normal case with auth off:
+// the row then carries no subtitle at all rather than an empty or invented one.
+function lastEditorLabel(cs: Contributor[]): string | null {
   if (cs.length === 0) return null;
-  const box = document.createElement("div");
-  box.className = "history-authors";
-
   // Parse rather than compare the ISO strings: same-instant timestamps can
   // differ in fractional digits, which sorts wrong lexicographically.
   const last = cs.reduce((a, b) => (Date.parse(b.lastSeen) > Date.parse(a.lastSeen) ? b : a));
   const when = new Date(last.lastSeen);
-  box.append(textSpan("history-authors-names", `Last edited by ${last.name}`));
-  box.append(textSpan("history-sub", relTime(when) || whenLabel(when)));
-  return box;
+  return `${relTime(when) || whenLabel(when)} by ${last.name}`;
 }
 
 function snapshotRow(snap: Snapshot): HTMLButtonElement {
@@ -189,12 +187,10 @@ export function renderHistory(historyEl: HTMLElement, bannerEl: HTMLElement): vo
   list.className = "history-list";
 
   // The live roadmap, pinned at the top so scrubbing back to "now" is one click.
-  list.append(
-    row(state.preview === null, () => void actions.backToCurrent(), [
-      textSpan("history-when", "Current version"),
-      textSpan("history-sub", "Live — unsaved edits appear here"),
-    ]),
-  );
+  const currentLines = [textSpan("history-when", "Current version")];
+  const lastEdit = lastEditorLabel(state.contributors);
+  if (lastEdit) currentLines.push(textSpan("history-sub", lastEdit));
+  list.append(row(state.preview === null, () => void actions.backToCurrent(), currentLines));
 
   if (snaps.length === 0) {
     const empty = document.createElement("div");
@@ -212,8 +208,7 @@ export function renderHistory(historyEl: HTMLElement, bannerEl: HTMLElement): vo
     }
   }
 
-  const lastEditor = lastEditorBlock(state.contributors);
-  historyEl.replaceChildren(...(lastEditor ? [head, lastEditor, list] : [head, list]));
+  historyEl.replaceChildren(head, list);
   renderBanner(bannerEl);
 }
 

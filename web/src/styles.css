@@ -1538,23 +1538,6 @@ dialog input:focus {
   font-weight: 600;
 }
 
-/* Who last edited this roadmap, above the version list. Hidden entirely when no
-   contributors are recorded (auth off), so it costs nothing there. The full
-   author list is not shown here — see lastEditorBlock in history.ts. */
-.history-authors {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.history-authors-names {
-  /* A single display name can still be long enough to overflow 280px, so let it
-     wrap rather than spill out of the sidebar. */
-  overflow-wrap: anywhere;
-}
-
 .history-list {
   flex: 1;
   overflow-y: auto;
@@ -1612,6 +1595,9 @@ dialog input:focus {
 .history-sub {
   font-size: 12px;
   color: var(--ink-2);
+  /* Carries a display name on the "Current version" row, and one long enough to
+     overflow 280px has to wrap rather than spill out of the sidebar. */
+  overflow-wrap: anywhere;
 }
 
 /* Collapsible per-day group header in the history list. */
