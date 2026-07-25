@@ -118,6 +118,7 @@ export const actions = {
       state.clearSelection();
       state.history = null; // switching roadmaps exits history browsing
       state.preview = null;
+      state.contributors = []; // belong to the roadmap we just left
       state.stale = false; // a fresh load can't be stale
       state.focusLabel = null; // labels are per-roadmap; don't carry focus across
       state.loadHiddenLanes();
@@ -497,7 +498,14 @@ export const actions = {
   async openHistory(): Promise<void> {
     if (!state.current) return;
     try {
-      state.history = await api.listSnapshots(state.current.id);
+      // Contributors are a separate fetch (they are editing metadata, not part
+      // of the roadmap payload), so load both in parallel and open once.
+      const [snaps, contributors] = await Promise.all([
+        api.listSnapshots(state.current.id),
+        api.listContributors(state.current.id),
+      ]);
+      state.history = snaps;
+      state.contributors = contributors;
       state.notify();
     } catch (e) {
       toast(errMsg(e), true);
@@ -514,6 +522,7 @@ export const actions = {
     }
     state.preview = null;
     state.history = null;
+    state.contributors = [];
     state.notify();
   },
 

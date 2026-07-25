@@ -1220,6 +1220,72 @@ dialog input:focus {
   margin-top: 16px;
 }
 
+/* Roadmap info dialog. Wider than the prompt dialogs because the author table
+   carries two timestamps per row; capped so it stays readable on a big screen. */
+.info-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 520px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.info-label {
+  color: var(--ink-2);
+}
+
+.info-section {
+  margin: 18px 0 8px;
+  font-size: 13px;
+}
+
+/* Roughly a dozen rows before the list starts scrolling on its own, keeping the
+   dialog's title and Close button in place however many authors there are. */
+.info-authors-scroll {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.info-authors {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* Keep the column headers visible while the list scrolls under them. */
+.info-authors th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.info-authors th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  padding: 0 16px 4px 0;
+}
+
+.info-authors td {
+  padding: 3px 16px 3px 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+/* The name is the one column that can be arbitrarily long, so it wraps while
+   the timestamp columns keep their shape. */
+.info-authors td:first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .dialog-help {
   font-size: 12px;
   color: var(--muted);
@@ -1470,6 +1536,23 @@ dialog input:focus {
 
 .history-title {
   font-weight: 600;
+}
+
+/* Who last edited this roadmap, above the version list. Hidden entirely when no
+   contributors are recorded (auth off), so it costs nothing there. The full
+   author list is not shown here — see lastEditorBlock in history.ts. */
+.history-authors {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-authors-names {
+  /* A single display name can still be long enough to overflow 280px, so let it
+     wrap rather than spill out of the sidebar. */
+  overflow-wrap: anywhere;
 }
 
 .history-list {

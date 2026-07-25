@@ -3,6 +3,10 @@
 export interface Roadmap {
   id: number;
   name: string;
+  // The server also sends updatedAt, deliberately not declared here: it only
+  // moves when the roadmaps row itself is written (rename, restore), so it is
+  // not the "last edited" it looks like. Contributors answer that instead.
+  createdAt: string; // ISO 8601 timestamp
 }
 
 export interface Lane {
@@ -68,6 +72,17 @@ export interface NewSchedulePeriod {
 export interface RoadmapFull extends Roadmap {
   lanes: LaneFull[];
   periods: SchedulePeriod[];
+}
+
+// One person who has edited a roadmap, shown above the version-history list.
+// This is editing metadata rather than roadmap content, which is why it is
+// fetched on its own instead of riding in RoadmapFull — that payload is also
+// what snapshots serialize, and viewing an old version must not show an old
+// author list. The server sends no user id: only names are ever displayed.
+export interface Contributor {
+  name: string;
+  firstSeen: string; // ISO 8601 timestamp
+  lastSeen: string; // ISO 8601 timestamp
 }
 
 // Snapshot metadata (no payload) for the version-history list. `name` is set

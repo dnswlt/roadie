@@ -1,5 +1,14 @@
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
-import type { Item, ItemFull, LaneFull, Milestone, Roadmap, RoadmapFull, Snapshot } from "./types";
+import type {
+  Contributor,
+  Item,
+  ItemFull,
+  LaneFull,
+  Milestone,
+  Roadmap,
+  RoadmapFull,
+  Snapshot,
+} from "./types";
 
 // Edit-panel width (px). A global view preference, persisted in localStorage
 // and adjustable by dragging the panel's left edge.
@@ -73,6 +82,11 @@ class AppState {
   // read-only flag has to be threaded through the render/menu code.
   history: Snapshot[] | null = null;
   preview: { snapshotId: number; createdAt: string } | null = null;
+  // Who has edited this roadmap, loaded alongside `history` and shown above it.
+  // Empty when nobody is recorded, which is the normal case with auth off — the
+  // header then hides itself. Unlike `history` this needs no null/closed state:
+  // it is only ever read while the history side-list is open.
+  contributors: Contributor[] = [];
 
   // Set when an SSE change event arrived while it was unsafe to auto-refresh
   // (a drag, a focused edit field, or a snapshot preview). Drives the "Updated

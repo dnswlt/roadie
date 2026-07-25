@@ -1,4 +1,5 @@
 import type {
+  Contributor,
   Item,
   ItemPatch,
   Lane,
@@ -77,6 +78,8 @@ export const api = {
   duplicateRoadmap: (id: number, name: string) =>
     req<Roadmap>("POST", `/api/roadmaps/${id}/duplicate`, { name }),
 
+  listContributors: (roadmapId: number) =>
+    req<Contributor[]>("GET", `/api/roadmaps/${roadmapId}/contributors`),
   listSnapshots: (roadmapId: number) =>
     req<Snapshot[]>("GET", `/api/roadmaps/${roadmapId}/snapshots`),
   getSnapshot: (id: number) => req<RoadmapFull>("GET", `/api/snapshots/${id}`),

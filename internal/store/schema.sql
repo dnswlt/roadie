@@ -94,3 +94,18 @@ CREATE TABLE schedule_periods (
 );
 
 CREATE INDEX schedule_periods_roadmap_idx ON schedule_periods (roadmap_id, start_date);
+
+-- Contributors: who has edited a roadmap, and the window over which they did.
+-- Unlike every other roadmap-scoped table here this is editing metadata rather
+-- than roadmap content, so it stays out of the RoadmapExport envelope and
+-- survives a snapshot restore untouched (see migrations/009_contributors.sql).
+-- Keyed by OIDC subject; the display name is denormalized because there is no
+-- user table to join against.
+CREATE TABLE roadmap_contributors (
+    roadmap_id BIGINT NOT NULL REFERENCES roadmaps(id) ON DELETE CASCADE,
+    subject    TEXT   NOT NULL,
+    name       TEXT   NOT NULL,
+    first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (roadmap_id, subject)
+);

@@ -56,12 +56,14 @@ func byMilestoneID(s *Server, r *http.Request) (int64, error) {
 
 // snap wraps a mutating handler so the affected roadmap is auto-snapshotted
 // *before* the mutation is applied — capturing the last-good state one can go
-// back to — and so its SSE subscribers are notified *after* it succeeds, so
-// other viewers refetch. Capture is best-effort: a snapshot failure is logged
-// and never blocks the user's edit, and an unresolvable roadmap (e.g. a delete
-// that will 404) is simply skipped. The roadmap id is resolved up front because
-// a delete makes it unresolvable afterwards. The policy lives here in the route
-// table rather than scattered through handler bodies.
+// back to — and so that, *after* it succeeds, the editor is recorded as a
+// contributor and the roadmap's SSE subscribers are notified to refetch.
+// Snapshot capture and attribution are both best-effort: a failure in either is
+// logged and never blocks the user's edit, and an unresolvable roadmap (e.g. a
+// delete that will 404) is simply skipped. The roadmap id is resolved up front
+// because a delete makes it unresolvable afterwards. All of this policy lives
+// here in the route table rather than scattered through handler bodies, which
+// is what makes it a single choke point every mutation passes through.
 func (s *Server) snap(mode snapMode, resolve roadmapResolver, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rid, rerr := resolve(s, r)
@@ -71,6 +73,7 @@ func (s *Server) snap(mode snapMode, resolve roadmapResolver, h http.HandlerFunc
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		h(rec, r)
 		if rerr == nil && rec.status < 300 {
+			s.recordContributor(r.Context(), rid)
 			s.hub.broadcast(rid, r.Header.Get(clientIDHeader))
 		}
 	}
@@ -148,7 +151,11 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Restore isn't snap-wrapped (the store captures its own pre-restore state),
-	// so notify subscribers here that the roadmap's contents changed.
+	// so the two things that wrapper does after a successful mutation have to
+	// happen here: record who did it — a restore is an edit like any other, and
+	// skipping it would leave the one unattributed change in the history — and
+	// notify subscribers that the roadmap's contents changed.
+	s.recordContributor(r.Context(), rm.ID)
 	s.hub.broadcast(rm.ID, r.Header.Get(clientIDHeader))
 	writeJSON(w, http.StatusOK, rm)
 }

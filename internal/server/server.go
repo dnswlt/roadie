@@ -113,6 +113,7 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	// are told when it changes, so they can refetch. See events.go.
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/events", s.handleEvents)
 
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/contributors", s.listContributors)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/snapshots", s.listSnapshots)
 	s.mux.HandleFunc("GET /api/snapshots/{id}", s.getSnapshot)
 	s.mux.HandleFunc("POST /api/snapshots/{id}/restore", s.restoreSnapshot)
@@ -262,6 +263,12 @@ func (s *Server) createRoadmap(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	// Creating a roadmap can't go through the snap wrapper — that resolves the
+	// roadmap id *before* the handler runs, and here it doesn't exist yet — so
+	// attribute it explicitly. Without this the creator only shows up once they
+	// edit something inside the roadmap, which makes them look like a latecomer
+	// to the thing they started.
+	s.recordContributor(r.Context(), rm.ID)
 	writeJSON(w, http.StatusCreated, rm)
 }
 
@@ -283,6 +290,11 @@ func (s *Server) duplicateRoadmap(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	// Attribute the *copy*, not the source: rm.ID is the new roadmap, while the
+	// {id} in the path is what it was copied from. (Another reason this can't be
+	// snap-wrapped — the wrapper would resolve the path id and credit the wrong
+	// roadmap.) The copy starts with one contributor, whoever made it.
+	s.recordContributor(r.Context(), rm.ID)
 	writeJSON(w, http.StatusCreated, rm)
 }
 
@@ -335,6 +347,10 @@ func (s *Server) importRoadmap(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	// The importer is the new roadmap's first contributor. Contributors are not
+	// part of the export envelope, so an imported roadmap never carries the
+	// original's author list — it starts fresh with whoever brought it here.
+	s.recordContributor(r.Context(), rm.ID)
 	writeJSON(w, http.StatusCreated, rm)
 }
 

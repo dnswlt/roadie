@@ -140,6 +140,25 @@ type RoadmapExport struct {
 	Roadmap RoadmapFull `json:"roadmap"`
 }
 
+// Contributor is one person who has edited a roadmap, with the window over
+// which they did it. It answers "who worked on this roadmap" — deliberately a
+// set of people rather than a per-change audit trail, and with no edit counter
+// (see migrations/009_contributors.sql).
+//
+// Contributors are metadata about the editing history, not roadmap content, so
+// they are absent from RoadmapFull and the export envelope: restoring an old
+// snapshot must not rewrite who has worked on a roadmap. Name is denormalized
+// at write time — there is no user table to join against — and reflects
+// whatever the identity provider last reported. Subject is the OIDC subject,
+// used as the row key but not exposed to the client, which only ever displays
+// names.
+type Contributor struct {
+	Subject   string    `json:"-"`
+	Name      string    `json:"name"`
+	FirstSeen time.Time `json:"firstSeen"`
+	LastSeen  time.Time `json:"lastSeen"`
+}
+
 // Snapshot kinds. Auto snapshots are captured on a throttle and pruned; manual
 // (named) snapshots are user-created and kept indefinitely.
 const (

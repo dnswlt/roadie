@@ -6,7 +6,7 @@ import { actions } from "./actions";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { state } from "./state";
-import type { Snapshot } from "./types";
+import type { Contributor, Snapshot } from "./types";
 
 // relTime renders a compact "how long ago" for recent snapshots; older ones
 // fall back to just their absolute date (shown as the primary label).
@@ -123,6 +123,30 @@ function dayHeader(g: DayGroup, expanded: boolean): HTMLButtonElement {
   return b;
 }
 
+// lastEditorBlock shows who most recently touched the roadmap, and only that.
+// The full author list deliberately does not appear here: it is unbounded — a
+// long-running roadmap reaches dozens of names — and this sidebar is 280px of
+// scrubbing UI, where a wall of names pushes the version list out of sight.
+// The complete list, with per-author first/last dates, lives in the roadmap
+// info dialog instead (info.ts).
+//
+// Returns null when nobody is recorded, so the block disappears rather than
+// showing an empty line. That is the normal case with auth off, where there is
+// no identity to attribute an edit to.
+function lastEditorBlock(cs: Contributor[]): HTMLElement | null {
+  if (cs.length === 0) return null;
+  const box = document.createElement("div");
+  box.className = "history-authors";
+
+  // Parse rather than compare the ISO strings: same-instant timestamps can
+  // differ in fractional digits, which sorts wrong lexicographically.
+  const last = cs.reduce((a, b) => (Date.parse(b.lastSeen) > Date.parse(a.lastSeen) ? b : a));
+  const when = new Date(last.lastSeen);
+  box.append(textSpan("history-authors-names", `Last edited by ${last.name}`));
+  box.append(textSpan("history-sub", relTime(when) || whenLabel(when)));
+  return box;
+}
+
 function snapshotRow(snap: Snapshot): HTMLButtonElement {
   const d = new Date(snap.createdAt);
   const active = state.preview?.snapshotId === snap.id;
@@ -188,7 +212,8 @@ export function renderHistory(historyEl: HTMLElement, bannerEl: HTMLElement): vo
     }
   }
 
-  historyEl.replaceChildren(head, list);
+  const lastEditor = lastEditorBlock(state.contributors);
+  historyEl.replaceChildren(...(lastEditor ? [head, lastEditor, list] : [head, list]));
   renderBanner(bannerEl);
 }
 

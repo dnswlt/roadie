@@ -268,6 +268,13 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 	}
 	// The schedule is roadmap-scoped, so the lane cascade above does not clear it;
 	// remove it explicitly before insertRoadmapContents re-inserts the snapshot's.
+	//
+	// roadmap_contributors is roadmap-scoped too but is deliberately *not*
+	// cleared here, and that asymmetry is the point rather than an oversight: the
+	// schedule is roadmap content and reverts with everything else, while
+	// contributors record who has edited this roadmap. Restoring a January
+	// snapshot must not un-person whoever edited in June — and since a restore is
+	// itself an edit, the person doing it is recorded as a contributor too.
 	if _, err := tx.Exec(ctx, `DELETE FROM schedule_periods WHERE roadmap_id = $1`, roadmapID); err != nil {
 		return model.Roadmap{}, err
 	}

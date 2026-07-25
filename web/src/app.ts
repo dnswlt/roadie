@@ -7,6 +7,7 @@ import { initDnd } from "./dnd";
 import { initEvents, refreshNow } from "./events";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
+import { openRoadmapInfo } from "./info";
 import { LABEL_W } from "./layout";
 import { currentScale, renderChart } from "./render";
 import { deleteSelection, renderPanel } from "./panel";
@@ -196,7 +197,7 @@ function buildSnapMenu(pop: HTMLElement): void {
     b.append(mark, name);
     if (disabled) {
       b.disabled = true;
-      b.title = "Define a schedule first (roadmap menu → Edit schedule…)";
+      b.title = "Define a schedule first (roadmap menu → Edit schedule)";
     } else {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -376,6 +377,7 @@ function injectIcons(): void {
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
   $("rm-history").prepend(icons.history(14));
+  $("rm-info").prepend(icons.info(14));
   $("rm-schedule").prepend(icons.calendar(14));
   $("rm-export").prepend(icons.download(14));
   $("rm-import").prepend(icons.upload(14));
@@ -475,6 +477,10 @@ function wireTopbar(): void {
   $("rm-history").addEventListener("click", () => {
     menuPop.classList.add("hidden");
     void actions.openHistory();
+  });
+  $("rm-info").addEventListener("click", () => {
+    menuPop.classList.add("hidden");
+    void openRoadmapInfo();
   });
   $("rm-schedule").addEventListener("click", () => {
     menuPop.classList.add("hidden");

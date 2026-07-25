@@ -135,6 +135,8 @@ export const icons = {
         `<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>`,
       size,
     ),
+  info: (size = 16) =>
+    svg(`<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>`, size),
   eyeOff: (size = 16) =>
     svg(
       `<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68"/>` +
