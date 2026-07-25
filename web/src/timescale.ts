@@ -187,7 +187,9 @@ export function quarterTicks(scale: Scale): Tick[] {
   return ticks;
 }
 
+// formatDay renders a day number as a British-format date: day-month-year,
+// e.g. "5 Jan 2026".
 export function formatDay(day: number): string {
   const d = new Date(day * MS_PER_DAY);
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }

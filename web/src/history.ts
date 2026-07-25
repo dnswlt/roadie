@@ -23,11 +23,11 @@ function relTime(d: Date): string {
 }
 
 // whenLabel is the absolute timestamp shown as a snapshot's primary line,
-// e.g. "Jul 24, 14:32".
+// e.g. "24 Jul, 14:32" (British day-first, 24-hour).
 function whenLabel(d: Date): string {
-  return d.toLocaleString(undefined, {
-    month: "short",
+  return d.toLocaleString("en-GB", {
     day: "numeric",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -52,6 +52,74 @@ function row(active: boolean, onClick: () => void, lines: HTMLElement[]): HTMLBu
   if (active) mark.append(icons.check(14));
   b.append(mark, body);
   b.addEventListener("click", onClick);
+  return b;
+}
+
+// Snapshots are grouped by local calendar day so a long history stays compact.
+// The most recent day is expanded by default; older days collapse. `toggledDays`
+// holds the days the user has flipped from that default — module-local view
+// state that survives re-renders and needs no reset (stale keys never match).
+const toggledDays = new Set<string>();
+
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function isDayExpanded(key: string, latestKey: string): boolean {
+  const expandedByDefault = key === latestKey;
+  return toggledDays.has(key) ? !expandedByDefault : expandedByDefault;
+}
+
+// dayLabel is the group header text: "Today" / "Yesterday" for the two most
+// recent days, otherwise a British-format date, e.g. "24 Jul 2026".
+function dayLabel(d: Date): string {
+  const today = new Date();
+  if (dayKey(d) === dayKey(today)) return "Today";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (dayKey(d) === dayKey(yesterday)) return "Yesterday";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+interface DayGroup {
+  key: string;
+  date: Date;
+  snaps: Snapshot[];
+}
+
+// groupByDay splits the (newest-first) snapshot list into consecutive per-day
+// runs, preserving order.
+function groupByDay(snaps: Snapshot[]): DayGroup[] {
+  const groups: DayGroup[] = [];
+  let cur: DayGroup | null = null;
+  for (const s of snaps) {
+    const d = new Date(s.createdAt);
+    const key = dayKey(d);
+    if (!cur || cur.key !== key) {
+      cur = { key, date: d, snaps: [] };
+      groups.push(cur);
+    }
+    cur.snaps.push(s);
+  }
+  return groups;
+}
+
+// dayHeader is the clickable group header: a chevron, the day label, and the
+// count of snapshots that day. Clicking toggles the group open/closed.
+function dayHeader(g: DayGroup, expanded: boolean): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "history-day";
+  b.setAttribute("aria-expanded", String(expanded));
+  b.append(
+    expanded ? icons.chevronDown(14) : icons.chevronRight(14),
+    textSpan("history-day-label", dayLabel(g.date)),
+    textSpan("history-day-count", String(g.snaps.length)),
+  );
+  b.addEventListener("click", () => {
+    if (toggledDays.has(g.key)) toggledDays.delete(g.key);
+    else toggledDays.add(g.key);
+    state.notify();
+  });
   return b;
 }
 
@@ -110,7 +178,14 @@ export function renderHistory(historyEl: HTMLElement, bannerEl: HTMLElement): vo
     empty.textContent = "No earlier versions yet.";
     list.append(empty);
   } else {
-    for (const snap of snaps) list.append(snapshotRow(snap));
+    // Group by day; the most recent day is expanded, older days collapse so a
+    // long history reads as a short list of days (snaps are newest-first).
+    const latestKey = dayKey(new Date(snaps[0]!.createdAt));
+    for (const g of groupByDay(snaps)) {
+      const expanded = isDayExpanded(g.key, latestKey);
+      list.append(dayHeader(g, expanded));
+      if (expanded) for (const snap of g.snaps) list.append(snapshotRow(snap));
+    }
   }
 
   historyEl.replaceChildren(head, list);

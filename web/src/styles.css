@@ -1479,6 +1479,52 @@ dialog input:focus {
   color: var(--ink-2);
 }
 
+/* Collapsible per-day group header in the history list. */
+.history-day {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  margin-top: 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-day:hover {
+  background: var(--grid);
+}
+
+.history-day svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.history-day-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.history-day-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* Snapshot rows sit under their day header, slightly indented to show nesting. */
+.history-day + .history-item,
+.history-item + .history-item {
+  padding-left: 18px;
+}
+
 /* Floating banner shown while previewing a snapshot. */
 
 .snapshot-banner {

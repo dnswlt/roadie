@@ -11,6 +11,7 @@ import {
   chartWidth,
   computeRange,
   dayOf,
+  formatDay,
   monthTicks,
   quarterTicks,
   todayDay,
@@ -166,7 +167,9 @@ function renderScheduleRow(periods: SchedulePeriod[]): HTMLElement {
     const span = div(i % 2 === 1 ? "th-period th-period-alt" : "th-period");
     span.style.left = `${left}px`;
     span.style.width = `${width}px`;
-    span.title = p.label;
+    // Tooltip carries the dates (end inclusive) too — useful when the label is
+    // hidden on a narrow period, and to read a period's span without measuring.
+    span.title = `${p.label}\n${formatDay(dayOf(p.startDate))} – ${formatDay(dayOf(p.endDate))}`;
     if (width >= SCHEDULE_LABEL_PX) span.textContent = p.label;
     row.append(span);
   });
