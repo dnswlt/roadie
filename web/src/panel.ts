@@ -64,6 +64,17 @@ function addSiblingOf(item: Item): Promise<Item | null> {
   });
 }
 
+// addChildTo creates a child item inside `item`, appending it to the parent's
+// children array. Nesting is one level deep, so this only operates on top-level
+// items (where parentId is null).
+//
+// This is the single implementation behind both the panel's "Add Child" button
+// and the "c" shortcut — matching the twin structure of addSiblingOf and "n".
+function addChildTo(item: Item): Promise<Item | null> {
+  if (item.parentId !== null) return Promise.resolve(null);
+  return actions.addItem(item.laneId, item.id);
+}
+
 // addItemToSelection is the "n" shortcut: create an item beside the selection,
 // in the selection's own container. A child's container is its parent, so a
 // selected child yields another subtask, while a top-level item yields a
@@ -88,6 +99,23 @@ export async function addItemToSelection(): Promise<void> {
   const loc = state.findItem(id);
   if (!loc) return;
   if (await addSiblingOf(loc.item)) focusPanelTitle();
+}
+
+// addChildToSelection is the "c" shortcut: create a child item under the
+// selected top-level item. Nesting is one level deep, so "c" no-ops on a
+// selected child (addChildTo's own guard), matching the absence of an "Add
+// Child" button on its edit panel. Needs exactly one target, like
+// addItemToSelection — and needs no milestone check of its own, since selection
+// is exclusive: a selected milestone leaves no item selected, so it falls out
+// of the single-target check below.
+export async function addChildToSelection(): Promise<void> {
+  if (state.preview) return;
+
+  const id = state.selectedItemId;
+  if (id === null) return;
+  const loc = state.findItem(id);
+  if (!loc) return;
+  if (await addChildTo(loc.item)) focusPanelTitle();
 }
 
 // focusPanelTitle drops the cursor into the edit panel's Title field with the
@@ -282,15 +310,15 @@ export function renderPanel(panel: HTMLElement): void {
 
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
-  // "Add Child" only exists for a top-level item (nesting is one level deep).
+  // "Add Child" only exists for a top-level item (nesting is one level deep),
+  // and is the mouse twin of the "c" shortcut: same helper, so both append a child.
   // "Add Sibling" exists for both, and is the mouse twin of the "n" shortcut:
   // same helper, so both land directly after this item.
   if (!parent) {
     const addChild = document.createElement("button");
     addChild.className = "btn";
     addChild.textContent = "Add Child";
-    // No anchor among the children, so this one appends.
-    addChild.addEventListener("click", () => void actions.addItem(item.laneId, item.id));
+    addChild.addEventListener("click", () => void addChildTo(item));
     actionsRow.append(addChild);
   }
   const addSibling = document.createElement("button");

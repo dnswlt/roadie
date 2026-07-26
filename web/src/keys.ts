@@ -13,7 +13,7 @@
 // combos are left to the browser and the OS.
 
 import { actions } from "./actions";
-import { addItemToSelection, deleteSelection, toggleFlagSelection } from "./panel";
+import { addChildToSelection, addItemToSelection, deleteSelection, toggleFlagSelection } from "./panel";
 import { state } from "./state";
 
 export interface Binding {
@@ -59,6 +59,12 @@ export const bindings: Binding[] = [
     label: "n",
     description: "New item beside the selection.",
     run: () => void addItemToSelection(),
+  },
+  {
+    key: "c",
+    label: "c",
+    description: "New child item under the selection.",
+    run: () => void addChildToSelection(),
   },
   {
     key: "!",

@@ -10,9 +10,9 @@ import { toast } from "./toast";
 import type { Item, ItemFull, ItemPatch, MilestonePatch, NewSchedulePeriod } from "./types";
 import { setRoadmapUrl } from "./url";
 
-// Default item length, in days added to the start (end date is inclusive, so
-// this spans DEFAULT_ITEM_SPAN + 1 days). Shared by new top-level items and,
-// as an upper bound, by new children.
+// Default length of a new top-level item, in days added to the start (end date
+// is inclusive, so this spans DEFAULT_ITEM_SPAN + 1 days). New children don't
+// use it at all — they inherit their parent's exact range.
 const DEFAULT_ITEM_SPAN = 27;
 
 function errMsg(e: unknown): string {
@@ -309,9 +309,8 @@ export const actions = {
 
   // addItem creates an item with default dates and selects it for editing.
   // Top-level items span DEFAULT_ITEM_SPAN days from today. A child instead
-  // starts at its parent's start and runs the default span, but never past the
-  // parent's own end — so a short parent yields a short child. If explicit
-  // dates are provided (e.g. for siblings), the new item uses those exact dates.
+  // inherits its parent's exact start and end dates. If explicit dates are
+  // provided (e.g. for siblings), the new item uses those exact dates.
   //
   // Returns the created item, or null if nothing was created — callers that
   // act on the result (the "n" shortcut focuses its title) must not fire after
@@ -339,7 +338,7 @@ export const actions = {
       const parentLoc = state.findItem(parentId);
       if (parentLoc) {
         startDay = dayOf(parentLoc.item.startDate);
-        endDay = Math.min(startDay + DEFAULT_ITEM_SPAN, dayOf(parentLoc.item.endDate));
+        endDay = dayOf(parentLoc.item.endDate);
       }
     }
     let item: Item;
