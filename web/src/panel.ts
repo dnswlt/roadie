@@ -12,6 +12,8 @@ import { toast } from "./toast";
 import type { Item, ItemFull, Milestone } from "./types";
 import { selectionLink } from "./url";
 
+const PANEL_TITLE_ID = "panel-item-title";
+
 // confirmAndDeleteItem / confirmAndDeleteMilestone are the delete flow behind
 // both the panel's Delete button and the Del keyboard shortcut: confirm, then
 // delegate to actions. Keeping them shared means the shortcut is exactly the
@@ -45,6 +47,50 @@ export function deleteSelection(): void {
   if (id === null) return;
   const loc = state.findItem(id);
   if (loc) void confirmAndDeleteItem(loc.item);
+}
+
+// addItemToSelection is the "n" shortcut: create an item in the same container
+// as the selection. A child's container is its parent, so a selected child
+// yields another subtask (the panel's "+ Add sibling"), while a top-level item
+// yields a top-level sibling in its lane — one rule, "new thing beside this
+// thing". The new item inherits the selection's dates so it appears where the
+// eye already is; the server appends it, like every other create path.
+//
+// A selected milestone falls back to a plain top-level item in its lane, since
+// a milestone has no item sibling — the same thing the lane's + button does.
+// Needs exactly one target, like deleteSelection: "beside this" is meaningless
+// for a multi-selection that may span containers.
+export async function addItemToSelection(): Promise<void> {
+  if (state.preview) return;
+
+  const msId = state.selectedMilestoneId;
+  if (msId !== null) {
+    const ms = state.findMilestone(msId);
+    if (ms && (await actions.addItem(ms.lane.id, null))) focusPanelTitle();
+    return;
+  }
+
+  const id = state.selectedItemId;
+  if (id === null) return;
+  const loc = state.findItem(id);
+  if (!loc) return;
+  const created = await actions.addItem(loc.lane.id, loc.parent ? loc.parent.id : null, {
+    start: loc.item.startDate,
+    end: loc.item.endDate,
+  });
+  if (created) focusPanelTitle();
+}
+
+// focusPanelTitle drops the cursor into the edit panel's Title field with the
+// placeholder pre-selected, so "n" flows straight into typing the real title.
+// Only the shortcut does this — the panel's own + buttons leave focus where it
+// was. Safe to call right after an awaited addItem: state.notify() re-renders
+// the panel synchronously, so the field already exists.
+function focusPanelTitle(): void {
+  const el = document.getElementById(PANEL_TITLE_ID);
+  if (!(el instanceof HTMLInputElement)) return;
+  el.focus();
+  el.select();
 }
 
 // toggleFlagSelection flags or unflags every selected item, behind the panel
@@ -156,6 +202,9 @@ export function renderPanel(panel: HTMLElement): void {
   crumb.textContent = parent ? `${lane.name} › ${parent.title}` : lane.name;
 
   const title = field("Title", "input");
+  // Stable hook for focusPanelTitle — the panel has several .panel-field
+  // inputs, so the Title one needs to be addressable by more than position.
+  title.control.id = PANEL_TITLE_ID;
   (title.control as HTMLInputElement).value = item.title;
   title.control.addEventListener("change", () => {
     const v = (title.control as HTMLInputElement).value.trim();

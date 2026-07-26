@@ -303,8 +303,16 @@ export const actions = {
   // starts at its parent's start and runs the default span, but never past the
   // parent's own end — so a short parent yields a short child. If explicit
   // dates are provided (e.g. for siblings), the new item uses those exact dates.
-  async addItem(laneId: number, parentId: number | null, dates?: { start: string; end: string }): Promise<void> {
-    if (state.preview) return;
+  //
+  // Returns the created item, or null if nothing was created — callers that
+  // act on the result (the "n" shortcut focuses its title) must not fire after
+  // a rejected create, and a failure here toasts rather than throwing.
+  async addItem(
+    laneId: number,
+    parentId: number | null,
+    dates?: { start: string; end: string },
+  ): Promise<Item | null> {
+    if (state.preview) return null;
     const today = todayDay();
     let startDay = today;
     let endDay = today + DEFAULT_ITEM_SPAN;
@@ -342,8 +350,10 @@ export const actions = {
       }
       state.selectItem(item.id);
       state.notify();
+      return item;
     } catch (e) {
       toast(errMsg(e), true);
+      return null;
     }
   },
 

@@ -13,12 +13,15 @@
 // combos are left to the browser and the OS.
 
 import { actions } from "./actions";
-import { deleteSelection, toggleFlagSelection } from "./panel";
+import { addItemToSelection, deleteSelection, toggleFlagSelection } from "./panel";
 import { state } from "./state";
 
 export interface Binding {
   // Matched against KeyboardEvent.key, so it is the character produced by the
   // user's layout — "!" works whether or not that layout needs Shift for it.
+  // Case-sensitive by design: matching "n" loosely would eat Shift+N too and
+  // foreclose ever binding the pair separately. The cost is that Caps Lock
+  // suppresses letter shortcuts, which is the cheaper of the two problems.
   key: string;
   // How the key is drawn in Help (kbd label), which is not always `key`.
   label: string;
@@ -50,6 +53,12 @@ export const bindings: Binding[] = [
     label: "Del",
     description: "Delete the selected item or milestone.",
     run: () => deleteSelection(),
+  },
+  {
+    key: "n",
+    label: "n",
+    description: "New item beside the selection.",
+    run: () => void addItemToSelection(),
   },
   {
     key: "!",
