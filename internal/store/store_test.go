@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -479,6 +480,108 @@ func TestItemLabels(t *testing.T) {
 	}
 	if got := full.Lanes[0].Items[0].Labels; len(got) != 1 || got[0] != "x" {
 		t.Errorf("labels from GetRoadmapFull: %#v", got)
+	}
+}
+
+// TestItemCreateRank covers creating into an explicit slot: NewItem.Rank shifts
+// the siblings at or after it and keeps the container dense, so "new item
+// directly below this one" is one request rather than a create-then-move.
+func TestItemCreateRank(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
+
+	mk := func(title string, rank model.Opt[int], parent *int64) model.Item {
+		t.Helper()
+		it, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+			Title: title, StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+			ParentID: parent, Rank: rank,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return it
+	}
+	at := func(i int) model.Opt[int] { return model.Opt[int]{Set: true, Value: i} }
+	var append_ model.Opt[int] // unset = append
+
+	order := func(parent *int64) []string {
+		t.Helper()
+		full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		items := full.Lanes[0].Items
+		var titles []string
+		if parent == nil {
+			for i, it := range items {
+				if it.Rank != i {
+					t.Errorf("top level: %q has rank %d at index %d", it.Title, it.Rank, i)
+				}
+				titles = append(titles, it.Title)
+			}
+			return titles
+		}
+		for _, it := range items {
+			if it.ID != *parent {
+				continue
+			}
+			for i, c := range it.Children {
+				if c.Rank != i {
+					t.Errorf("children of %d: %q has rank %d at index %d", *parent, c.Title, c.Rank, i)
+				}
+				titles = append(titles, c.Title)
+			}
+		}
+		return titles
+	}
+
+	// No rank keeps appending, as every existing create path relies on.
+	a, b, c := mk("A", append_, nil), mk("B", append_, nil), mk("C", append_, nil)
+	if a.Rank != 0 || b.Rank != 1 || c.Rank != 2 {
+		t.Fatalf("append ranks: %d %d %d", a.Rank, b.Rank, c.Rank)
+	}
+
+	// The "n"/"+ Add sibling" case: directly after B (rank 1) is rank 2.
+	nb := mk("after-B", at(b.Rank+1), nil)
+	if nb.Rank != 2 {
+		t.Errorf("insert after B: rank %d, want 2", nb.Rank)
+	}
+	if got := order(nil); !slices.Equal(got, []string{"A", "B", "after-B", "C"}) {
+		t.Errorf("after inserting below B: %v", got)
+	}
+
+	// Rank 0 is a real slot, not "unspecified" — the reason NewItem.Rank is Opt.
+	if first := mk("first", at(0), nil); first.Rank != 0 {
+		t.Errorf("insert at 0: rank %d", first.Rank)
+	}
+	if got := order(nil); !slices.Equal(got, []string{"first", "A", "B", "after-B", "C"}) {
+		t.Errorf("after inserting at 0: %v", got)
+	}
+
+	// Out-of-range ranks clamp instead of erroring or tearing the sequence.
+	if high := mk("high", at(99), nil); high.Rank != 5 {
+		t.Errorf("rank 99 in a 5-item container: got %d, want 5 (clamped)", high.Rank)
+	}
+	if low := mk("low", at(-3), nil); low.Rank != 0 {
+		t.Errorf("negative rank: got %d, want 0 (clamped)", low.Rank)
+	}
+	if got := order(nil); !slices.Equal(got, []string{"low", "first", "A", "B", "after-B", "C", "high"}) {
+		t.Errorf("after clamped inserts: %v", got)
+	}
+
+	// Children are their own container: a rank there must not disturb top level.
+	x := mk("X", append_, &a.ID)
+	mk("Y", append_, &a.ID)
+	mid := mk("mid", at(x.Rank+1), &a.ID)
+	if mid.Rank != 1 {
+		t.Errorf("child insert after X: rank %d, want 1", mid.Rank)
+	}
+	if got := order(&a.ID); !slices.Equal(got, []string{"X", "mid", "Y"}) {
+		t.Errorf("children after insert: %v", got)
+	}
+	if got := order(nil); !slices.Equal(got, []string{"low", "first", "A", "B", "after-B", "C", "high"}) {
+		t.Errorf("top level disturbed by a child insert: %v", got)
 	}
 }
 

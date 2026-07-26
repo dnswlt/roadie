@@ -49,17 +49,30 @@ export function deleteSelection(): void {
   if (loc) void confirmAndDeleteItem(loc.item);
 }
 
-// addItemToSelection is the "n" shortcut: create an item in the same container
-// as the selection. A child's container is its parent, so a selected child
-// yields another subtask (the panel's "+ Add sibling"), while a top-level item
-// yields a top-level sibling in its lane — one rule, "new thing beside this
-// thing". The new item inherits the selection's dates so it appears where the
-// eye already is; the server appends it, like every other create path.
+// addSiblingOf creates an item beside `item`: same container, same dates,
+// positioned directly after it. `parentId` already names the container (null =
+// top level in the lane) and `rank` is the index within it, so the whole
+// placement falls out of the item itself.
 //
-// A selected milestone falls back to a plain top-level item in its lane, since
-// a milestone has no item sibling — the same thing the lane's + button does.
-// Needs exactly one target, like deleteSelection: "beside this" is meaningless
-// for a multi-selection that may span containers.
+// This is the single implementation behind both the panel's "+ Add sibling"
+// buttons and the "n" shortcut — the two must never drift apart, which is the
+// only reason a one-line function earns a name.
+function addSiblingOf(item: Item): Promise<Item | null> {
+  return actions.addItem(item.laneId, item.parentId, {
+    dates: { start: item.startDate, end: item.endDate },
+    rank: item.rank + 1,
+  });
+}
+
+// addItemToSelection is the "n" shortcut: create an item beside the selection,
+// in the selection's own container. A child's container is its parent, so a
+// selected child yields another subtask, while a top-level item yields a
+// top-level sibling in its lane — one rule, "new thing beside this thing".
+//
+// A selected milestone falls back to a plain top-level item appended to its
+// lane, since a milestone has no item sibling to sit beside — the same thing
+// the lane's + button does. Needs exactly one target, like deleteSelection:
+// "beside this" is meaningless for a multi-selection that may span containers.
 export async function addItemToSelection(): Promise<void> {
   if (state.preview) return;
 
@@ -74,11 +87,7 @@ export async function addItemToSelection(): Promise<void> {
   if (id === null) return;
   const loc = state.findItem(id);
   if (!loc) return;
-  const created = await actions.addItem(loc.lane.id, loc.parent ? loc.parent.id : null, {
-    start: loc.item.startDate,
-    end: loc.item.endDate,
-  });
-  if (created) focusPanelTitle();
+  if (await addSiblingOf(loc.item)) focusPanelTitle();
 }
 
 // focusPanelTitle drops the cursor into the edit panel's Title field with the
@@ -273,28 +282,39 @@ export function renderPanel(panel: HTMLElement): void {
 
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
+  // "Add Child" only exists for a top-level item (nesting is one level deep).
+  // "Add Sibling" exists for both, and is the mouse twin of the "n" shortcut:
+  // same helper, so both land directly after this item.
   if (!parent) {
     const addChild = document.createElement("button");
     addChild.className = "btn";
-    addChild.textContent = "+ Add child";
+    addChild.textContent = "Add Child";
+    // No anchor among the children, so this one appends.
     addChild.addEventListener("click", () => void actions.addItem(item.laneId, item.id));
     actionsRow.append(addChild);
-  } else {
-    const addSibling = document.createElement("button");
-    addSibling.className = "btn";
-    addSibling.textContent = "+ Add sibling";
-    addSibling.addEventListener("click", () =>
-      void actions.addItem(item.laneId, parent.id, { start: item.startDate, end: item.endDate })
-    );
-    actionsRow.append(addSibling);
   }
-  const del = document.createElement("button");
-  del.className = "btn btn-danger";
-  del.textContent = "Delete";
-  del.addEventListener("click", () => void confirmAndDeleteItem(item));
-  actionsRow.append(del);
+  const addSibling = document.createElement("button");
+  addSibling.className = "btn";
+  addSibling.textContent = "Add Sibling";
+  addSibling.addEventListener("click", () => void addSiblingOf(item));
+  actionsRow.append(addSibling);
+  actionsRow.append(deleteButton("Delete item", () => void confirmAndDeleteItem(item)));
 
   panel.append(head, crumb, title.wrap, desc.wrap, linksSection, dates, prio, labels, actionsRow);
+}
+
+// deleteButton is the panel's destructive action for both items and
+// milestones: icon-only, so the actions row stays narrow enough for the
+// "+ Child"/"+ Sibling" buttons to sit beside it in a 300px panel. Its label
+// lives in the tooltip — a trash can needs no other legend.
+function deleteButton(label: string, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = "icon-btn panel-delete";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.append(icons.trash(16));
+  btn.addEventListener("click", onClick);
+  return btn;
 }
 
 // flagButton is the flag's only label anywhere in the UI: an icon-only toggle
@@ -454,11 +474,9 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
 
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
-  const del = document.createElement("button");
-  del.className = "btn btn-danger";
-  del.textContent = "Delete";
-  del.addEventListener("click", () => void confirmAndDeleteMilestone(milestone));
-  actionsRow.append(del);
+  actionsRow.append(
+    deleteButton("Delete milestone", () => void confirmAndDeleteMilestone(milestone)),
+  );
 
   panel.append(head, crumb, title.wrap, dateField.wrap, desc.wrap, linksSection, actionsRow);
 }

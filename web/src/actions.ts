@@ -54,6 +54,15 @@ function renumber(items: Item[]): void {
   });
 }
 
+// insertItem places a freshly created item into its local container at the rank
+// the server assigned it — the response is the authority, since the requested
+// slot is clamped there. Ranks are rewritten after, as the frontend relies on
+// rank == array index.
+function insertItem<T extends Item>(arr: T[], item: T): void {
+  arr.splice(item.rank, 0, item);
+  renumber(arr);
+}
+
 // applyItemPatch mirrors the server's UpdateItem logic on the local state:
 // children adopt their parent's lane, children follow a moving parent, and
 // container arrays stay ordered with dense ranks.
@@ -307,19 +316,25 @@ export const actions = {
   // Returns the created item, or null if nothing was created — callers that
   // act on the result (the "n" shortcut focuses its title) must not fire after
   // a rejected create, and a failure here toasts rather than throwing.
+  //
+  // `rank` is the slot the new item should occupy in its container (omitted =
+  // append). It goes out with the create itself, so the sibling shift and the
+  // insert share one transaction server-side — a follow-up rank PATCH would
+  // leave a window for a concurrent create in the same container to land in
+  // between, and would make a create-then-move visible to every other session.
   async addItem(
     laneId: number,
     parentId: number | null,
-    dates?: { start: string; end: string },
+    opts: { dates?: { start: string; end: string }; rank?: number } = {},
   ): Promise<Item | null> {
     if (state.preview) return null;
     const today = todayDay();
     let startDay = today;
     let endDay = today + DEFAULT_ITEM_SPAN;
 
-    if (dates) {
-      startDay = dayOf(dates.start);
-      endDay = dayOf(dates.end);
+    if (opts.dates) {
+      startDay = dayOf(opts.dates.start);
+      endDay = dayOf(opts.dates.end);
     } else if (parentId !== null) {
       const parentLoc = state.findItem(parentId);
       if (parentLoc) {
@@ -327,34 +342,36 @@ export const actions = {
         endDay = Math.min(startDay + DEFAULT_ITEM_SPAN, dayOf(parentLoc.item.endDate));
       }
     }
+    let item: Item;
     try {
-      const item = await api.createItem(laneId, {
+      item = await api.createItem(laneId, {
         title: parentId ? "New child item" : "New item",
         description: "",
         startDate: isoOf(startDay),
         endDate: isoOf(endDay),
         parentId,
+        rank: opts.rank,
       });
-      // The server appends new items to their container.
-      const lane = state.findLane(item.laneId);
-      if (lane) {
-        if (item.parentId !== null) {
-          const parent = lane.items.find((i) => i.id === item.parentId);
-          if (parent) parent.children.push(item);
-          // A child added to a folded parent would be created invisible — and
-          // selected for editing, which the panel would then show off-chart.
-          state.setCollapsed(item.parentId, false);
-        } else {
-          lane.items.push({ ...item, children: [] });
-        }
-      }
-      state.selectItem(item.id);
-      state.notify();
-      return item;
     } catch (e) {
       toast(errMsg(e), true);
       return null;
     }
+
+    const lane = state.findLane(item.laneId);
+    if (lane) {
+      if (item.parentId !== null) {
+        const parent = lane.items.find((i) => i.id === item.parentId);
+        if (parent) insertItem(parent.children, item);
+        // A child added to a folded parent would be created invisible — and
+        // selected for editing, which the panel would then show off-chart.
+        state.setCollapsed(item.parentId, false);
+      } else {
+        insertItem(lane.items, { ...item, children: [] });
+      }
+    }
+    state.selectItem(item.id);
+    state.notify();
+    return item;
   },
 
   async updateItem(id: number, patch: ItemPatch): Promise<void> {

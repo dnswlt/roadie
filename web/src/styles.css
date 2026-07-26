@@ -1219,21 +1219,24 @@ kbd {
 
 .panel-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap; /* a top-level item shows three buttons; the panel narrows to 300px */
   gap: 8px;
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
 
-.panel-actions .btn-danger {
-  background: transparent;
-  border-color: color-mix(in oklab, var(--danger) 35%, white);
+/* The trash sits at the trailing edge, away from the additive buttons, so the
+   destructive action is never the one the pointer lands on by accident. */
+.panel-delete {
+  margin-left: auto;
   color: var(--danger);
 }
 
-.panel-actions .btn-danger:hover {
+.panel-delete:hover {
   background: var(--danger-soft);
-  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* Dialog */

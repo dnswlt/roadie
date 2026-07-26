@@ -672,6 +672,10 @@ type NewItem struct {
 	StartDate   model.Date `json:"startDate"`
 	EndDate     model.Date `json:"endDate"`
 	ParentID    *int64     `json:"parentId"`
+	// Slot within the container, clamped to [0, len]. Absent = append, which is
+	// why this is an Opt rather than a plain int: rank 0 is a real position and
+	// must not be confused with "unspecified".
+	Rank model.Opt[int] `json:"rank"`
 }
 
 func (s *Store) CreateItem(ctx context.Context, laneID int64, n NewItem) (model.Item, error) {
@@ -727,14 +731,34 @@ func (s *Store) CreateItem(ctx context.Context, laneID int64, n NewItem) (model.
 		}
 	}
 
-	// New items are appended to their container (lane for top-level items,
-	// parent for children). Ranks are kept dense per container.
+	// New items go to the end of their container (lane for top-level items,
+	// parent for children), or into an explicit slot when Rank is set; ranks
+	// stay dense per container either way. This is the same clamp-and-shift
+	// UpdateItem performs, minus closing a gap in an old container — a new item
+	// has none. Doing it here rather than as a follow-up rank PATCH keeps the
+	// shift and the insert in one transaction under the roadmap lock, so a
+	// concurrent create in the same container cannot land between them.
+	var count int
+	if err := tx.QueryRow(ctx,
+		`SELECT COUNT(*) FROM items WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2`,
+		laneID, n.ParentID).Scan(&count); err != nil {
+		return model.Item{}, err
+	}
+	rank := count
+	if n.Rank.Set {
+		rank = max(0, min(n.Rank.Value, count))
+		if _, err := tx.Exec(ctx,
+			`UPDATE items SET rank = rank + 1, updated_at = now()
+			 WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND rank >= $3`,
+			laneID, n.ParentID, rank); err != nil {
+			return model.Item{}, err
+		}
+	}
 	row := tx.QueryRow(ctx,
 		`INSERT INTO items (lane_id, parent_id, title, description, start_date, end_date, rank)
-		 VALUES ($1, $2, $3, $4, $5, $6,
-		         (SELECT COUNT(*) FROM items WHERE lane_id = $1 AND parent_id IS NOT DISTINCT FROM $2))
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+itemCols,
-		laneID, n.ParentID, n.Title, n.Description, n.StartDate.Time, n.EndDate.Time)
+		laneID, n.ParentID, n.Title, n.Description, n.StartDate.Time, n.EndDate.Time, rank)
 	it, err := scanItem(row)
 	if err != nil {
 		return model.Item{}, err

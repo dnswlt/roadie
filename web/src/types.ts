@@ -117,6 +117,7 @@ export interface NewItem {
   startDate: string;
   endDate: string;
   parentId?: number | null;
+  rank?: number; // slot within the container, clamped server-side; omitted = append
 }
 
 export interface NewMilestone {
