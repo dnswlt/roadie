@@ -131,13 +131,13 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, updated_at"
+const itemCols = "id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, flagged, updated_at"
 
 func scanItem(r rowScanner) (model.Item, error) {
 	var it model.Item
 	var start, end time.Time
 	err := r.Scan(&it.ID, &it.LaneID, &it.ParentID, &it.Title, &it.Description,
-		&start, &end, &it.Rank, &it.Priority, &it.Labels, &it.UpdatedAt)
+		&start, &end, &it.Rank, &it.Priority, &it.Labels, &it.Flagged, &it.UpdatedAt)
 	if err != nil {
 		return model.Item{}, err
 	}
@@ -456,10 +456,10 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 		}
 		var id int64
 		err := tx.QueryRow(ctx,
-			`INSERT INTO items (lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+			`INSERT INTO items (lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, flagged)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
 			laneID, parentID, it.Title, it.Description, it.StartDate.Time, it.EndDate.Time,
-			rank, it.Priority, normalizeLabels(it.Labels)).Scan(&id)
+			rank, it.Priority, normalizeLabels(it.Labels), it.Flagged).Scan(&id)
 		return id, err
 	}
 
@@ -752,6 +752,7 @@ type ItemPatch struct {
 	Rank        model.Opt[int]        `json:"rank"`
 	Priority    model.Opt[*int]       `json:"priority"`
 	Labels      model.Opt[[]string]   `json:"labels"`
+	Flagged     model.Opt[bool]       `json:"flagged"`
 }
 
 func ptrEq(a, b *int64) bool {
@@ -808,6 +809,9 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 	}
 	if p.Labels.Set {
 		next.Labels = normalizeLabels(p.Labels.Value)
+	}
+	if p.Flagged.Set {
+		next.Flagged = p.Flagged.Value
 	}
 
 	if next.Title == "" {
@@ -906,11 +910,12 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 	row = tx.QueryRow(ctx,
 		`UPDATE items SET lane_id = $2, parent_id = $3, title = $4, description = $5,
 		        start_date = $6, end_date = $7, rank = $8, priority = $9, labels = $10,
-		        updated_at = now()
+		        flagged = $11, updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+itemCols,
 		id, next.LaneID, next.ParentID, next.Title, next.Description,
-		next.StartDate.Time, next.EndDate.Time, next.Rank, next.Priority, next.Labels)
+		next.StartDate.Time, next.EndDate.Time, next.Rank, next.Priority, next.Labels,
+		next.Flagged)
 	updated, err := scanItem(row)
 	if err != nil {
 		return model.Item{}, err

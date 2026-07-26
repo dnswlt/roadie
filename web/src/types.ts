@@ -33,6 +33,7 @@ export interface Item {
   rank: number; // position within the container (lane / parent), dense 0..n-1
   priority: number | null; // 1..4 (1 = highest); null = unprioritized
   labels: string[]; // free-form tags, shared across the roadmap
+  flagged: boolean; // "needs attention" marker; its meaning is the app's, not the user's
 }
 
 export interface ItemFull extends Item {
@@ -107,6 +108,7 @@ export interface ItemPatch {
   rank?: number;
   priority?: number | null;
   labels?: string[];
+  flagged?: boolean;
 }
 
 export interface NewItem {

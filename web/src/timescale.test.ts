@@ -22,6 +22,7 @@ function item(startDate: string, endDate: string, children: Item[] = []): ItemFu
     rank: 0,
     priority: null,
     labels: [],
+    flagged: false,
     children,
   };
 }

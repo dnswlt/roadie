@@ -35,6 +35,7 @@ func (s *Store) Seed(ctx context.Context) error {
 		desc       string
 		start, end model.Date
 		labels     []string
+		flagged    bool
 		children   []seedItem
 	}
 	type seedMilestone struct {
@@ -53,7 +54,7 @@ func (s *Store) Seed(ctx context.Context) error {
 				start: d(-1, 1), end: d(2, 28), labels: []string{"Needs discussion", "platform"},
 				children: []seedItem{
 					{title: "Design & spike", start: d(-1, 1), end: d(-1, 21)},
-					{title: "Migration", start: d(0, 1), end: d(1, 28)},
+					{title: "Migration", start: d(0, 1), end: d(1, 28), flagged: true},
 					{title: "Decommission legacy", start: d(2, 1), end: d(2, 28)},
 				}},
 			{title: "Observability stack", desc: "Tracing and unified dashboards.",
@@ -68,7 +69,8 @@ func (s *Store) Seed(ctx context.Context) error {
 					{title: "Signup flow", start: d(0, 10), end: d(1, 15)},
 					{title: "Guided setup", start: d(1, 10), end: d(3, 20)},
 				}},
-			{title: "Enterprise SSO", start: d(3, 1), end: d(5, 30), labels: []string{"Needs discussion"}},
+			{title: "Enterprise SSO", start: d(3, 1), end: d(5, 30),
+				labels: []string{"Needs discussion"}, flagged: true},
 		}, []seedMilestone{
 			{title: "Public beta", date: d(1, 15)},
 			{title: "GA launch", desc: "General availability.", date: d(4, 1)},
@@ -78,6 +80,20 @@ func (s *Store) Seed(ctx context.Context) error {
 				start: d(-1, 1), end: d(6, 28)},
 			{title: "Hiring: 2 senior engineers", start: d(0, 1), end: d(2, 28)},
 		}, nil},
+	}
+
+	// CreateItem takes only the essentials, so seeded labels and flags are
+	// applied as a follow-up patch -- the same path the UI uses.
+	mark := func(id int64, si seedItem) error {
+		if len(si.labels) == 0 && !si.flagged {
+			return nil
+		}
+		p := ItemPatch{Flagged: model.Opt[bool]{Set: true, Value: si.flagged}}
+		if len(si.labels) > 0 {
+			p.Labels = model.Opt[[]string]{Set: true, Value: si.labels}
+		}
+		_, err := s.UpdateItem(ctx, id, p)
+		return err
 	}
 
 	for _, ln := range lanes {
@@ -93,19 +109,19 @@ func (s *Store) Seed(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if len(si.labels) > 0 {
-				if _, err := s.UpdateItem(ctx, parent.ID, ItemPatch{
-					Labels: model.Opt[[]string]{Set: true, Value: si.labels},
-				}); err != nil {
-					return err
-				}
+			if err := mark(parent.ID, si); err != nil {
+				return err
 			}
 			for _, ci := range si.children {
-				if _, err := s.CreateItem(ctx, lane.ID, NewItem{
+				child, err := s.CreateItem(ctx, lane.ID, NewItem{
 					Title: ci.title, Description: ci.desc,
 					StartDate: ci.start, EndDate: ci.end,
 					ParentID: &parent.ID,
-				}); err != nil {
+				})
+				if err != nil {
+					return err
+				}
+				if err := mark(child.ID, ci); err != nil {
 					return err
 				}
 			}

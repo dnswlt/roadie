@@ -482,6 +482,78 @@ func TestItemLabels(t *testing.T) {
 	}
 }
 
+// TestItemFlagged covers the flag as the deliberately invariant-free field it
+// is: settable on anything, orthogonal to nesting, untouched by unrelated
+// patches, and readable through the full-roadmap path the UI uses.
+func TestItemFlagged(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
+	parent, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Parent", StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Child", StartDate: date("2026-01-05"), EndDate: date("2026-01-10"), ParentID: &parent.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// New items are unflagged.
+	if parent.Flagged || child.Flagged {
+		t.Errorf("new items flagged: parent=%v child=%v", parent.Flagged, child.Flagged)
+	}
+
+	// A child can be flagged without its parent: a problem lives in one item,
+	// so the flag deliberately does not propagate either way.
+	upd, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		Flagged: model.Opt[bool]{Set: true, Value: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !upd.Flagged {
+		t.Error("child not flagged after patch")
+	}
+
+	// An unrelated patch leaves the flag alone.
+	upd2, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		Title: model.Opt[string]{Set: true, Value: "Child2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !upd2.Flagged {
+		t.Error("flag lost across an unrelated patch")
+	}
+
+	// The flag survives the full-roadmap read path, and stayed off the parent.
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gp := full.Lanes[0].Items[0]
+	if gp.Flagged {
+		t.Error("flag leaked from child to parent")
+	}
+	if len(gp.Children) != 1 || !gp.Children[0].Flagged {
+		t.Errorf("child flag from GetRoadmapFull: %+v", gp.Children)
+	}
+
+	// Explicitly clearing it.
+	upd3, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		Flagged: model.Opt[bool]{Set: true, Value: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd3.Flagged {
+		t.Error("flag not cleared")
+	}
+}
+
 func TestMilestones(t *testing.T) {
 	ctx := context.Background()
 	rm := newRoadmap(t)
@@ -574,7 +646,8 @@ func TestImportRoadmap(t *testing.T) {
 	p3 := 3
 	if _, err := testStore.UpdateItem(ctx, parent.ID, ItemPatch{
 		Priority: model.Opt[*int]{Set: true, Value: &p3},
-		Labels:   model.Opt[[]string]{Set: true, Value: []string{"alpha", "beta"}}}); err != nil {
+		Labels:   model.Opt[[]string]{Set: true, Value: []string{"alpha", "beta"}},
+		Flagged:  model.Opt[bool]{Set: true, Value: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := testStore.CreateMilestone(ctx, lane2.ID, NewMilestone{
@@ -632,6 +705,11 @@ func TestImportRoadmap(t *testing.T) {
 	}
 	if len(gp.Labels) != 2 || gp.Labels[0] != "alpha" || gp.Labels[1] != "beta" {
 		t.Errorf("labels not preserved: %v", gp.Labels)
+	}
+	// The flag rides in the export envelope, so it must survive import — and
+	// therefore snapshot restore, which uses the same insert path.
+	if !gp.Flagged {
+		t.Error("flagged not preserved through import")
 	}
 	gc := gl1.Items[0].Children[0]
 	if gc.Title != "Child" || gc.ParentID == nil || *gc.ParentID != gp.ID {

@@ -40,6 +40,9 @@ CREATE TABLE items (
     rank        INT NOT NULL DEFAULT 0,
     priority    SMALLINT CHECK (priority IS NULL OR priority BETWEEN 1 AND 4),
     labels      TEXT[] NOT NULL DEFAULT '{}',
+    -- One product-defined "needs attention" marker, not a user-named tag: the
+    -- meaning belongs to the app, so it can be a glyph with nothing to look up.
+    flagged     BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (start_date <= end_date)

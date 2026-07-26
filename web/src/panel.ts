@@ -47,6 +47,24 @@ export function deleteSelection(): void {
   if (loc) void confirmAndDeleteItem(loc.item);
 }
 
+// toggleFlagSelection flags or unflags every selected item, behind the panel
+// chip and the "!" shortcut. Unlike deleteSelection it embraces a
+// multi-selection: flagging the handful of items a discussion just surfaced is
+// the whole point. Mixed selections flag (rather than unflag), so the first
+// press always marks everything; only an all-flagged selection clears.
+export function toggleFlagSelection(): void {
+  if (state.preview) return;
+  const ids = [...state.selectedItemIds];
+  if (ids.length === 0) return;
+  const items = ids.map((id) => state.findItem(id)?.item).filter((it) => it !== undefined);
+  if (items.length === 0) return;
+  const next = !items.every((it) => it.flagged);
+  void actions.setFlagged(
+    items.map((it) => it.id),
+    next,
+  );
+}
+
 // copyLinkButton builds a "copy shareable link" icon button for the panel head.
 // The link is generated on demand from the current roadmap + this selection —
 // the address bar itself never carries the selection (see url.ts).
@@ -193,7 +211,14 @@ export function renderPanel(panel: HTMLElement): void {
     });
     chips.append(chip);
   }
-  prio.append(prioLabel, chips);
+  // The flag rides at the trailing edge of the priority row: it is an item
+  // attribute like priority, and a lone toggle does not deserve its own row.
+  // Kept out of `chips` on purpose — the handler above clears `active` from
+  // every child of that container.
+  const prioRow = document.createElement("div");
+  prioRow.className = "prio-row";
+  prioRow.append(chips, flagButton(item));
+  prio.append(prioLabel, prioRow);
 
   const labels = labelsField(item);
 
@@ -221,6 +246,24 @@ export function renderPanel(panel: HTMLElement): void {
   actionsRow.append(del);
 
   panel.append(head, crumb, title.wrap, desc.wrap, linksSection, dates, prio, labels, actionsRow);
+}
+
+// flagButton is the flag's only label anywhere in the UI: an icon-only toggle
+// whose tooltip says what the marker means. That is affordable precisely
+// because the meaning is the product's and not the user's — there is one flag
+// with one meaning, so a glyph plus a tooltip is the whole legend.
+function flagButton(item: Item): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = item.flagged ? "icon-btn flag-btn active" : "icon-btn flag-btn";
+  btn.title = "Flag: needs attention (!)";
+  btn.append(icons.flag(16));
+  btn.addEventListener("click", () => {
+    // Toggled directly, like the priority chips: the panel skips its own
+    // rebuild while a control holds focus, so the class has to move by hand.
+    btn.classList.toggle("active");
+    void actions.setFlagged([item.id], !item.flagged);
+  });
+  return btn;
 }
 
 // labelsField is a tag editor: removable chips for the item's labels plus an

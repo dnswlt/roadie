@@ -68,6 +68,7 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
   if (patch.endDate !== undefined) item.endDate = patch.endDate;
   if (patch.priority !== undefined) item.priority = patch.priority;
   if (patch.labels !== undefined) item.labels = patch.labels;
+  if (patch.flagged !== undefined) item.flagged = patch.flagged;
 
   const newParentId = patch.parentId !== undefined ? patch.parentId : item.parentId;
   let newLaneId = patch.laneId !== undefined ? patch.laneId : item.laneId;
@@ -120,7 +121,7 @@ export const actions = {
       state.preview = null;
       state.contributors = []; // belong to the roadmap we just left
       state.stale = false; // a fresh load can't be stale
-      state.focusLabel = null; // labels are per-roadmap; don't carry focus across
+      state.focus = null; // labels and flags are per-roadmap; don't carry focus across
       state.loadHiddenLanes();
       state.loadCollapsed();
       state.scrollToToday = true;
@@ -401,6 +402,21 @@ export const actions = {
         for (const p of patches) applyItemPatch(p.id, p.patch);
       },
       () => Promise.all(patches.map((p) => api.updateItem(p.id, p.patch))),
+    );
+  },
+
+  // setFlagged flags or unflags several items at once, leaving everything else
+  // untouched. Backs both the panel chip (one item) and the "!" shortcut, which
+  // deliberately acts on a whole multi-selection: marking the handful of items
+  // a discussion just surfaced is the gesture this exists for.
+  async setFlagged(ids: number[], flagged: boolean): Promise<void> {
+    if (ids.length === 0) return;
+    const patch: ItemPatch = { flagged };
+    await optimistic(
+      () => {
+        for (const id of ids) applyItemPatch(id, patch);
+      },
+      () => Promise.all(ids.map((id) => api.updateItem(id, patch))),
     );
   },
 

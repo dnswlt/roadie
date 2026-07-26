@@ -27,6 +27,11 @@ export interface MilestoneLocation {
   lane: LaneFull;
 }
 
+// What the focus menu is spotlighting: one label, or the flag. A tagged union
+// rather than a bare string, so "flagged" can never collide with a user's own
+// label of that name.
+export type Focus = { kind: "label"; label: string } | { kind: "flagged" };
+
 // AppState is the single source of truth on the client. All views render
 // from it; mutations go through actions.ts, which keeps it in sync with
 // the server.
@@ -59,9 +64,11 @@ class AppState {
   // item-edge snapping). A global view preference, persisted in localStorage.
   snapMode: SnapMode = "week";
   panelWidth = DEFAULT_PANEL_WIDTH;
-  // Focus mode: when set, items lacking this label are dimmed. A transient
-  // "what's relevant right now" view, not persisted.
-  focusLabel: string | null = null;
+  // Focus mode: when set, items that don't match are dimmed. A transient
+  // "what's relevant right now" view, not persisted. The target is either one
+  // label or the flag — kept as one exclusive field rather than two, since
+  // focusing on both at once has no meaning.
+  focus: Focus | null = null;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
   // Set when a selection should be scrolled into view once (e.g. a deep link
@@ -216,10 +223,25 @@ class AppState {
     return [...set].sort((a, b) => a.localeCompare(b));
   }
 
+  // flaggedCount returns how many items in the current roadmap carry the flag.
+  // Drives the focus menu's "Flagged (n)" row, which is both the filter and the
+  // only place the total is visible — flags nobody can see never get cleared.
+  flaggedCount(): number {
+    let n = 0;
+    for (const lane of this.current?.lanes ?? []) {
+      for (const item of lane.items) {
+        if (item.flagged) n++;
+        for (const child of item.children) if (child.flagged) n++;
+      }
+    }
+    return n;
+  }
+
   // isDimmed reports whether an item should be grayed out under the current
-  // focus label (false when no focus is active).
-  isDimmed(labels: string[]): boolean {
-    return this.focusLabel !== null && !labels.includes(this.focusLabel);
+  // focus (false when no focus is active).
+  isDimmed(item: { labels: string[]; flagged: boolean }): boolean {
+    if (this.focus === null) return false;
+    return this.focus.kind === "flagged" ? !item.flagged : !item.labels.includes(this.focus.label);
   }
 
   findMilestone(id: number): MilestoneLocation | null {

@@ -14,6 +14,11 @@
   /* Notice tone for "you're in a special mode" surfaces (the snapshot-preview
      banner). A muted amber/gold from the orange lane theme. */
   --notice: #b07d10;
+  /* The "needs attention" flag. Deliberately outside the lane themes: the
+     marker has to read identically against all five lane colors, which is the
+     one thing a --c-derived shade cannot do. Distinct from --danger (errors)
+     and --today (the time cursor) so the three never get confused. */
+  --flag: #d97706;
   --today: #e11d48;
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
   --shadow-pop: 0 4px 16px rgba(16, 24, 40, 0.14), 0 1px 3px rgba(16, 24, 40, 0.08);
@@ -389,6 +394,13 @@ kbd {
 .menu-empty {
   padding: 7px 10px;
   color: var(--ink-2);
+}
+
+/* Divider in the focus menu between the pinned "Flagged" row and the labels. */
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 /* Non-interactive caption at the top of a menu — the signed-in user. */
@@ -878,6 +890,23 @@ kbd {
   border: 1px solid color-mix(in oklab, var(--c) 35%, var(--surface));
 }
 
+/* The "needs attention" flag: outermost on a bar (right of the priority pill),
+   and first on an outside label, which runs leftwards from the title. Solid
+   amber with a light glyph — the same treatment as .flag-btn.active, and it
+   holds its own against a saturated lane bar without needing a white plate.
+   Non-interactive, like .prio-pill — see render.ts flagMark. */
+.bar-flag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 3px 0 0;
+  padding: 2px 3px;
+  border-radius: 3px;
+  background: var(--flag);
+  color: #fff;
+  pointer-events: none;
+}
+
 /* Priority chips in the edit panel. */
 .prio-chips {
   display: flex;
@@ -906,6 +935,37 @@ kbd {
   color: #fff;
   border-color: transparent;
   background: var(--c);
+}
+
+/* Priority chips and the flag toggle share one row, the flag pushed to the
+   trailing edge. */
+.prio-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The flag toggle in the edit panel: an .icon-btn given a chip's border so it
+   reads as a peer of the priority chips beside it. Its active state uses the
+   flag's own amber rather than the lane color (--c) like .prio-chip.active —
+   priority is read per lane, the flag means the same thing everywhere. */
+.flag-btn {
+  margin-left: auto;
+  border-color: var(--border);
+}
+
+/* Three-class selectors on purpose: `.icon-btn.active` further down this file
+   lights the *topbar* toggles in --focus gray, and at equal specificity it
+   would win on source order alone. The flag must stay amber wherever these
+   rules end up sitting relative to each other. */
+.icon-btn.flag-btn.active {
+  color: #fff;
+  border-color: transparent;
+  background: var(--flag);
+}
+
+.icon-btn.flag-btn.active:hover {
+  background: color-mix(in oklab, var(--flag) 88%, black);
 }
 
 .bar .rh:hover {
@@ -1459,14 +1519,15 @@ dialog input:focus {
   white-space: nowrap;
 }
 
-/* The focus (tag) topbar button, lit while a focus label is active. */
+/* The focus (tag) topbar button, lit while a focus is active. */
 .icon-btn.active {
   color: var(--ink);
   background: color-mix(in oklab, var(--focus) 26%, transparent);
 }
 
-/* Items not carrying the focused label recede hard into the background so the
-   matching ones pop. Grayscale drops their lane color too, not just opacity. */
+/* Items that don't match the focus (label or flag) recede hard into the
+   background so the matching ones pop. Grayscale drops their lane color too,
+   not just opacity. */
 .bar.dimmed,
 .child-bar.dimmed,
 .bar-outside.dimmed,

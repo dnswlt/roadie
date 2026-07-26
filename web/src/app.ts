@@ -8,9 +8,10 @@ import { initEvents, refreshNow } from "./events";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { openRoadmapInfo } from "./info";
+import { bindings, initKeys } from "./keys";
 import { LABEL_W } from "./layout";
 import { currentScale, renderChart } from "./render";
-import { deleteSelection, renderPanel } from "./panel";
+import { renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
@@ -95,8 +96,13 @@ function renderTopbar(): void {
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
   // Surface active focus even while the dropdown is closed.
-  $("focus-menu").classList.toggle("active", state.focusLabel !== null);
-  $("focus-menu").title = state.focusLabel ? `Focus: ${state.focusLabel}` : "Focus on a label";
+  $("focus-menu").classList.toggle("active", state.focus !== null);
+  $("focus-menu").title =
+    state.focus === null
+      ? "Focus on a label or on flagged items"
+      : state.focus.kind === "flagged"
+        ? "Focus: flagged items"
+        : `Focus: ${state.focus.label}`;
   // Highlight the snap button when a grid (not plain Day) is actually engaged.
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
@@ -247,6 +253,26 @@ function openHelpDialog(): void {
   addKey("Alt", "Turn snapping off for free, day-by-day placement.");
   section.append(keys);
   body.append(section);
+
+  // Shortcuts are listed straight from the binding table (keys.ts), so adding
+  // one there documents it here.
+  const shortcuts = document.createElement("div");
+  shortcuts.className = "help-section";
+  const kh = document.createElement("h4");
+  kh.textContent = "Shortcuts";
+  const kl = document.createElement("dl");
+  kl.className = "help-keys";
+  for (const b of bindings) {
+    const dt = document.createElement("dt");
+    const kbd = document.createElement("kbd");
+    kbd.textContent = b.label;
+    dt.append(kbd);
+    const dd = document.createElement("dd");
+    dd.textContent = b.description;
+    kl.append(dt, dd);
+  }
+  shortcuts.append(kh, kl);
+  body.append(shortcuts);
 
   const row = document.createElement("div");
   row.className = "dialog-actions";
@@ -732,21 +758,31 @@ function text(s: string): HTMLElement {
   return span;
 }
 
-// Focus menu: pick a label to spotlight. Selecting one dims every item that
-// lacks it (see state.isDimmed / render.ts); "Show all items" clears the
-// focus. Rebuilt after each pick so the active row stays checked while open.
+// Focus menu: pick a label — or the flag — to spotlight. Selecting one dims
+// every item that doesn't match (see state.isDimmed / render.ts); "Show all
+// items" clears the focus. Rebuilt after each pick so the active row stays
+// checked while open.
+//
+// Flagged is pinned above the labels rather than sorted among them: it isn't
+// one tag of many, and its count is the only place the total is visible.
 function buildFocusMenu(pop: HTMLElement): void {
   pop.replaceChildren();
   const labels = state.allLabels();
-  if (labels.length === 0) {
+  const flagged = state.flaggedCount();
+  if (labels.length === 0 && flagged === 0) {
     const empty = document.createElement("div");
     empty.className = "menu-empty";
-    empty.textContent = "No labels yet — add some to an item.";
+    empty.textContent = "Nothing to focus on yet — flag an item (!) or give it a label.";
     pop.append(empty);
     return;
   }
 
-  const row = (labelText: string, active: boolean, onPick: () => void): HTMLButtonElement => {
+  const row = (
+    labelText: string,
+    active: boolean,
+    onPick: () => void,
+    icon?: Node,
+  ): HTMLButtonElement => {
     const b = document.createElement("button");
     b.className = active ? "menu-item is-active" : "menu-item";
     const mark = document.createElement("span");
@@ -755,7 +791,9 @@ function buildFocusMenu(pop: HTMLElement): void {
     const name = document.createElement("span");
     name.className = "focus-label-name";
     name.textContent = labelText;
-    b.append(mark, name);
+    b.append(mark);
+    if (icon) b.append(icon);
+    b.append(name);
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       onPick();
@@ -766,14 +804,33 @@ function buildFocusMenu(pop: HTMLElement): void {
   };
 
   pop.append(
-    row("Show all items", state.focusLabel === null, () => {
-      state.focusLabel = null;
+    row("Show all items", state.focus === null, () => {
+      state.focus = null;
     }),
   );
-  for (const l of labels) {
+  if (flagged > 0) {
+    const active = state.focus?.kind === "flagged";
     pop.append(
-      row(l, state.focusLabel === l, () => {
-        state.focusLabel = state.focusLabel === l ? null : l;
+      row(
+        `Flagged (${flagged})`,
+        active,
+        () => {
+          state.focus = active ? null : { kind: "flagged" };
+        },
+        icons.flag(14),
+      ),
+    );
+    if (labels.length > 0) {
+      const sep = document.createElement("div");
+      sep.className = "menu-sep";
+      pop.append(sep);
+    }
+  }
+  for (const l of labels) {
+    const active = state.focus?.kind === "label" && state.focus.label === l;
+    pop.append(
+      row(l, active, () => {
+        state.focus = active ? null : { kind: "label", label: l };
       }),
     );
   }
@@ -842,23 +899,7 @@ async function boot(): Promise<void> {
   wirePanelResize();
   initDnd(chart);
   initEvents(panel);
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      // Escape backs out of history browsing first, then clears any selection —
-      // works even from inside a panel field (blur + deselect).
-      if (state.history !== null) {
-        void actions.closeHistory();
-      } else if (state.clearSelection()) {
-        state.notify();
-      }
-    } else if (e.key === "Delete") {
-      // Del deletes the selected item/milestone — the panel's Delete button —
-      // but not while typing in a field, where Del means "delete a character".
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      deleteSelection();
-    }
-  });
+  initKeys();
 
   const storedZoom = Number(localStorage.getItem("roadie.zoom"));
   if (storedZoom) {

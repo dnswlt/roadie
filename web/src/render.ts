@@ -246,15 +246,16 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
 
 function renderMilestoneLine(m: Milestone): HTMLElement {
   const line = div("milestone-line");
-  if (state.isDimmed([])) line.classList.add("dimmed");
+  // Milestones carry neither labels nor a flag, so any active focus dims them.
+  if (state.focus !== null) line.classList.add("dimmed");
   line.style.left = `${xOf(scale, dayOf(m.date))}px`;
   return line;
 }
 
 function renderMilestone(m: Milestone): HTMLElement {
   const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
-  // Milestones carry no labels, so any active focus dims them all.
-  if (state.isDimmed([])) el.classList.add("dimmed");
+  // Milestones carry neither labels nor a flag, so any active focus dims them.
+  if (state.focus !== null) el.classList.add("dimmed");
   el.dataset.milestoneId = String(m.id);
   el.title = m.title;
   el.style.left = `${xOf(scale, dayOf(m.date))}px`;
@@ -280,7 +281,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   el.style.height = `${block.h}px`;
 
   const bar = div("bar");
-  if (state.isDimmed(item.labels)) bar.classList.add("dimmed");
+  if (state.isDimmed(item)) bar.classList.add("dimmed");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
   fillBar(
@@ -294,7 +295,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
 
   for (const child of block.children) {
     const c = div(state.isItemSelected(child.item.id) ? "child-bar selected" : "child-bar");
-    if (state.isDimmed(child.item.labels)) c.classList.add("dimmed");
+    if (state.isDimmed(child.item)) c.classList.add("dimmed");
     c.dataset.itemId = String(child.item.id);
     c.title = child.item.title;
     c.style.left = `${child.x}px`;
@@ -337,7 +338,7 @@ function fillBar(
   bar.append(handle("rh rh-l"));
   if (titleFits(item, geom.width, lead !== null)) {
     if (lead) bar.append(lead);
-    bar.append(barMain(item.title, item.description), prioPill(item.priority));
+    bar.append(barMain(item.title, item.description), prioPill(item.priority), flagMark(item.flagged));
   } else {
     bar.append(div("bar-fill")); // flex spacer so the handles stay at the edges
     block.append(barOutside(item, geom, lead));
@@ -363,33 +364,39 @@ function disclosure(item: ItemFull, collapsed: boolean): HTMLElement {
 // link icon re-enables clicks, via CSS).
 function barOutside(item: Item, geom: BarGeom, lead: HTMLElement | null = null): HTMLElement {
   const lbl = div("bar-outside");
-  if (state.isDimmed(item.labels)) lbl.classList.add("dimmed");
+  if (state.isDimmed(item)) lbl.classList.add("dimmed");
   lbl.style.left = `${geom.left + OUTSIDE_GAP}px`;
   lbl.style.top = `${geom.top}px`;
   lbl.style.height = `${geom.height}px`;
   if (lead) lbl.append(lead); // CSS re-enables pointer events on it
-  lbl.append(prioPill(item.priority), barTitle(item.title), barLink(item.description));
+  // Mirrored order: inside a bar the title comes first and the flag sits
+  // outermost on the right, so on an outside label — which runs leftwards from
+  // the title — outermost means ahead of the pill.
+  lbl.append(flagMark(item.flagged), prioPill(item.priority), barTitle(item.title), barLink(item.description));
   return lbl;
 }
 
 // Non-title space reserved inside a bar when deciding whether the title fits:
 // the two resize handles, the title's own padding, a little slack (so we spill
-// a hair before the text would visually clip), and the pill/link when present.
+// a hair before the text would visually clip), and the pill/flag/link when
+// present.
 const RH_TOTAL = 16;
 const TITLE_PAD = 4;
 const FIT_SLACK = 4;
 const PILL_RESERVE = 32;
+const FLAG_RESERVE = 22;
 const LINK_RESERVE = 18;
 const DISCLOSURE_RESERVE = 13; // a parent's fold chevron, when shown inside the bar
 const OUTSIDE_GAP = 6; // gap between a bar and its outside label
 
-// titleFits reports whether `item`'s title (plus its pill/link/chevron, if any)
-// fits in a bar `width` px wide. Empty titles never spill.
+// titleFits reports whether `item`'s title (plus its pill/flag/link/chevron, if
+// any) fits in a bar `width` px wide. Empty titles never spill.
 function titleFits(item: Item, width: number, hasDisclosure = false): boolean {
   if (!item.title) return true;
   let reserved = RH_TOTAL + TITLE_PAD + FIT_SLACK;
   if (hasDisclosure) reserved += DISCLOSURE_RESERVE;
   if (item.priority) reserved += PILL_RESERVE;
+  if (item.flagged) reserved += FLAG_RESERVE;
   if (extractUrls(item.description)[0]) reserved += LINK_RESERVE;
   return measureTitleWidth(item.title) <= width - reserved;
 }
@@ -422,6 +429,17 @@ function prioPill(priority: number | null): Node {
   const el = document.createElement("span");
   el.className = `prio-pill p${priority}`;
   el.textContent = `P${priority}`;
+  return el;
+}
+
+// The "needs attention" flag, outermost on a bar. Like prioPill it is
+// non-interactive: flagging happens in the edit panel or via the "!" shortcut,
+// never by clicking the glyph, so it can't swallow a drag that starts on it.
+function flagMark(flagged: boolean): Node {
+  if (!flagged) return document.createTextNode("");
+  const el = document.createElement("span");
+  el.className = "bar-flag";
+  el.append(icons.flag(13));
   return el;
 }
 
