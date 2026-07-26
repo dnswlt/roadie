@@ -118,6 +118,16 @@ type Config struct {
 	// It exists for local OIDC mocks with self-signed certificates and must
 	// never be set in production.
 	InsecureTLS bool
+
+	// Debug logs every claim the provider actually sends, from both the ID
+	// token and UserInfo. It is the only way to see the claims Roadie does not
+	// parse, which is what you need when a provider puts the display name
+	// somewhere unexpected or fills a known claim with an opaque id.
+	//
+	// Off by default because claim values are personal data — names, email
+	// addresses, employee numbers — and do not belong in a routine log. Turn it
+	// on to diagnose a new provider, then turn it off.
+	Debug bool
 }
 
 // DefaultSessionTTL is how long a login lasts by default. Long enough to cover
@@ -146,6 +156,7 @@ type Authenticator struct {
 	sealer     *sealer
 	sessionTTL time.Duration
 	secure     bool
+	debug      bool
 
 	// callbackPath is the path component of Config.RedirectURL: both where the
 	// callback handler is registered and what has to be served without a
@@ -225,6 +236,7 @@ func New(ctx context.Context, cfg Config) (*Authenticator, error) {
 		sealer:       sl,
 		sessionTTL:   ttl,
 		secure:       redirect.Scheme == "https",
+		debug:        cfg.Debug,
 		callbackPath: redirect.Path,
 		ctx:          oidc.ClientContext(context.WithoutCancel(ctx), httpClient),
 	}, nil

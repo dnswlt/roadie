@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/base64"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -255,5 +256,142 @@ func TestMiddlewareClearsUnusableCookie(t *testing.T) {
 	cookies := w.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].Name != sessionCookie || cookies[0].MaxAge >= 0 {
 		t.Errorf("response cookies = %+v, want %s cleared", cookies, sessionCookie)
+	}
+}
+
+// The claim a value came from is now part of the login log, and it is only
+// worth logging if it is accurate. These also pin the precedence itself, which
+// is the thing most likely to need changing for a new provider.
+func TestClaimsIdentityReportsItsSource(t *testing.T) {
+	tests := []struct {
+		name      string
+		claims    userClaims
+		wantName  string
+		wantEmail string
+		wantFrom  string
+	}{{
+		name:      "full profile prefers name and email",
+		claims:    userClaims{Name: "Ada Lovelace", PreferredUsername: "ada@corp.com", Email: "ada@corp.com"},
+		wantName:  "Ada Lovelace",
+		wantEmail: "ada@corp.com",
+		wantFrom:  "name<-name email<-email",
+	}, {
+		// Entra v2 commonly sends preferred_username and no email claim.
+		name:      "no email claim falls back to preferred_username",
+		claims:    userClaims{Name: "Ada Lovelace", PreferredUsername: "ada@corp.com"},
+		wantName:  "Ada Lovelace",
+		wantEmail: "ada@corp.com",
+		wantFrom:  "name<-name email<-preferred_username",
+	}, {
+		name:      "no name claim falls back to the email-ish value",
+		claims:    userClaims{UPN: "ada@corp.com"},
+		wantName:  "ada@corp.com",
+		wantEmail: "ada@corp.com",
+		wantFrom:  "name<-upn email<-upn",
+	}, {
+		// The scenario worth being able to see in a log: the tenant fills name
+		// with an object id, so it wins over a perfectly good UPN next to it.
+		name:      "an opaque name claim still wins",
+		claims:    userClaims{Name: "7f3c1b90-2d44-4f0e-9a11-5c8e6b2d0f77", PreferredUsername: "ada@corp.com"},
+		wantName:  "7f3c1b90-2d44-4f0e-9a11-5c8e6b2d0f77",
+		wantEmail: "ada@corp.com",
+		wantFrom:  "name<-name email<-preferred_username",
+	}, {
+		name:     "nothing usable reports none, not an empty claim name",
+		claims:   userClaims{},
+		wantFrom: "name<-none email<-none",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, from := tt.claims.identity("sub-1")
+			if id.Name != tt.wantName || id.Email != tt.wantEmail {
+				t.Errorf("identity = {Name:%q Email:%q}, want {Name:%q Email:%q}",
+					id.Name, id.Email, tt.wantName, tt.wantEmail)
+			}
+			if from != tt.wantFrom {
+				t.Errorf("source = %q, want %q", from, tt.wantFrom)
+			}
+			if id.Subject != "sub-1" {
+				t.Errorf("subject = %q, want %q", id.Subject, "sub-1")
+			}
+		})
+	}
+}
+
+// With nothing but sub, Label falls back to the subject -- the "user shows up
+// as a GUID" case. empty() must report true so UserInfo is consulted first.
+func TestClaimsEmptyTriggersUserInfoFallback(t *testing.T) {
+	if !(userClaims{}).empty() {
+		t.Error("no claims at all must count as empty, so UserInfo is tried")
+	}
+	if (userClaims{UPN: "ada@corp.com"}).empty() {
+		t.Error("a upn-only profile is not empty; UserInfo would be a wasted call")
+	}
+	id, _ := (userClaims{}).identity("sub-only")
+	if id.Label() != "sub-only" {
+		t.Errorf("Label with no claims = %q, want the subject", id.Label())
+	}
+}
+
+// logClaims is the -auth-debug escape hatch: when a provider puts the display
+// name somewhere Roadie does not parse, this dump is the only place it shows
+// up. Worth a test, because a silent no-op here would only be discovered during
+// the incident it exists for.
+func TestLogClaimsDumpsEverythingOnlyWhenDebugging(t *testing.T) {
+	claims := func(v any) error {
+		*(v.(*map[string]any)) = map[string]any{
+			"sub":                "7f3c1b90",
+			"oid":                "7f3c1b90",
+			"name":               "Ada Lovelace",
+			"preferred_username": "ada@corp.com",
+			// A claim Roadie does not parse: the whole reason for the dump.
+			"employeeid": "E-4471",
+		}
+		return nil
+	}
+
+	var buf strings.Builder
+	old := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(old) })
+
+	// Off by default: claim values are personal data.
+	(&Authenticator{}).logClaims("id_token", "7f3c1b90", claims)
+	if buf.String() != "" {
+		t.Fatalf("claims logged with debug off: %s", buf.String())
+	}
+
+	(&Authenticator{debug: true}).logClaims("id_token", "7f3c1b90", claims)
+	got := buf.String()
+	for _, want := range []string{
+		"id_token claims for 7f3c1b90",
+		"employeeid=E-4471", // the unparsed claim must survive
+		"name=Ada Lovelace",
+		"preferred_username=ada@corp.com",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("dump missing %q; got: %s", want, got)
+		}
+	}
+	// Sorted, so two logins can be diffed against each other.
+	if !strings.Contains(got, "employeeid=E-4471 name=Ada Lovelace oid=") {
+		t.Errorf("claims not in sorted order: %s", got)
+	}
+}
+
+// A provider that hands back something undecodable must say so rather than
+// leaving a silent gap in the log.
+func TestLogClaimsReportsUnreadableClaims(t *testing.T) {
+	var buf strings.Builder
+	old := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(old) })
+
+	(&Authenticator{debug: true}).logClaims("userinfo", "sub-1", func(any) error {
+		return errors.New("boom")
+	})
+	if !strings.Contains(buf.String(), "cannot read userinfo claims for sub-1: boom") {
+		t.Errorf("unreadable claims not reported; got: %s", buf.String())
 	}
 }

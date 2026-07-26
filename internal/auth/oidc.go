@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -172,21 +173,26 @@ func (a *Authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 		a.loginError(w, "the ID token claims could not be read", err)
 		return
 	}
+	a.logClaims("id_token", idToken.Subject, idToken.Claims)
 	// A provider is free to put nothing but sub in the ID token and serve the
 	// profile claims from UserInfo instead — that is what IdentityServer does
 	// unless the client sets AlwaysIncludeUserClaimsInIdToken, while Entra
 	// inlines them. Without a name there is nobody to attribute a change to, so
 	// fall back rather than depend on one provider's behaviour. Failure here is
 	// not fatal: the subject alone still identifies the user.
+	usedUserInfo := false
 	if claims.empty() {
+		usedUserInfo = true
 		info, err := a.provider.UserInfo(ctx, oauth2.StaticTokenSource(tok))
 		if err != nil {
 			log.Printf("auth: UserInfo lookup for %s: %v", idToken.Subject, err)
 		} else if err := info.Claims(&claims); err != nil {
 			log.Printf("auth: reading UserInfo claims for %s: %v", idToken.Subject, err)
+		} else {
+			a.logClaims("userinfo", idToken.Subject, info.Claims)
 		}
 	}
-	id := claims.identity(idToken.Subject)
+	id, from := claims.identity(idToken.Subject)
 
 	sess, err := a.sealSession(id)
 	if err != nil {
@@ -194,8 +200,41 @@ func (a *Authenticator) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setCookie(w, sessionCookie, sess, a.sessionTTL)
-	log.Printf("auth: login for %s", id.Label())
+	// Log which claim supplied each field, not just the result. A login that
+	// "works" but attributes edits to an opaque id is a success path with no
+	// error anywhere — knowing the value came from, say, name rather than
+	// preferred_username is what turns that into a five-minute fix.
+	log.Printf("auth: login for %q (sub=%s, %s, userinfo=%t)", id.Label(), idToken.Subject, from, usedUserInfo)
 	http.Redirect(w, r, safeNext(ls.Next), http.StatusFound)
+}
+
+// logClaims dumps every claim a provider sent, under -auth-debug. Both
+// oidc.IDToken.Claims and oidc.UserInfo.Claims have this signature, so the same
+// helper covers each source.
+//
+// The point is the claims Roadie *doesn't* parse: if a tenant emits the display
+// name under a key not in userClaims, every other log line looks healthy and
+// the user simply shows up as a GUID. Keys alone would not be enough — a claim
+// that is present but holds an object id is the more common Entra surprise.
+func (a *Authenticator) logClaims(source, subject string, into func(any) error) {
+	if !a.debug {
+		return
+	}
+	var raw map[string]any
+	if err := into(&raw); err != nil {
+		log.Printf("auth: debug: cannot read %s claims for %s: %v", source, subject, err)
+		return
+	}
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // stable order, so two logins can be diffed
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, " %s=%v", k, raw[k])
+	}
+	log.Printf("auth: debug: %s claims for %s:%s", source, subject, b.String())
 }
 
 // userClaims are the identity claims Roadie looks for, from either the ID
@@ -216,24 +255,38 @@ func (c userClaims) empty() bool {
 	return c.Name == "" && c.PreferredUsername == "" && c.UPN == "" && c.Email == ""
 }
 
-// identity resolves the claims into what Roadie stores, falling back through
-// the spellings so a display name is populated whenever anything is known.
-func (c userClaims) identity(subject string) Identity {
-	email := firstNonEmpty(c.Email, c.PreferredUsername, c.UPN)
-	return Identity{
-		Subject: subject,
-		Name:    firstNonEmpty(c.Name, email),
-		Email:   email,
-	}
-}
+// claimSource pairs a resolved value with the claim it came from, so a login
+// can report *which* spelling won rather than only the result.
+type claimSource struct{ value, claim string }
 
-func firstNonEmpty(vals ...string) string {
+// firstSet returns the first source with a value, or a "none" marker when the
+// provider sent nothing usable — which is itself the interesting case.
+func firstSet(vals ...claimSource) claimSource {
 	for _, v := range vals {
-		if v != "" {
+		if v.value != "" {
 			return v
 		}
 	}
-	return ""
+	return claimSource{claim: "none"}
+}
+
+// identity resolves the claims into what Roadie stores, falling back through
+// the spellings so a display name is populated whenever anything is known. The
+// second return value names the winning claim per field, for the login log.
+//
+// Note the precedence: a non-empty name always beats preferred_username/upn. If
+// a tenant fills name with an object id, that id becomes the display name even
+// though a perfectly good UPN sat next to it — the log line is what makes that
+// visible, and the fix is a precedence change here.
+func (c userClaims) identity(subject string) (Identity, string) {
+	email := firstSet(
+		claimSource{c.Email, "email"},
+		claimSource{c.PreferredUsername, "preferred_username"},
+		claimSource{c.UPN, "upn"},
+	)
+	name := firstSet(claimSource{c.Name, "name"}, email)
+	id := Identity{Subject: subject, Name: name.value, Email: email.value}
+	return id, fmt.Sprintf("name<-%s email<-%s", name.claim, email.claim)
 }
 
 // handleLogout drops the session cookie. It deliberately does not perform

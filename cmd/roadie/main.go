@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -39,6 +40,8 @@ func run() error {
 	redirectURL := flag.String("oidc-redirect-url", "", "public URL of this server's /auth/callback (required with -auth=oidc)")
 	sessionTTL := flag.Duration("session-ttl", auth.DefaultSessionTTL, "how long a login lasts before re-authentication")
 	insecureTLS := flag.Bool("oidc-insecure-tls", false, "skip TLS verification when talking to the OIDC provider (local mocks only, never in production)")
+	authDebug := flag.Bool("auth-debug", envBool("AUTH_DEBUG"),
+		"log every claim the OIDC provider sends (personal data: for diagnosing a provider, not for normal running); also settable as AUTH_DEBUG")
 	flag.Parse()
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -77,7 +80,7 @@ func run() error {
 	// write, which would sever long-lived SSE streams. If a non-streaming route
 	// ever needs slow-read protection, set a per-connection deadline in that
 	// handler via http.NewResponseController(w).SetWriteDeadline.
-	opts, err := authOptions(ctx, *authMode, *redirectURL, *sessionTTL, *insecureTLS)
+	opts, err := authOptions(ctx, *authMode, *redirectURL, *sessionTTL, *insecureTLS, *authDebug)
 	if err != nil {
 		return err
 	}
@@ -134,7 +137,7 @@ func run() error {
 // not quietly leave the server unauthenticated. Everything except the mode and
 // the public callback URL comes from the environment, because flag values are
 // visible to anyone who can run ps.
-func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duration, insecureTLS bool) ([]server.Option, error) {
+func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duration, insecureTLS, debug bool) ([]server.Option, error) {
 	switch mode {
 	case "off":
 		log.Print("auth: DISABLED — all requests are anonymous and may edit everything")
@@ -149,14 +152,16 @@ func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duratio
 		return nil, err
 	}
 	issuer := os.Getenv("OIDC_ISSUER")
+	clientID := os.Getenv("OIDC_CLIENT_ID")
 	a, err := auth.New(ctx, auth.Config{
 		Issuer:       issuer,
-		ClientID:     os.Getenv("OIDC_CLIENT_ID"),
+		ClientID:     clientID,
 		ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 		RedirectURL:  redirectURL,
 		SessionKey:   key,
 		SessionTTL:   ttl,
 		InsecureTLS:  insecureTLS,
+		Debug:        debug,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
@@ -164,7 +169,14 @@ func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duratio
 	if insecureTLS {
 		log.Print("auth: WARNING — TLS verification to the OIDC provider is disabled")
 	}
-	log.Printf("auth: oidc (issuer=%s, session=%s)", issuer, ttl)
+	if debug {
+		log.Print("auth: WARNING — claim debug logging is on; provider claim values (names, addresses) will be written to the log")
+	}
+	// The redirect URL is logged in full because the provider must have the
+	// byte-identical string registered, and its path is where Roadie serves the
+	// callback: a mismatch shows up as a provider-side error or a 404 here, and
+	// this line is what you compare against the app registration.
+	log.Printf("auth: oidc (issuer=%s, client=%s, redirect=%s, session=%s)", issuer, clientID, redirectURL, ttl)
 	return []server.Option{server.WithAuth(a)}, nil
 }
 
@@ -184,4 +196,21 @@ func sessionKey() ([]byte, error) {
 		return nil, fmt.Errorf("SESSION_KEY is not valid base64: %w", err)
 	}
 	return key, nil
+}
+
+// envBool reads a boolean toggle for use as a flag's default, so a container's
+// environment can set it (`oc set env`) without touching its arguments. A bad
+// value warns instead of failing startup, but must not pass silently: "I set
+// the variable and nothing happened" is what this exists to avoid.
+func envBool(name string) bool {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return false
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Printf("WARNING — ignoring %s=%q: not a boolean (want 1/0, true/false)", name, raw)
+		return false
+	}
+	return v
 }
