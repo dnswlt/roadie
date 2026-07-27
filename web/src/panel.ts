@@ -14,16 +14,30 @@ import { selectionLink } from "./url";
 
 const PANEL_TITLE_ID = "panel-item-title";
 
-// confirmAndDeleteItem / confirmAndDeleteMilestone are the delete flow behind
+// confirmAndDeleteItems / confirmAndDeleteMilestone are the delete flow behind
 // both the panel's Delete button and the Del keyboard shortcut: confirm, then
 // delegate to actions. Keeping them shared means the shortcut is exactly the
-// button.
-async function confirmAndDeleteItem(item: Item): Promise<void> {
-  const children = (item as ItemFull).children;
-  const suffix = children && children.length > 0 ? ` and its ${children.length} child item(s)` : "";
-  if (await confirmDialog(`Delete "${item.title}"${suffix}?`)) {
-    void actions.deleteItem(item.id);
+// button — and that one item and many go through the same prompt, so the two
+// wordings can't drift.
+//
+// The count in the prompt includes children, since deleting a parent takes
+// them with it and that is not visible from the selection alone. Selected
+// items are always in disjoint containers (state.toggleItem drops a child when
+// its parent is selected), so children are never double-counted.
+async function confirmAndDeleteItems(items: Item[]): Promise<void> {
+  if (items.length === 0) return;
+  const kids = items.reduce((n, it) => n + ((it as ItemFull).children?.length ?? 0), 0);
+  const msg =
+    items.length === 1
+      ? `Delete "${items[0]!.title}"${kids > 0 ? ` and its ${kids} child item(s)` : ""}?`
+      : `Delete ${items.length} items${kids > 0 ? ` and their ${kids} child item(s)` : ""}?`;
+  if (await confirmDialog(msg)) {
+    void actions.deleteItems(items.map((it) => it.id));
   }
+}
+
+function confirmAndDeleteItem(item: Item): Promise<void> {
+  return confirmAndDeleteItems([item]);
 }
 
 async function confirmAndDeleteMilestone(milestone: Milestone): Promise<void> {
@@ -32,9 +46,12 @@ async function confirmAndDeleteMilestone(milestone: Milestone): Promise<void> {
   }
 }
 
-// deleteSelection deletes whatever the edit panel currently targets — the one
-// selected item or milestone — mirroring the Delete button. No-op with nothing
-// (or a multi-selection) targeted, or while previewing a snapshot (read-only).
+// deleteSelection deletes everything selected: one milestone, one item, or a
+// whole multi-selection of items. Deleting is a **per-item** operation like
+// flagging — "delete these five" is unambiguous — so unlike `n`/`c` it does not
+// need a single target. Only the shortcut reaches the multi case: the edit
+// panel (and its Delete button) shows nothing while several items are selected.
+// No-op with an empty selection, or while previewing a snapshot (read-only).
 export function deleteSelection(): void {
   if (state.preview) return;
   const msId = state.selectedMilestoneId;
@@ -43,10 +60,10 @@ export function deleteSelection(): void {
     if (loc) void confirmAndDeleteMilestone(loc.milestone);
     return;
   }
-  const id = state.selectedItemId;
-  if (id === null) return;
-  const loc = state.findItem(id);
-  if (loc) void confirmAndDeleteItem(loc.item);
+  const items = [...state.selectedItemIds]
+    .map((id) => state.findItem(id)?.item)
+    .filter((it) => it !== undefined);
+  if (items.length > 0) void confirmAndDeleteItems(items);
 }
 
 // addSiblingOf creates an item beside `item`: same container, same dates,

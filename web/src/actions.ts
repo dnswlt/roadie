@@ -446,21 +446,32 @@ export const actions = {
     );
   },
 
-  async deleteItem(id: number): Promise<void> {
+  // deleteItems removes one or more items. The server cascades a parent's
+  // children away with it, which the local removal gets for free: the parent
+  // carries its `children` array. `state.toggleItem` guarantees a parent and
+  // its child are never both selected, so the ids always name disjoint
+  // containers and nothing is removed twice.
+  //
+  // Batched like shiftItems/setFlagged rather than looped through a
+  // single-delete action: one optimistic apply, one rollback, one toast.
+  async deleteItems(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
     await optimistic(
       () => {
-        const loc = state.findItem(id);
-        if (!loc) return;
-        if (loc.parent) {
-          loc.parent.children = loc.parent.children.filter((c) => c.id !== id);
-          renumber(loc.parent.children);
-        } else {
-          loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
-          renumber(loc.lane.items);
+        for (const id of ids) {
+          const loc = state.findItem(id);
+          if (!loc) continue;
+          if (loc.parent) {
+            loc.parent.children = loc.parent.children.filter((c) => c.id !== id);
+            renumber(loc.parent.children);
+          } else {
+            loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
+            renumber(loc.lane.items);
+          }
+          state.deselectItem(id);
         }
-        state.deselectItem(id);
       },
-      () => api.deleteItem(id),
+      () => Promise.all(ids.map((id) => api.deleteItem(id))),
     );
   },
 

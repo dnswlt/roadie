@@ -51,7 +51,7 @@ export const bindings: Binding[] = [
   {
     key: "Delete",
     label: "Del",
-    description: "Delete the selected item or milestone.",
+    description: "Delete the selected items or milestone.",
     run: () => deleteSelection(),
   },
   {
