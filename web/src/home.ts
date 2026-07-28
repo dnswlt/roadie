@@ -198,7 +198,7 @@ function renderRoadmapSide(side: HTMLElement, id: number): void {
   const actionsRow = document.createElement("div");
   actionsRow.className = "home-side-actions";
   const open = document.createElement("button");
-  open.className = "btn btn-primary";
+  open.className = "btn btn-home";
   open.textContent = "Open";
   open.addEventListener("click", () => openRoadmap(id));
   actionsRow.append(open);
