@@ -626,6 +626,31 @@ function buildLaneVisMenu(pop: HTMLElement): void {
 // button (appended to body so it isn't clipped by the chart's scroll area).
 // Holds the less-frequent per-lane actions to keep the lane toolbar short.
 
+// placePopover positions a body-level, position:fixed popover against its
+// anchor. It opens downwards, but **flips above the anchor** when there isn't
+// room below — without that, the last context's menu hangs off the bottom of
+// the window and its lower rows can't be reached at all (the popover is fixed,
+// so the page cannot be scrolled to them). Both axes are clamped to the
+// viewport as a last resort, for a window too short to fit the menu either way.
+//
+// The element must already be in the DOM: its measured size decides both the
+// flip and the right-alignment.
+function placePopover(el: HTMLElement, anchor: HTMLElement, align: "left" | "right"): void {
+  const GAP = 6; // breathing room between anchor and popover
+  const EDGE = 8; // keep this far clear of the viewport edges
+  const r = anchor.getBoundingClientRect();
+  const { offsetWidth: w, offsetHeight: h } = el;
+
+  const wanted = align === "right" ? r.right - w : r.left;
+  const maxLeft = Math.max(EDGE, window.innerWidth - w - EDGE);
+  el.style.left = `${Math.min(Math.max(EDGE, wanted), maxLeft)}px`;
+
+  const below = r.bottom + GAP;
+  const above = r.top - GAP - h;
+  const fitsBelow = below + h <= window.innerHeight - EDGE;
+  el.style.top = `${fitsBelow || above < EDGE ? Math.min(below, window.innerHeight - h - EDGE) : above}px`;
+}
+
 function closeLaneMenu(target?: HTMLElement): void {
   const menu = document.querySelector<HTMLElement>(".lane-menu");
   if (menu && (!target || !target.closest(".lane-menu"))) menu.remove();
@@ -691,10 +716,8 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
 
   menu.append(rename, addMs, color, del);
   document.body.append(menu);
-  const r = anchor.getBoundingClientRect();
-  // Right-align the menu under the button so it doesn't run off-screen.
-  menu.style.left = `${Math.max(8, r.right - menu.offsetWidth)}px`;
-  menu.style.top = `${r.bottom + 6}px`;
+  // Right-aligned under the button, which keeps it clear of the right edge.
+  placePopover(menu, anchor, "right");
 }
 
 function text(s: string): HTMLElement {
@@ -811,10 +834,10 @@ function toggleColorPop(anchor: HTMLElement, laneId: number): void {
     });
     pop.append(sw);
   }
-  const r = anchor.getBoundingClientRect();
-  pop.style.left = `${r.left}px`;
-  pop.style.top = `${r.bottom + 6}px`;
+  // Append before placing: placePopover measures the element to decide whether
+  // it still fits below the anchor.
   document.body.append(pop);
+  placePopover(pop, anchor, "left");
 }
 
 // applySelection restores a deep-linked item/milestone selection after its
