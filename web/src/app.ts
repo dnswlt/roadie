@@ -7,7 +7,7 @@ import { initDnd } from "./dnd";
 import { initEvents, refreshNow } from "./events";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
-import { openRoadmapInfo } from "./info";
+import { initHome, openHome } from "./home";
 import { bindings, initKeys } from "./keys";
 import { LABEL_W } from "./layout";
 import { currentScale, renderChart } from "./render";
@@ -15,7 +15,6 @@ import { renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
-import { openTrash } from "./trash";
 import type { Me } from "./types";
 import { readUrl, type UrlTarget } from "./url";
 
@@ -82,14 +81,15 @@ function renderStalePill(): void {
 }
 
 function renderTopbar(): void {
-  // The picker is a button + popover (like every other menu here), so its
-  // label is drawn by hand; the list itself is built lazily on open.
+  // The name button drops the actions menu for the roadmap it names, so it is
+  // disabled when nothing is open — Home stays reachable via the house button,
+  // which is never disabled (with no roadmaps, Home is where New/Import live).
   const name = document.createElement("span");
   name.className = "rm-trigger-name";
   name.textContent = state.current?.name ?? "No roadmap";
   rmPicker.replaceChildren(name, icons.chevronDown(14));
   rmPicker.title = state.current?.name ?? "";
-  rmPicker.disabled = state.roadmaps.length === 0;
+  rmPicker.disabled = !state.current;
   ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
   ($("rm-duplicate") as HTMLButtonElement).disabled = !state.current;
   ($("rm-history") as HTMLButtonElement).disabled = !state.current;
@@ -149,38 +149,6 @@ function zoomToFit(): void {
   // sticky at left: 0 and so overlay the first LABEL_W pixels of the viewport;
   // scrolling to the span's own x would tuck its first bars underneath them.
   chart.scrollLeft = Math.max(0, xOf(currentScale(), range.startDay) - FIT_GUTTER_PX / 2);
-}
-
-// buildRoadmapMenu (re)populates the roadmap picker: one row per roadmap, the
-// current one check-marked. Rebuilt on open so it always reflects the list.
-function buildRoadmapMenu(pop: HTMLElement): void {
-  pop.replaceChildren();
-  if (state.roadmaps.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "menu-empty";
-    empty.textContent = "No roadmaps yet.";
-    pop.append(empty);
-    return;
-  }
-  for (const rm of state.roadmaps) {
-    const active = state.current?.id === rm.id;
-    const b = document.createElement("button");
-    b.className = active ? "menu-item is-active" : "menu-item";
-    const mark = document.createElement("span");
-    mark.className = "menu-check";
-    if (active) mark.append(icons.check(14));
-    const name = document.createElement("span");
-    name.className = "rm-item-name";
-    name.textContent = rm.name;
-    name.title = rm.name;
-    b.append(mark, name);
-    b.addEventListener("click", (e) => {
-      e.stopPropagation();
-      pop.classList.add("hidden");
-      if (!active) void actions.selectRoadmap(rm.id);
-    });
-    pop.append(b);
-  }
 }
 
 // buildSnapMenu (re)populates the snap-grid popover: one row per mode, the
@@ -397,17 +365,14 @@ function renderAccount(me: Me): void {
 }
 
 function injectIcons(): void {
-  $("rm-new").prepend(icons.plus(14));
-  $("rm-menu").append(icons.dots(18));
+  $("home-btn").prepend(icons.house(16));
   $("lane-vis-menu").append(icons.eye(18));
   $("focus-menu").append(icons.tag(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
   $("rm-history").prepend(icons.history(14));
-  $("rm-info").prepend(icons.info(14));
   $("rm-schedule").prepend(icons.calendar(14));
   $("rm-export").prepend(icons.download(14));
-  $("rm-import").prepend(icons.upload(14));
   $("rm-delete").prepend(icons.trash(14));
   $("snap-menu").append(icons.magnet(18));
   $("zoom-fit").append(icons.zoomFit());
@@ -419,24 +384,18 @@ function injectIcons(): void {
 }
 
 function wireTopbar(): void {
-  const rmPop = $("rm-pop");
   const menuPop = $("rm-menu-pop");
   const visPop = $("lane-vis-pop");
   const focusPop = $("focus-pop");
   const snapPop = $("snap-pop");
   const accountPop = $("account-pop");
-  const allPops = [rmPop, menuPop, visPop, focusPop, snapPop, accountPop];
+  const allPops = [menuPop, visPop, focusPop, snapPop, accountPop];
   // Close every top-bar popover except the one being opened.
   const closeOthers = (keep: HTMLElement): void => {
     for (const p of allPops) if (p !== keep) p.classList.add("hidden");
   };
+  $("home-btn").addEventListener("click", () => void openHome());
   rmPicker.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeOthers(rmPop);
-    if (rmPop.classList.contains("hidden")) buildRoadmapMenu(rmPop);
-    rmPop.classList.toggle("hidden");
-  });
-  $("rm-menu").addEventListener("click", (e) => {
     e.stopPropagation();
     closeOthers(menuPop);
     menuPop.classList.toggle("hidden");
@@ -484,10 +443,6 @@ function wireTopbar(): void {
     closeLaneMenu(e.target as HTMLElement);
   });
 
-  $("rm-new").addEventListener("click", async () => {
-    const name = await promptDialog("New roadmap", "", "Create");
-    if (name) void actions.createRoadmap(name);
-  });
   $("rm-rename").addEventListener("click", async () => {
     menuPop.classList.add("hidden");
     if (!state.current) return;
@@ -505,10 +460,6 @@ function wireTopbar(): void {
     menuPop.classList.add("hidden");
     void actions.openHistory();
   });
-  $("rm-info").addEventListener("click", () => {
-    menuPop.classList.add("hidden");
-    void openRoadmapInfo();
-  });
   $("rm-schedule").addEventListener("click", () => {
     menuPop.classList.add("hidden");
     void openScheduleEditor();
@@ -516,20 +467,6 @@ function wireTopbar(): void {
   $("rm-export").addEventListener("click", () => {
     menuPop.classList.add("hidden");
     actions.exportRoadmap();
-  });
-  const importFile = $("rm-import-file") as HTMLInputElement;
-  $("rm-import").addEventListener("click", () => {
-    menuPop.classList.add("hidden");
-    importFile.click();
-  });
-  importFile.addEventListener("change", () => {
-    const file = importFile.files?.[0];
-    importFile.value = ""; // allow re-selecting the same file later
-    if (file) void actions.importRoadmap(file);
-  });
-  $("rm-trash").addEventListener("click", () => {
-    menuPop.classList.add("hidden");
-    void openTrash();
   });
   $("rm-delete").addEventListener("click", async () => {
     menuPop.classList.add("hidden");
@@ -903,6 +840,7 @@ async function boot(): Promise<void> {
   state.subscribe(render);
   injectIcons();
   wireTopbar();
+  initHome();
   wireChart();
   wirePanelResize();
   initDnd(chart);

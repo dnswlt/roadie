@@ -14,27 +14,21 @@
         <img class="brand-logo" src="favicon.svg" alt="" width="20" height="20">
         Roadie
       </span>
+      <!-- The house opens Home (list, preview, new/import, trash); the name
+           button drops the menu of actions on the roadmap it names. Two
+           affordances, each honest: icon = go somewhere, name+chevron = menu. -->
+      <button id="home-btn" class="home-trigger" title="Roadmaps"><span>Home</span></button>
       <div class="menu-wrap">
-        <button id="rm-picker" class="rm-trigger" aria-label="Roadmap"></button>
-        <div id="rm-pop" class="menu hidden"></div>
-      </div>
-      <div class="menu-wrap">
-        <button id="rm-menu" class="icon-btn" title="Roadmap actions"></button>
+        <button id="rm-picker" class="rm-trigger" aria-label="Roadmap actions"></button>
         <div id="rm-menu-pop" class="menu hidden">
           <button id="rm-rename" class="menu-item">Rename</button>
           <button id="rm-schedule" class="menu-item">Edit schedule</button>
           <button id="rm-duplicate" class="menu-item">Duplicate</button>
           <button id="rm-export" class="menu-item">Export</button>
-          <button id="rm-import" class="menu-item">Import</button>
           <button id="rm-history" class="menu-item">Version history</button>
-          <button id="rm-info" class="menu-item">Roadmap info</button>
-          <!-- The trash is global, not about the current roadmap, but it sits
-               next to the delete it undoes — the only place anyone will look. -->
-          <button id="rm-trash" class="menu-item">Trash</button>
           <button id="rm-delete" class="menu-item menu-danger">Delete roadmap</button>
         </div>
       </div>
-      <button id="rm-new" class="btn">New</button>
       <input id="rm-import-file" type="file" accept=".json,application/json" hidden>
       <div class="menu-wrap">
         <button id="lane-vis-menu" class="icon-btn" title="Show/hide contexts"></button>
@@ -74,6 +68,9 @@
     </div>
     <div id="toasts"></div>
     <dialog id="dialog"></dialog>
+    <!-- Home has its own element so #dialog's prompts/confirms can stack on
+         top of it as nested modals. Content is built by home.ts on open. -->
+    <dialog id="home-dialog"></dialog>
   </div>
   <script src="app.js"></script>
 </body>
