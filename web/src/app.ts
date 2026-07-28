@@ -15,6 +15,7 @@ import { renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
+import { openTrash } from "./trash";
 import type { Me } from "./types";
 import { readUrl, type UrlTarget } from "./url";
 
@@ -526,12 +527,19 @@ function wireTopbar(): void {
     importFile.value = ""; // allow re-selecting the same file later
     if (file) void actions.importRoadmap(file);
   });
+  $("rm-trash").addEventListener("click", () => {
+    menuPop.classList.add("hidden");
+    void openTrash();
+  });
   $("rm-delete").addEventListener("click", async () => {
     menuPop.classList.add("hidden");
     if (!state.current) return;
-    if (await confirmDialog(`Delete roadmap "${state.current.name}" and everything in it?`)) {
-      void actions.deleteRoadmap();
-    }
+    // Name the trash: the reassurance is the whole point of it, and it is worth
+    // nothing if the confirm still reads like the end of the world.
+    const ok = await confirmDialog(
+      `Delete roadmap "${state.current.name}"? You can restore it from the trash.`,
+    );
+    if (ok) void actions.deleteRoadmap();
   });
   $("zoom-fit").addEventListener("click", () => zoomToFit());
   $("zoom-in").addEventListener("click", () => setZoom(state.pxPerDay * 1.4));

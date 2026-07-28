@@ -9,10 +9,12 @@ import (
 
 // Seed creates a demo roadmap with a few lanes and items if the database
 // holds no roadmaps yet. Dates are relative to today so the demo always
-// shows a plausible planning horizon.
+// shows a plausible planning horizon. Trashed roadmaps don't count: an app
+// that looks empty should seed like an empty one.
 func (s *Store) Seed(ctx context.Context) error {
 	var count int
-	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM roadmaps`).Scan(&count); err != nil {
+	if err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM roadmaps WHERE deleted_at IS NULL`).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {

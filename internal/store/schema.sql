@@ -10,11 +10,15 @@
 -- the two agree. (The schema_migrations bookkeeping table is created by
 -- store.Migrate itself, so it is intentionally not defined here.)
 
+-- deleted_at is the trash can: a deleted roadmap is marked, not removed, so it
+-- can be restored with everything under it (nothing cascades on a mark). NULL
+-- means live. See migrations/011_roadmap_deleted.sql.
 CREATE TABLE roadmaps (
     id         BIGSERIAL PRIMARY KEY,
     name       TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at TIMESTAMPTZ
 );
 
 CREATE TABLE lanes (

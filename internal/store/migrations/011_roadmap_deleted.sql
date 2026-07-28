@@ -1,0 +1,17 @@
+-- Soft delete for roadmaps: a trash can, not a DELETE.
+--
+-- Deleting a roadmap used to be the one irreversible action in the product, and
+-- the one place version history could not help: snapshots reference the roadmap
+-- with ON DELETE CASCADE, so a pre-delete snapshot would be destroyed by the
+-- very statement it was taken to survive. (That is why the roadmap DELETE route
+-- is the only mutation not wrapped in the server's snapshot wrapper.) Marking
+-- the row instead is what makes it recoverable at all.
+--
+-- Nothing cascades on a soft delete: lanes, items, milestones, schedule periods,
+-- snapshots and contributors all keep their rows, so a restore is a single
+-- UPDATE and brings back the roadmap's full history along with its content.
+--
+-- Trashed roadmaps are purged automatically after 30 days (see the sweeper in
+-- internal/server/trash.go). The TTL lives in the server, not here: it is
+-- retention policy, not a schema invariant.
+ALTER TABLE roadmaps ADD COLUMN deleted_at TIMESTAMPTZ;

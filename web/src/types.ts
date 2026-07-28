@@ -9,6 +9,15 @@ export interface Roadmap {
   createdAt: string; // ISO 8601 timestamp
 }
 
+// TrashedRoadmap is a roadmap in the trash, as returned by GET
+// /api/roadmaps/trash. purgeAt is computed by the server from its retention
+// policy rather than duplicated here, so the countdown the UI shows can't drift
+// from the sweeper that actually does the deleting.
+export interface TrashedRoadmap extends Roadmap {
+  deletedAt: string;
+  purgeAt: string;
+}
+
 export interface Lane {
   id: number;
   roadmapId: number;

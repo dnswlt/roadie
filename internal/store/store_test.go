@@ -951,3 +951,168 @@ func TestCheckNoPrunedGap(t *testing.T) {
 		})
 	}
 }
+
+// hasRoadmap reports whether a roadmap listing contains id.
+func hasRoadmap(list []model.Roadmap, id int64) bool {
+	return slices.ContainsFunc(list, func(r model.Roadmap) bool { return r.ID == id })
+}
+
+// TestRoadmapTrash covers the whole soft-delete round trip: a trashed roadmap
+// disappears from the API, freezes, and comes back whole — including the
+// snapshot history a real delete would have cascaded away.
+func TestRoadmapTrash(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane, err := testStore.CreateLane(ctx, rm.ID, "Lane")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Item", StartDate: date("2026-01-01"), EndDate: date("2026-02-01")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := testStore.TrashRoadmap(ctx, rm.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	live, err := testStore.ListRoadmaps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRoadmap(live, rm.ID) {
+		t.Error("trashed roadmap still listed as live")
+	}
+	trashed, err := testStore.ListTrashedRoadmaps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(trashed, func(r model.Roadmap) bool { return r.ID == rm.ID })
+	if i < 0 {
+		t.Fatal("trashed roadmap missing from the trash")
+	}
+	if trashed[i].DeletedAt == nil {
+		t.Error("trashed roadmap has no deletion time")
+	}
+
+	// Invisible: reading it is indistinguishable from it not existing.
+	if _, err := testStore.GetRoadmapFull(ctx, rm.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetRoadmapFull on trashed roadmap: got %v, want ErrNotFound", err)
+	}
+	if _, err := testStore.RenameRoadmap(ctx, rm.ID, "renamed"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("RenameRoadmap on trashed roadmap: got %v, want ErrNotFound", err)
+	}
+	if err := testStore.TrashRoadmap(ctx, rm.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("trashing twice: got %v, want ErrNotFound", err)
+	}
+
+	// Frozen: every content mutation goes through lockRoadmap, by roadmap id or
+	// by lane/item id, and all of them stop here.
+	if _, err := testStore.CreateLane(ctx, rm.ID, "Another"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("CreateLane in trashed roadmap: got %v, want ErrNotFound", err)
+	}
+	if _, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Sneaky", StartDate: date("2026-01-01"), EndDate: date("2026-01-02")},
+	); !errors.Is(err, ErrNotFound) {
+		t.Errorf("CreateItem in trashed roadmap: got %v, want ErrNotFound", err)
+	}
+
+	back, err := testStore.RestoreRoadmap(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.DeletedAt != nil {
+		t.Error("restored roadmap still carries a deletion time")
+	}
+	if _, err := testStore.RestoreRoadmap(ctx, rm.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("restoring twice: got %v, want ErrNotFound", err)
+	}
+
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full.Lanes) != 1 || len(full.Lanes[0].Items) != 1 {
+		t.Errorf("restored roadmap: got %d lanes / %d items, want 1 / 1",
+			len(full.Lanes), len(full.Lanes[0].Items))
+	}
+	snaps, err := testStore.ListSnapshots(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snaps) == 0 {
+		t.Error("restored roadmap lost its snapshot history")
+	}
+}
+
+// TestPurgeRoadmapRequiresTrash pins the two-step rule: the only irreversible
+// operation in the product refuses to run on a roadmap that is still live.
+func TestPurgeRoadmapRequiresTrash(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+
+	if err := testStore.PurgeRoadmap(ctx, rm.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("purging a live roadmap: got %v, want ErrNotFound", err)
+	}
+	if _, err := testStore.GetRoadmapFull(ctx, rm.ID); err != nil {
+		t.Fatalf("live roadmap damaged by a refused purge: %v", err)
+	}
+
+	if err := testStore.TrashRoadmap(ctx, rm.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := testStore.PurgeRoadmap(ctx, rm.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.GetRoadmapFull(ctx, rm.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("purged roadmap still readable: %v", err)
+	}
+	trashed, err := testStore.ListTrashedRoadmaps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasRoadmap(trashed, rm.ID) {
+		t.Error("purged roadmap still in the trash")
+	}
+}
+
+func TestPurgeExpiredTrash(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	if err := testStore.TrashRoadmap(ctx, rm.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// A fresh delete is well inside its retention window.
+	if _, err := testStore.PurgeExpiredTrash(ctx, 24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	trashed, err := testStore.ListTrashedRoadmaps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasRoadmap(trashed, rm.ID) {
+		t.Fatal("sweep purged a roadmap deleted moments ago")
+	}
+
+	// Age it past any plausible retention window, and sweep with one to match:
+	// the assertion is about this roadmap, and a ttl this long can't take
+	// anything else in the database with it.
+	if _, err := testStore.pool.Exec(ctx,
+		`UPDATE roadmaps SET deleted_at = now() - interval '400 days' WHERE id = $1`, rm.ID); err != nil {
+		t.Fatal(err)
+	}
+	n, err := testStore.PurgeExpiredTrash(ctx, 365*24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < 1 {
+		t.Errorf("sweep purged %d roadmaps, want at least 1", n)
+	}
+	if _, err := testStore.GetRoadmapFull(ctx, rm.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expired roadmap survived the sweep: %v", err)
+	}
+}

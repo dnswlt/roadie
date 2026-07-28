@@ -99,10 +99,16 @@ func run() error {
 	srv.RegisterOnShutdown(app.Shutdown)
 
 	// Register the signal handler before serving so a fast SIGTERM isn't missed.
+	// It also bounds the trash sweeper below.
 	// k8s sends it on rollouts, scale-down, and node drains, then SIGKILLs after
 	// the grace period — so drain in-flight requests instead of dropping them.
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Purge roadmaps that have outstayed their time in the trash. Bounded by
+	// sigCtx, so it stops with the rest of the process; nothing waits for it,
+	// since its work is a single statement that either commits or doesn't.
+	go app.RunTrashSweeper(sigCtx)
 
 	// Serve in the background; block until we're told to stop or serving fails
 	// to start (e.g. the port is taken), whichever comes first.

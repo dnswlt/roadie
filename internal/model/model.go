@@ -59,6 +59,12 @@ type Roadmap struct {
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	// DeletedAt is when the roadmap was moved to the trash, nil while it is
+	// live. It is set on every roadmap the client can see except the ones in
+	// the trash listing, so it is omitted from the wire rather than sent as
+	// null everywhere; the trash UI needs it to show how long a roadmap has
+	// been there and when it will be purged.
+	DeletedAt *time.Time `json:"deletedAt,omitempty"`
 }
 
 type Lane struct {

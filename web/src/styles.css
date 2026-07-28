@@ -1355,6 +1355,53 @@ dialog input:focus {
   line-height: 1.5;
 }
 
+/* Trash dialog. Wide enough that a roadmap name and its two buttons sit on one
+   line without the name being squeezed to a few characters. */
+.trash-empty {
+  color: var(--ink-2);
+  margin: 0;
+}
+
+/* Scroll the list, not the dialog, so the title and Close button stay put
+   however many roadmaps are in here. */
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 45vh;
+  overflow-y: auto;
+  min-width: 520px;
+}
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.trash-text {
+  min-width: 0; /* let a long name wrap instead of pushing the buttons off */
+}
+
+.trash-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.trash-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.trash-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .schedule-editor {
   width: 100%;
   min-width: 460px;

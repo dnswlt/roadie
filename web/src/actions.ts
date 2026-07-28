@@ -203,9 +203,13 @@ export const actions = {
     setRoadmapUrl(state.current);
   },
 
+  // deleteRoadmap moves the current roadmap to the trash and leaves it: the
+  // roadmap keeps existing server-side, so this drops it from the picker and
+  // switches to whatever is left, exactly as a real delete used to.
   async deleteRoadmap(): Promise<void> {
     if (!state.current) return;
     const id = state.current.id;
+    const name = state.current.name;
     try {
       await api.deleteRoadmap(id);
       state.roadmaps = state.roadmaps.filter((r) => r.id !== id);
@@ -217,9 +221,21 @@ export const actions = {
         setRoadmapUrl(null);
         state.notify();
       }
+      toast(`Moved "${name}" to the trash`);
     } catch (e) {
       toast(errMsg(e), true);
     }
+  },
+
+  // restoreRoadmap brings a roadmap back from the trash and opens it — the
+  // point of restoring is nearly always to get back to the thing you deleted.
+  // Throws rather than toasting so the trash dialog can stay open and keep
+  // showing the entry when the restore fails.
+  async restoreRoadmap(id: number): Promise<void> {
+    const rm = await api.restoreRoadmap(id);
+    await this.loadRoadmaps();
+    await this.selectRoadmap(rm.id);
+    toast(`Restored "${rm.name}"`);
   },
 
   // exportRoadmap triggers a file download via the server's export endpoint.

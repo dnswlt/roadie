@@ -27,9 +27,15 @@ func invalidf(format string, args ...any) error {
 	return &ValidationError{Msg: fmt.Sprintf(format, args...)}
 }
 
+// lockRoadmap takes the row lock every mutation of a roadmap's contents runs
+// behind. Trashed roadmaps are excluded, which is what makes the trash freeze
+// its contents: since every lane, item, milestone and schedule write passes
+// through here (by roadmap, lane or item id), one clause makes them all 404
+// rather than letting a stale tab keep editing something the user deleted.
 func (s *Store) lockRoadmap(ctx context.Context, tx pgx.Tx, roadmapID int64) error {
 	var dummy int64
-	err := tx.QueryRow(ctx, `SELECT id FROM roadmaps WHERE id = $1 FOR UPDATE`, roadmapID).Scan(&dummy)
+	err := tx.QueryRow(ctx,
+		`SELECT id FROM roadmaps WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, roadmapID).Scan(&dummy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -180,50 +186,150 @@ func scanMilestone(r rowScanner) (model.Milestone, error) {
 
 // Roadmaps
 
-func (s *Store) ListRoadmaps(ctx context.Context) ([]model.Roadmap, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, name, created_at, updated_at FROM roadmaps ORDER BY name, id`)
+const roadmapCols = "id, name, created_at, updated_at, deleted_at"
+
+func scanRoadmap(r rowScanner) (model.Roadmap, error) {
+	var rm model.Roadmap
+	err := r.Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt)
+	return rm, err
+}
+
+func queryRoadmaps(ctx context.Context, q querier, sql string, args ...any) ([]model.Roadmap, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	result := []model.Roadmap{}
 	for rows.Next() {
-		var r model.Roadmap
-		if err := rows.Scan(&r.ID, &r.Name, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		rm, err := scanRoadmap(rows)
+		if err != nil {
 			return nil, err
 		}
-		result = append(result, r)
+		result = append(result, rm)
 	}
 	return result, rows.Err()
+}
+
+// ListRoadmaps returns the live roadmaps. Trashed ones are invisible here and
+// reachable only through ListTrashedRoadmaps — everywhere else in the API a
+// trashed roadmap simply does not exist.
+func (s *Store) ListRoadmaps(ctx context.Context) ([]model.Roadmap, error) {
+	return queryRoadmaps(ctx, s.pool,
+		`SELECT `+roadmapCols+` FROM roadmaps WHERE deleted_at IS NULL ORDER BY name, id`)
+}
+
+// ListTrashedRoadmaps returns the roadmaps in the trash, most recently deleted
+// first — the order in which someone hunting for what they just deleted will
+// look.
+func (s *Store) ListTrashedRoadmaps(ctx context.Context) ([]model.Roadmap, error) {
+	return queryRoadmaps(ctx, s.pool,
+		`SELECT `+roadmapCols+` FROM roadmaps WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id`)
 }
 
 func (s *Store) CreateRoadmap(ctx context.Context, name string) (model.Roadmap, error) {
 	if name == "" {
 		return model.Roadmap{}, invalidf("roadmap name must not be empty")
 	}
-	var r model.Roadmap
-	err := s.pool.QueryRow(ctx,
-		`INSERT INTO roadmaps (name) VALUES ($1) RETURNING id, name, created_at, updated_at`,
-		name).Scan(&r.ID, &r.Name, &r.CreatedAt, &r.UpdatedAt)
-	return r, err
+	return scanRoadmap(s.pool.QueryRow(ctx,
+		`INSERT INTO roadmaps (name) VALUES ($1) RETURNING `+roadmapCols, name))
 }
 
 func (s *Store) RenameRoadmap(ctx context.Context, id int64, name string) (model.Roadmap, error) {
 	if name == "" {
 		return model.Roadmap{}, invalidf("roadmap name must not be empty")
 	}
-	var r model.Roadmap
-	err := s.pool.QueryRow(ctx,
-		`UPDATE roadmaps SET name = $2, updated_at = now() WHERE id = $1
-		 RETURNING id, name, created_at, updated_at`,
-		id, name).Scan(&r.ID, &r.Name, &r.CreatedAt, &r.UpdatedAt)
+	r, err := scanRoadmap(s.pool.QueryRow(ctx,
+		`UPDATE roadmaps SET name = $2, updated_at = now()
+		 WHERE id = $1 AND deleted_at IS NULL
+		 RETURNING `+roadmapCols,
+		id, name))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Roadmap{}, ErrNotFound
 	}
 	return r, err
 }
 
+// TrashRoadmap moves a roadmap to the trash: the row is marked, not removed, so
+// everything under it (lanes, items, milestones, schedule, snapshots,
+// contributors) survives untouched and RestoreRoadmap can bring it all back.
+// Trashing an already-trashed roadmap reports ErrNotFound — from the API's
+// point of view it is already gone.
+//
+// None of the trash operations take the roadmap lock, unlike every mutation of
+// a roadmap's *contents*, and they don't need to. Each is a single statement
+// whose WHERE clause is also its precondition, which makes it a compare-and-
+// swap: two concurrent trashes can't both report success. And an UPDATE or
+// DELETE of the roadmaps row takes the same row lock lockRoadmap acquires with
+// SELECT ... FOR UPDATE, so a concurrent edit is already serialized against it
+// — it either commits first, or finds the roadmap gone.
+func (s *Store) TrashRoadmap(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE roadmaps SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RestoreRoadmap brings a trashed roadmap back. updated_at is deliberately left
+// alone: a restore returns the roadmap as it was, and bumping the timestamp
+// would claim an edit that never happened.
+func (s *Store) RestoreRoadmap(ctx context.Context, id int64) (model.Roadmap, error) {
+	r, err := scanRoadmap(s.pool.QueryRow(ctx,
+		`UPDATE roadmaps SET deleted_at = NULL
+		 WHERE id = $1 AND deleted_at IS NOT NULL
+		 RETURNING `+roadmapCols, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Roadmap{}, ErrNotFound
+	}
+	return r, err
+}
+
+// PurgeRoadmap permanently deletes a trashed roadmap and everything under it
+// (via the FK cascade), including its snapshot history. A roadmap that is not
+// in the trash is reported as ErrNotFound rather than destroyed: permanent
+// deletion always takes two deliberate steps, and that is enforced here rather
+// than left to the UI to remember.
+func (s *Store) PurgeRoadmap(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM roadmaps WHERE id = $1 AND deleted_at IS NOT NULL`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// PurgeExpiredTrash permanently deletes roadmaps that have been in the trash
+// for longer than ttl, and reports how many it removed. Called by the server's
+// trash sweeper; ttl is retention policy and lives there.
+//
+// A sweep racing a restore is safe without locking: under READ COMMITTED a
+// DELETE that blocks on a concurrent UPDATE of the same row re-evaluates its
+// WHERE against the updated row, so a roadmap restored a moment ago no longer
+// matches deleted_at IS NOT NULL and is left alone. A sweep can never purge
+// something the user just pulled out of the trash.
+func (s *Store) PurgeExpiredTrash(ctx context.Context, ttl time.Duration) (int64, error) {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM roadmaps
+		 WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(secs => $1)`,
+		ttl.Seconds())
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// DeleteRoadmap permanently deletes a roadmap whether or not it is trashed. The
+// API never calls this — user-facing deletion is TrashRoadmap followed by
+// PurgeRoadmap — it exists for tests and tooling that need to clean up without
+// the two-step dance.
 func (s *Store) DeleteRoadmap(ctx context.Context, id int64) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM roadmaps WHERE id = $1`, id)
 	if err != nil {
@@ -255,9 +361,12 @@ func (s *Store) GetRoadmapFull(ctx context.Context, id int64) (model.RoadmapFull
 // will write behind) pass a transaction; see GetRoadmapFull and RestoreSnapshot.
 func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull, error) {
 	var full model.RoadmapFull
+	// A trashed roadmap reads as absent. This one WHERE clause is what keeps a
+	// roadmap in the trash from being opened, exported, duplicated, snapshotted
+	// or restored into — every one of those paths comes through here.
 	err := q.QueryRow(ctx,
-		`SELECT id, name, created_at, updated_at FROM roadmaps WHERE id = $1`, id).
-		Scan(&full.ID, &full.Name, &full.CreatedAt, &full.UpdatedAt)
+		`SELECT `+roadmapCols+` FROM roadmaps WHERE id = $1 AND deleted_at IS NULL`, id).
+		Scan(&full.ID, &full.Name, &full.CreatedAt, &full.UpdatedAt, &full.DeletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return full, ErrNotFound
 	}
@@ -380,14 +489,17 @@ func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name string) (mo
 }
 
 // uniqueRoadmapName returns base, or base with a " (n)" suffix (n starting at
-// 2) if a roadmap of that name already exists. Roadmap names are not unique in
-// the schema; this only avoids collisions at import time.
+// 2) if a live roadmap of that name already exists. Roadmap names are not
+// unique in the schema; this only avoids collisions at import time. Trashed
+// roadmaps are ignored — a name nobody can see shouldn't push the copy to
+// "(2)", and if the trashed one is later restored the two simply coexist.
 func (s *Store) uniqueRoadmapName(ctx context.Context, tx pgx.Tx, base string) (string, error) {
 	name := base
 	for n := 2; ; n++ {
 		var exists bool
 		if err := tx.QueryRow(ctx,
-			`SELECT EXISTS (SELECT 1 FROM roadmaps WHERE name = $1)`, name).Scan(&exists); err != nil {
+			`SELECT EXISTS (SELECT 1 FROM roadmaps WHERE name = $1 AND deleted_at IS NULL)`,
+			name).Scan(&exists); err != nil {
 			return "", err
 		}
 		if !exists {
@@ -419,10 +531,9 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull) (model
 		return model.Roadmap{}, err
 	}
 
-	var rm model.Roadmap
-	if err := tx.QueryRow(ctx,
-		`INSERT INTO roadmaps (name) VALUES ($1) RETURNING id, name, created_at, updated_at`,
-		name).Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt); err != nil {
+	rm, err := scanRoadmap(tx.QueryRow(ctx,
+		`INSERT INTO roadmaps (name) VALUES ($1) RETURNING `+roadmapCols, name))
+	if err != nil {
 		return model.Roadmap{}, err
 	}
 

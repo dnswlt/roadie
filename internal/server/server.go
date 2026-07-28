@@ -89,11 +89,18 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/roadmaps", s.listRoadmaps)
 	s.mux.HandleFunc("POST /api/roadmaps", s.createRoadmap)
 	s.mux.HandleFunc("POST /api/roadmaps/import", s.importRoadmap)
+	// The trash. A literal segment beats the {id} wildcard below, so this and
+	// GET /api/roadmaps/{id} coexist. See trash.go.
+	s.mux.HandleFunc("GET /api/roadmaps/trash", s.listTrash)
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/restore", s.restoreRoadmap)
+	s.mux.HandleFunc("DELETE /api/roadmaps/{id}/purge", s.purgeRoadmap)
 	s.mux.HandleFunc("POST /api/roadmaps/{id}/duplicate", s.duplicateRoadmap)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/export", s.exportRoadmap)
 	s.mux.HandleFunc("GET /api/roadmaps/{id}", s.getRoadmap)
 	s.mux.HandleFunc("PATCH /api/roadmaps/{id}", s.snap(snapThrottle, byRoadmapID, s.patchRoadmap))
-	// No auto snapshot on roadmap delete: the FK cascade removes its snapshots too.
+	// Deleting a roadmap moves it to the trash; no auto snapshot, because
+	// nothing is destroyed (and a snapshot couldn't survive a real delete
+	// anyway — the FK cascade would take it along).
 	s.mux.HandleFunc("DELETE /api/roadmaps/{id}", s.deleteRoadmap)
 	s.mux.HandleFunc("POST /api/roadmaps/{id}/lanes", s.snap(snapThrottle, byRoadmapID, s.createLane))
 	s.mux.HandleFunc("PUT /api/roadmaps/{id}/lane-order", s.snap(snapThrottle, byRoadmapID, s.reorderLanes))
@@ -406,13 +413,16 @@ func (s *Server) patchRoadmap(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rm)
 }
 
+// deleteRoadmap moves a roadmap to the trash, where it stays recoverable for
+// trashTTL. Permanent deletion is a separate, explicit step — see purgeRoadmap
+// in trash.go.
 func (s *Server) deleteRoadmap(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		writeClientErr(w, err)
 		return
 	}
-	if err := s.store.DeleteRoadmap(r.Context(), id); err != nil {
+	if err := s.store.TrashRoadmap(r.Context(), id); err != nil {
 		s.writeErr(w, err)
 		return
 	}

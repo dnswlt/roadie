@@ -14,6 +14,7 @@ import type {
   RoadmapFull,
   SchedulePeriod,
   Snapshot,
+  TrashedRoadmap,
 } from "./types";
 
 // clientId identifies this tab. It rides on every request as X-Client-Id so the
@@ -72,7 +73,12 @@ export const api = {
   createRoadmap: (name: string) => req<Roadmap>("POST", "/api/roadmaps", { name }),
   getRoadmap: (id: number) => req<RoadmapFull>("GET", `/api/roadmaps/${id}`),
   renameRoadmap: (id: number, name: string) => req<Roadmap>("PATCH", `/api/roadmaps/${id}`, { name }),
+  // Deleting a roadmap moves it to the trash; purging is the separate,
+  // irreversible step.
   deleteRoadmap: (id: number) => req<void>("DELETE", `/api/roadmaps/${id}`),
+  listTrash: () => req<TrashedRoadmap[]>("GET", "/api/roadmaps/trash"),
+  restoreRoadmap: (id: number) => req<Roadmap>("POST", `/api/roadmaps/${id}/restore`),
+  purgeRoadmap: (id: number) => req<void>("DELETE", `/api/roadmaps/${id}/purge`),
   exportRoadmapUrl: (id: number) => `/api/roadmaps/${id}/export`,
   importRoadmap: (data: unknown) => req<Roadmap>("POST", "/api/roadmaps/import", data),
   duplicateRoadmap: (id: number, name: string) =>
