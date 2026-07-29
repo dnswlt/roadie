@@ -235,10 +235,15 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
     canvas.append(renderBlock(block));
   }
 
-  // Milestone diamonds live in a reserved band at the lane top.
-  for (const m of lane.milestones) {
-    canvas.append(renderMilestone(m));
-  }
+  // Milestone diamonds live in a reserved band at the lane top. Each carries
+  // its title to the right of its diamond, budgeted to the space before the
+  // next milestone (the model keeps them date-sorted); when even a sliver
+  // won't fit, the label stays hidden and hover/selection reveals it instead.
+  lane.milestones.forEach((m, i) => {
+    const next = lane.milestones[i + 1];
+    const limit = next ? xOf(scale, dayOf(next.date)) - MS_LABEL_CLEAR : chartW - 4;
+    canvas.append(renderMilestone(m, limit - (xOf(scale, dayOf(m.date)) + MS_LABEL_LEFT)));
+  });
 
   laneEl.append(label, canvas);
   return laneEl;
@@ -252,15 +257,33 @@ function renderMilestoneLine(m: Milestone): HTMLElement {
   return line;
 }
 
-function renderMilestone(m: Milestone): HTMLElement {
+// Geometry of the band label, mirrored by .milestone-label in styles.css: its
+// left edge sits MS_LABEL_LEFT px right of the diamond's center (the 13px
+// diamond box plus a 6px gap, minus half the box); MS_LABEL_CLEAR keeps it
+// short of the next milestone's drop-line and diamond tip; below MS_LABEL_MIN
+// px of room the label is hidden rather than ellipsized down to nothing.
+const MS_LABEL_LEFT = 12.5;
+const MS_LABEL_CLEAR = 14;
+const MS_LABEL_MIN = 24;
+
+// renderMilestone builds a diamond plus its band label. `labelPx` is the
+// horizontal room the label may use: enough gets an ellipsized always-visible
+// title, less gets a hidden one that hover/selection reveals as a chip painted
+// over the neighbors (which also replaces the old native title tooltip — too
+// slow to be useful, and it would double up with the reveal). The budget rides
+// in a CSS custom property rather than an inline max-width so the stylesheet's
+// hover/selected rules can override it without !important.
+function renderMilestone(m: Milestone, labelPx: number): HTMLElement {
   const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
   // Milestones carry neither labels nor a flag, so any active focus dims them.
   if (state.focus !== null) el.classList.add("dimmed");
   el.dataset.milestoneId = String(m.id);
-  el.title = m.title;
   el.style.left = `${xOf(scale, dayOf(m.date))}px`;
-  const diamond = div("milestone-diamond");
-  el.append(diamond);
+  const label = div("milestone-label");
+  label.textContent = m.title;
+  if (labelPx < MS_LABEL_MIN) label.classList.add("cramped");
+  else label.style.setProperty("--avail", `${labelPx}px`);
+  el.append(div("milestone-diamond"), label);
   return el;
 }
 
