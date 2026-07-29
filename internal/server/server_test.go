@@ -75,7 +75,7 @@ func doRaw(t *testing.T, method, path, body string) *httptest.ResponseRecorder {
 func seedRoadmap(t *testing.T, name string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	rm, err := testStore.CreateRoadmap(ctx, name)
+	rm, err := testStore.CreateRoadmap(ctx, name, store.Ownership{})
 	if err != nil {
 		t.Fatal(err)
 	}

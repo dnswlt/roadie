@@ -29,6 +29,19 @@ export const icons = {
       size,
     ),
   plus: (size = 16) => svg(`<path d="M12 5v14"/><path d="M5 12h14"/>`, size),
+  // lock/globe are the private/public pair: a closed padlock and a wire globe.
+  // They are always used as a pair so the two states read as one setting.
+  lock: (size = 16) =>
+    svg(
+      `<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>`,
+      size,
+    ),
+  globe: (size = 16) =>
+    svg(
+      `<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>` +
+        `<path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/>`,
+      size,
+    ),
   house: (size = 16) =>
     svg(
       `<path d="M3 10.182 12 3l9 7.182"/>` +

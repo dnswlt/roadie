@@ -281,11 +281,17 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 	if err := s.insertRoadmapContents(ctx, tx, roadmapID, exp.Roadmap); err != nil {
 		return model.Roadmap{}, err
 	}
-	var rm model.Roadmap
-	if err := tx.QueryRow(ctx,
-		`UPDATE roadmaps SET updated_at = now() WHERE id = $1
-		 RETURNING id, name, created_at, updated_at`, roadmapID).
-		Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt); err != nil {
+	// roadmapCols rather than a hand-listed subset: the roadmaps row grows
+	// columns the client needs (visibility most recently), and a short list here
+	// silently returns them zeroed.
+	//
+	// Note what is *not* restored: the snapshot blob carries a visibility, since
+	// Roadmap is embedded in the RoadmapFull it stores, and insertRoadmapContents
+	// ignores it. Restoring January must not republish what was made private in
+	// June — the same rule that keeps contributors out of a restore.
+	rm, err := scanRoadmap(tx.QueryRow(ctx,
+		`UPDATE roadmaps SET updated_at = now() WHERE id = $1 RETURNING `+roadmapCols, roadmapID))
+	if err != nil {
 		return model.Roadmap{}, err
 	}
 	return rm, tx.Commit(ctx)

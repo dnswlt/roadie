@@ -15,6 +15,7 @@ import type {
   SchedulePeriod,
   Snapshot,
   TrashedRoadmap,
+  Visibility,
 } from "./types";
 
 // clientId identifies this tab. It rides on every request as X-Client-Id so the
@@ -70,9 +71,15 @@ export const api = {
   logout: () => req<void>("POST", "/auth/logout"),
 
   listRoadmaps: () => req<Roadmap[]>("GET", "/api/roadmaps"),
-  createRoadmap: (name: string) => req<Roadmap>("POST", "/api/roadmaps", { name }),
+  createRoadmap: (name: string, visibility: Visibility = "public") =>
+    req<Roadmap>("POST", "/api/roadmaps", { name, visibility }),
   getRoadmap: (id: number) => req<RoadmapFull>("GET", `/api/roadmaps/${id}`),
   renameRoadmap: (id: number, name: string) => req<Roadmap>("PATCH", `/api/roadmaps/${id}`, { name }),
+  // Visibility is not roadmap content — it is not snapshotted and a restore
+  // leaves it alone — so it has its own endpoint rather than riding in the
+  // rename PATCH. Only the owner may call it; anyone else gets a 404.
+  setVisibility: (id: number, visibility: Visibility) =>
+    req<Roadmap>("PUT", `/api/roadmaps/${id}/visibility`, { visibility }),
   // Deleting a roadmap moves it to the trash; purging is the separate,
   // irreversible step.
   deleteRoadmap: (id: number) => req<void>("DELETE", `/api/roadmaps/${id}`),
@@ -80,6 +87,9 @@ export const api = {
   restoreRoadmap: (id: number) => req<Roadmap>("POST", `/api/roadmaps/${id}/restore`),
   purgeRoadmap: (id: number) => req<void>("DELETE", `/api/roadmaps/${id}/purge`),
   exportRoadmapUrl: (id: number) => `/api/roadmaps/${id}/export`,
+  // An import is always public; the server records the importer as its owner,
+  // so it can be made private straight afterwards. The file's own visibility
+  // field is ignored server-side — a file must not be able to publish itself.
   importRoadmap: (data: unknown) => req<Roadmap>("POST", "/api/roadmaps/import", data),
   duplicateRoadmap: (id: number, name: string) =>
     req<Roadmap>("POST", `/api/roadmaps/${id}/duplicate`, { name }),

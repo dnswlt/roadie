@@ -54,6 +54,18 @@ func (o *Opt[T]) UnmarshalJSON(b []byte) error {
 	return json.Unmarshal(b, &o.Value)
 }
 
+// Roadmap visibility. Public roadmaps are readable and editable by everyone,
+// including anonymous callers when the server runs with auth off — which is
+// what every roadmap is in that mode. Private ones are reachable only by the
+// subjects listed in roadmap_members.
+//
+// There is no read-only sharing: "public" means writable, exactly as Roadie
+// behaved before visibility existed.
+const (
+	VisibilityPublic  = "public"
+	VisibilityPrivate = "private"
+)
+
 type Roadmap struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
@@ -65,6 +77,31 @@ type Roadmap struct {
 	// null everywhere; the trash UI needs it to show how long a roadmap has
 	// been there and when it will be purged.
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	// Visibility is VisibilityPublic or VisibilityPrivate.
+	//
+	// It rides in RoadmapFull and therefore in the export envelope and every
+	// snapshot blob, because Roadmap is embedded there — but it is *not*
+	// roadmap content, and both ImportRoadmap and RestoreSnapshot ignore it for
+	// the same reason they ignore the embedded IDs and timestamps. Restoring a
+	// January snapshot must not republish what you made private in June, and
+	// importing a file must not grant anybody access. Who may see a roadmap is
+	// decided when it is created and by its owner afterwards, never by a
+	// payload.
+	Visibility string `json:"visibility"`
+	// Owned reports whether the *requesting* user owns this roadmap, and hence
+	// may change its visibility. It is derived per request, never stored and
+	// never persisted: the subject it comes from is not sent to the client (as
+	// with Contributor.Subject), so the client gets the decision rather than the
+	// identity. Being derived, it is only set where the answer is known without
+	// an extra query — the roadmap listings, the single-roadmap read, and the
+	// three writes whose caller is the owner by construction (create, import,
+	// set-visibility). Elsewhere (rename, restore) it stays false, which is
+	// safe: the client reads it only from the listings and the single read.
+	// `omitempty` keeps it out of export files and snapshot blobs entirely.
+	//
+	// Roadmaps created with auth off have no owner and nobody can claim one, so
+	// this is false for everybody and they stay public forever.
+	Owned bool `json:"owned,omitempty"`
 }
 
 type Lane struct {

@@ -32,7 +32,14 @@ function roadmap(items: ItemFull[]): RoadmapFull {
     items,
     milestones: [],
   };
-  return { id: 1, name: "R", createdAt: "2026-01-01T00:00:00Z", lanes: [lane], periods: [] };
+  return {
+    id: 1,
+    name: "R",
+    createdAt: "2026-01-01T00:00:00Z",
+    visibility: "public",
+    lanes: [lane],
+    periods: [],
+  };
 }
 
 test("no focus dims nothing", () => {

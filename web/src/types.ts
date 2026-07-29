@@ -1,5 +1,10 @@
 // Mirrors the JSON payloads of the Go backend (internal/model).
 
+// Who can reach a roadmap. "public" means everyone, and everyone may edit it —
+// there is no read-only sharing. "private" means only its members, which for
+// now is just whoever created it.
+export type Visibility = "private" | "public";
+
 export interface Roadmap {
   id: number;
   name: string;
@@ -7,6 +12,13 @@ export interface Roadmap {
   // moves when the roadmaps row itself is written (rename, restore), so it is
   // not the "last edited" it looks like. Contributors answer that instead.
   createdAt: string; // ISO 8601 timestamp
+  visibility: Visibility;
+  // owned means *you* own this roadmap and may therefore change its visibility.
+  // Derived by the server per request from the caller's identity, and omitted
+  // when false — including for every roadmap when auth is off, where nobody
+  // owns anything. Roadmaps created before visibility existed, or created with
+  // auth off, have no owner at all and stay public forever.
+  owned?: boolean;
 }
 
 // TrashedRoadmap is a roadmap in the trash, as returned by GET

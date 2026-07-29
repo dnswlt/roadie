@@ -13,12 +13,17 @@
 -- deleted_at is the trash can: a deleted roadmap is marked, not removed, so it
 -- can be restored with everything under it (nothing cascades on a mark). NULL
 -- means live. See migrations/011_roadmap_deleted.sql.
+--
+-- visibility is 'public' (everyone, including anonymous callers) or 'private'
+-- (only the subjects in roadmap_members). See migrations/012_roadmap_visibility.sql.
 CREATE TABLE roadmaps (
     id         BIGSERIAL PRIMARY KEY,
     name       TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    visibility TEXT NOT NULL DEFAULT 'public'
+        CHECK (visibility IN ('private', 'public'))
 );
 
 CREATE TABLE lanes (
@@ -116,3 +121,20 @@ CREATE TABLE roadmap_contributors (
     last_seen  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (roadmap_id, subject)
 );
+
+-- Who can reach a private roadmap, keyed by OIDC subject. The empty subject an
+-- anonymous identity carries is unstorable (CHECK below), which is what lets
+-- one access predicate serve both auth modes. Ownership is recorded for public
+-- roadmaps too — access ignores it there, but it answers who may change the
+-- visibility. See migrations/012_roadmap_visibility.sql.
+CREATE TABLE roadmap_members (
+    roadmap_id BIGINT NOT NULL REFERENCES roadmaps(id) ON DELETE CASCADE,
+    subject    TEXT   NOT NULL CHECK (subject <> ''),
+    role       TEXT   NOT NULL DEFAULT 'owner' CHECK (role IN ('owner', 'editor')),
+    added_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (roadmap_id, subject)
+);
+
+CREATE UNIQUE INDEX roadmap_members_owner_idx ON roadmap_members (roadmap_id) WHERE role = 'owner';
+
+CREATE INDEX roadmap_members_subject_idx ON roadmap_members (subject);

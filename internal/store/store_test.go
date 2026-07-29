@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 func newRoadmap(t *testing.T) model.Roadmap {
 	t.Helper()
 	ctx := context.Background()
-	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name())
+	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name(), Ownership{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,10 +76,10 @@ func TestRoadmapCRUD(t *testing.T) {
 	if _, err := testStore.RenameRoadmap(ctx, -1, "x"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("rename missing roadmap: want ErrNotFound, got %v", err)
 	}
-	if _, err := testStore.CreateRoadmap(ctx, ""); !isValidation(err) {
+	if _, err := testStore.CreateRoadmap(ctx, "", Ownership{}); !isValidation(err) {
 		t.Errorf("empty name: want validation error, got %v", err)
 	}
-	list, err := testStore.ListRoadmaps(ctx)
+	list, err := testStore.ListRoadmaps(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,7 +763,7 @@ func TestImportRoadmap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imported, err := testStore.ImportRoadmap(ctx, src)
+	imported, err := testStore.ImportRoadmap(ctx, src, Ownership{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -826,7 +826,7 @@ func TestImportRoadmap(t *testing.T) {
 	}
 
 	// Empty name is rejected.
-	if _, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{}); !isValidation(err) {
+	if _, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{}, Ownership{}); !isValidation(err) {
 		t.Errorf("empty name: want validation error, got %v", err)
 	}
 }
@@ -979,14 +979,14 @@ func TestRoadmapTrash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	live, err := testStore.ListRoadmaps(ctx)
+	live, err := testStore.ListRoadmaps(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if hasRoadmap(live, rm.ID) {
 		t.Error("trashed roadmap still listed as live")
 	}
-	trashed, err := testStore.ListTrashedRoadmaps(ctx)
+	trashed, err := testStore.ListTrashedRoadmaps(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1070,7 +1070,7 @@ func TestPurgeRoadmapRequiresTrash(t *testing.T) {
 	if _, err := testStore.GetRoadmapFull(ctx, rm.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("purged roadmap still readable: %v", err)
 	}
-	trashed, err := testStore.ListTrashedRoadmaps(ctx)
+	trashed, err := testStore.ListTrashedRoadmaps(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1090,7 +1090,7 @@ func TestPurgeExpiredTrash(t *testing.T) {
 	if _, err := testStore.PurgeExpiredTrash(ctx, 24*time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	trashed, err := testStore.ListTrashedRoadmaps(ctx)
+	trashed, err := testStore.ListTrashedRoadmaps(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

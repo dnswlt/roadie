@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dnswlt/roadie/internal/auth"
 	"github.com/dnswlt/roadie/internal/model"
 )
 
@@ -54,21 +55,84 @@ func byMilestoneID(s *Server, r *http.Request) (int64, error) {
 	return s.store.RoadmapIDByMilestone(r.Context(), id)
 }
 
-// snap wraps a mutating handler so the affected roadmap is auto-snapshotted
-// *before* the mutation is applied — capturing the last-good state one can go
-// back to — and so that, *after* it succeeds, the editor is recorded as a
-// contributor and the roadmap's SSE subscribers are notified to refetch.
-// Snapshot capture and attribution are both best-effort: a failure in either is
-// logged and never blocks the user's edit, and an unresolvable roadmap (e.g. a
-// delete that will 404) is simply skipped. The roadmap id is resolved up front
-// because a delete makes it unresolvable afterwards. All of this policy lives
-// here in the route table rather than scattered through handler bodies, which
-// is what makes it a single choke point every mutation passes through.
+func bySnapshotID(s *Server, r *http.Request) (int64, error) {
+	id, err := pathID(r)
+	if err != nil {
+		return 0, err
+	}
+	return s.store.RoadmapIDBySnapshot(r.Context(), id)
+}
+
+// guard authorizes a request against the roadmap it acts on and, if the caller
+// may not see that roadmap, answers 404 without running the handler.
+//
+// This is the only place authorization happens. It works because the resolvers
+// above already answer the question authorization needs — *which* roadmap does
+// this request touch — for a path id that may name a roadmap, a lane, an item,
+// a milestone or a snapshot. Routes that name no roadmap (the listings, create,
+// import) are not wrapped: a listing has no id to check, so it filters in SQL
+// instead, and a create has nothing to authorize yet.
+//
+// An unresolvable roadmap deliberately falls through to the handler rather than
+// 404ing here, which keeps the existing status codes exactly as they were: a
+// malformed id still gets the handler's 400, and a missing one its 404. Nothing
+// leaks, because the handler goes on to look up the very id that failed to
+// resolve, and fails the same way.
+func (s *Server) guard(resolve roadmapResolver, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if rid, err := resolve(s, r); err == nil && !s.allow(w, r, rid) {
+			return
+		}
+		h(w, r)
+	}
+}
+
+// allow reports whether the caller may act on roadmapID, writing the response
+// itself when they may not.
+//
+// A denial is 404, not 403, matching how a trashed roadmap reads: something you
+// cannot see does not exist. That also means a caller cannot probe for the
+// existence of other people's private roadmaps by watching status codes.
+func (s *Server) allow(w http.ResponseWriter, r *http.Request, roadmapID int64) bool {
+	if err := s.store.CanAccessRoadmap(r.Context(), roadmapID, viewer(r)); err != nil {
+		s.writeErr(w, err)
+		return false
+	}
+	return true
+}
+
+// viewer is the subject the request is made under: the OIDC subject when
+// authenticated, and "" when not — which is every request when the server runs
+// with auth off. The empty subject is never stored in roadmap_members (the
+// schema forbids it), so it matches nothing and needs no special case.
+func viewer(r *http.Request) string { return auth.From(r.Context()).Subject }
+
+// snap wraps a mutating handler so that the caller is authorized against the
+// affected roadmap, the roadmap is auto-snapshotted *before* the mutation is
+// applied — capturing the last-good state one can go back to — and, *after* it
+// succeeds, the editor is recorded as a contributor and the roadmap's SSE
+// subscribers are notified to refetch. Snapshot capture and attribution are
+// both best-effort: a failure in either is logged and never blocks the user's
+// edit, and an unresolvable roadmap (e.g. a delete that will 404) is simply
+// skipped. The roadmap id is resolved up front because a delete makes it
+// unresolvable afterwards. All of this policy lives here in the route table
+// rather than scattered through handler bodies, which is what makes it a single
+// choke point every mutation passes through.
+//
+// Authorization is folded in here rather than composed around it (guard(snap(…)))
+// so that the two cannot come apart: a mutating route wrapped for snapshots is
+// wrapped for access by construction, and the roadmap id both need is resolved
+// once.
 func (s *Server) snap(mode snapMode, resolve roadmapResolver, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rid, rerr := resolve(s, r)
-		if rerr == nil && mode != snapNone {
-			s.autoSnapshot(r.Context(), rid, mode)
+		if rerr == nil {
+			if !s.allow(w, r, rid) {
+				return
+			}
+			if mode != snapNone {
+				s.autoSnapshot(r.Context(), rid, mode)
+			}
 		}
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		h(rec, r)

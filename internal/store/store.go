@@ -92,6 +92,19 @@ func (s *Store) RoadmapIDByItem(ctx context.Context, itemID int64) (int64, error
 	return id, err
 }
 
+// RoadmapIDBySnapshot returns the roadmap a snapshot belongs to, or
+// ErrNotFound. Like the resolvers above it exists so the server can find out
+// which roadmap a request acts on — here to authorize the snapshot routes,
+// whose path id names a snapshot rather than a roadmap.
+func (s *Store) RoadmapIDBySnapshot(ctx context.Context, snapID int64) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `SELECT roadmap_id FROM snapshots WHERE id = $1`, snapID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
+}
+
 // RoadmapIDByMilestone returns the roadmap that owns milestoneID, or ErrNotFound.
 func (s *Store) RoadmapIDByMilestone(ctx context.Context, milestoneID int64) (int64, error) {
 	var id int64
@@ -186,11 +199,19 @@ func scanMilestone(r rowScanner) (model.Milestone, error) {
 
 // Roadmaps
 
-const roadmapCols = "id, name, created_at, updated_at, deleted_at"
+const roadmapCols = "id, name, created_at, updated_at, deleted_at, visibility"
 
 func scanRoadmap(r rowScanner) (model.Roadmap, error) {
 	var rm model.Roadmap
-	err := r.Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt)
+	err := r.Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt, &rm.Visibility)
+	return rm, err
+}
+
+// scanOwnedRoadmap scans roadmapCols followed by the derived "owned" flag, for
+// the listings that compute it in SQL against the requesting subject.
+func scanOwnedRoadmap(r rowScanner) (model.Roadmap, error) {
+	var rm model.Roadmap
+	err := r.Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt, &rm.Visibility, &rm.Owned)
 	return rm, err
 }
 
@@ -202,7 +223,7 @@ func queryRoadmaps(ctx context.Context, q querier, sql string, args ...any) ([]m
 	defer rows.Close()
 	result := []model.Roadmap{}
 	for rows.Next() {
-		rm, err := scanRoadmap(rows)
+		rm, err := scanOwnedRoadmap(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -211,28 +232,79 @@ func queryRoadmaps(ctx context.Context, q querier, sql string, args ...any) ([]m
 	return result, rows.Err()
 }
 
-// ListRoadmaps returns the live roadmaps. Trashed ones are invisible here and
-// reachable only through ListTrashedRoadmaps — everywhere else in the API a
-// trashed roadmap simply does not exist.
-func (s *Store) ListRoadmaps(ctx context.Context) ([]model.Roadmap, error) {
+// ListRoadmaps returns the live roadmaps visible to viewer: the public ones,
+// plus the private ones they are a member of. Trashed roadmaps are invisible
+// here and reachable only through ListTrashedRoadmaps — everywhere else in the
+// API a trashed roadmap simply does not exist.
+//
+// This and ListTrashedRoadmaps are the only store methods that take a viewer.
+// Everywhere else the caller is checked once, in the server's route wrapper,
+// against a roadmap id the request names; a listing has no id to check, so the
+// filter has to happen in SQL. An empty viewer (the anonymous identity) matches
+// no membership row, so it sees exactly the public roadmaps.
+func (s *Store) ListRoadmaps(ctx context.Context, viewer string) ([]model.Roadmap, error) {
 	return queryRoadmaps(ctx, s.pool,
-		`SELECT `+roadmapCols+` FROM roadmaps WHERE deleted_at IS NULL ORDER BY name, id`)
+		`SELECT `+roadmapCols+`, `+ownedExpr+` FROM roadmaps
+		 WHERE deleted_at IS NULL AND (`+visibleExpr+`)
+		 ORDER BY name, id`, viewer)
 }
 
-// ListTrashedRoadmaps returns the roadmaps in the trash, most recently deleted
-// first — the order in which someone hunting for what they just deleted will
-// look.
-func (s *Store) ListTrashedRoadmaps(ctx context.Context) ([]model.Roadmap, error) {
+// ListTrashedRoadmaps returns the trashed roadmaps visible to viewer, most
+// recently deleted first — the order in which someone hunting for what they
+// just deleted will look.
+func (s *Store) ListTrashedRoadmaps(ctx context.Context, viewer string) ([]model.Roadmap, error) {
 	return queryRoadmaps(ctx, s.pool,
-		`SELECT `+roadmapCols+` FROM roadmaps WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id`)
+		`SELECT `+roadmapCols+`, `+ownedExpr+` FROM roadmaps
+		 WHERE deleted_at IS NOT NULL AND (`+visibleExpr+`)
+		 ORDER BY deleted_at DESC, id`, viewer)
 }
 
-func (s *Store) CreateRoadmap(ctx context.Context, name string) (model.Roadmap, error) {
+// Ownership is the access decision taken when a roadmap comes into existence,
+// and it is a separate argument from the roadmap's content on purpose: who may
+// see a roadmap is not part of what the roadmap says. That is the same split
+// that keeps visibility out of a restore and out of an imported file.
+type Ownership struct {
+	// Visibility is model.VisibilityPublic or model.VisibilityPrivate; empty
+	// means public.
+	Visibility string
+	// Owner is the creator's OIDC subject, or "" when the caller is anonymous.
+	// An owned roadmap can later have its visibility changed by that subject;
+	// an unowned one is public forever. A private roadmap must have an owner,
+	// which is what stops an anonymous caller creating one — a check on the
+	// identity, not on the server's auth mode, so nothing here needs to know
+	// which mode it is running in.
+	Owner string
+}
+
+// CreateRoadmap creates an empty roadmap and, when the caller is authenticated,
+// records them as its owner. Ownership is recorded for public roadmaps too: it
+// does not affect who can reach them, but it is what decides who may later make
+// them private.
+func (s *Store) CreateRoadmap(ctx context.Context, name string, own Ownership) (model.Roadmap, error) {
 	if name == "" {
 		return model.Roadmap{}, invalidf("roadmap name must not be empty")
 	}
-	return scanRoadmap(s.pool.QueryRow(ctx,
-		`INSERT INTO roadmaps (name) VALUES ($1) RETURNING `+roadmapCols, name))
+	vis, err := normalizeVisibility(own.Visibility, own.Owner)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	rm, err := scanRoadmap(tx.QueryRow(ctx,
+		`INSERT INTO roadmaps (name, visibility) VALUES ($1, $2) RETURNING `+roadmapCols, name, vis))
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+	if err := insertOwner(ctx, tx, rm.ID, own.Owner); err != nil {
+		return model.Roadmap{}, err
+	}
+	rm.Owned = own.Owner != ""
+	return rm, tx.Commit(ctx)
 }
 
 func (s *Store) RenameRoadmap(ctx context.Context, id int64, name string) (model.Roadmap, error) {
@@ -364,15 +436,15 @@ func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull
 	// A trashed roadmap reads as absent. This one WHERE clause is what keeps a
 	// roadmap in the trash from being opened, exported, duplicated, snapshotted
 	// or restored into — every one of those paths comes through here.
-	err := q.QueryRow(ctx,
-		`SELECT `+roadmapCols+` FROM roadmaps WHERE id = $1 AND deleted_at IS NULL`, id).
-		Scan(&full.ID, &full.Name, &full.CreatedAt, &full.UpdatedAt, &full.DeletedAt)
+	rm, err := scanRoadmap(q.QueryRow(ctx,
+		`SELECT `+roadmapCols+` FROM roadmaps WHERE id = $1 AND deleted_at IS NULL`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return full, ErrNotFound
 	}
 	if err != nil {
 		return full, err
 	}
+	full.Roadmap = rm
 
 	laneRows, err := q.Query(ctx,
 		`SELECT id, roadmap_id, name, position, color FROM lanes WHERE roadmap_id = $1 ORDER BY position, id`, id)
@@ -477,7 +549,13 @@ func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull
 // so even under concurrent edits the copy is internally consistent: it reflects
 // one committed point-in-time of the source. The subsequent import is a separate
 // write transaction, but it targets a brand-new roadmap nothing else can touch.
-func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name string) (model.Roadmap, error) {
+//
+// The copy is owned by whoever made it, not by the source's owner, and
+// inherits the source's visibility: duplicating a private roadmap you can see
+// gives you a private copy of your own, and copying a public one keeps it
+// public. An anonymous caller can only ever have reached a public source, so
+// the inherited visibility is never one they are not allowed to create.
+func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name, owner string) (model.Roadmap, error) {
 	src, err := s.GetRoadmapFull(ctx, id)
 	if err != nil {
 		return model.Roadmap{}, err
@@ -485,21 +563,28 @@ func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name string) (mo
 	if n := strings.TrimSpace(name); n != "" {
 		src.Name = n
 	}
-	return s.ImportRoadmap(ctx, src)
+	return s.ImportRoadmap(ctx, src, Ownership{Visibility: src.Visibility, Owner: owner})
 }
 
 // uniqueRoadmapName returns base, or base with a " (n)" suffix (n starting at
-// 2) if a live roadmap of that name already exists. Roadmap names are not
-// unique in the schema; this only avoids collisions at import time. Trashed
-// roadmaps are ignored — a name nobody can see shouldn't push the copy to
-// "(2)", and if the trashed one is later restored the two simply coexist.
-func (s *Store) uniqueRoadmapName(ctx context.Context, tx pgx.Tx, base string) (string, error) {
+// 2) if a live roadmap of that name already exists *that the importer can see*.
+// Roadmap names are not unique in the schema; this only avoids collisions at
+// import time. Trashed roadmaps are ignored — a name nobody can see shouldn't
+// push the copy to "(2)", and if the trashed one is later restored the two
+// simply coexist.
+//
+// The visibility scoping is the same argument applied to private roadmaps, and
+// it matters twice over: renaming your import to "Q3 Plan (2)" because of a
+// stranger's private roadmap is both wrong and a disclosure — you would have
+// learned a name you are not allowed to see.
+func (s *Store) uniqueRoadmapName(ctx context.Context, tx pgx.Tx, base, viewer string) (string, error) {
 	name := base
 	for n := 2; ; n++ {
 		var exists bool
 		if err := tx.QueryRow(ctx,
-			`SELECT EXISTS (SELECT 1 FROM roadmaps WHERE name = $1 AND deleted_at IS NULL)`,
-			name).Scan(&exists); err != nil {
+			`SELECT EXISTS (SELECT 1 FROM roadmaps
+			 WHERE name = $2 AND deleted_at IS NULL AND (`+visibleExpr+`))`,
+			viewer, name).Scan(&exists); err != nil {
 			return "", err
 		}
 		if !exists {
@@ -515,10 +600,20 @@ func (s *Store) uniqueRoadmapName(ctx context.Context, tx pgx.Tx, base string) (
 // result is dense and consistent regardless of what the file contained. If the
 // name collides with an existing roadmap it is disambiguated with a " (n)"
 // suffix. The whole import runs in one transaction.
-func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull) (model.Roadmap, error) {
+//
+// own decides the new roadmap's visibility and owner, and it comes from the
+// caller, never from src: an export file carries a Visibility field (Roadmap is
+// embedded in RoadmapFull) and it is ignored here for the same reason the
+// embedded IDs and timestamps are. A file must not be able to grant anyone
+// access, nor to publish itself.
+func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ownership) (model.Roadmap, error) {
 	name := strings.TrimSpace(src.Name)
 	if name == "" {
 		return model.Roadmap{}, invalidf("roadmap name must not be empty")
+	}
+	vis, err := normalizeVisibility(own.Visibility, own.Owner)
+	if err != nil {
+		return model.Roadmap{}, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -526,16 +621,20 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull) (model
 	}
 	defer tx.Rollback(ctx)
 
-	name, err = s.uniqueRoadmapName(ctx, tx, name)
+	name, err = s.uniqueRoadmapName(ctx, tx, name, own.Owner)
 	if err != nil {
 		return model.Roadmap{}, err
 	}
 
 	rm, err := scanRoadmap(tx.QueryRow(ctx,
-		`INSERT INTO roadmaps (name) VALUES ($1) RETURNING `+roadmapCols, name))
+		`INSERT INTO roadmaps (name, visibility) VALUES ($1, $2) RETURNING `+roadmapCols, name, vis))
 	if err != nil {
 		return model.Roadmap{}, err
 	}
+	if err := insertOwner(ctx, tx, rm.ID, own.Owner); err != nil {
+		return model.Roadmap{}, err
+	}
+	rm.Owned = own.Owner != ""
 
 	if err := s.insertRoadmapContents(ctx, tx, rm.ID, src); err != nil {
 		return model.Roadmap{}, err

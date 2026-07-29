@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -66,13 +67,18 @@ func TestHubUnsubscribeStopsDelivery(t *testing.T) {
 // an SSE connection is never idle, so without the shutdown signal srv.Shutdown
 // would block until its timeout. Shutdown() must release the handler at once.
 func TestServerShutdownReleasesSSE(t *testing.T) {
-	app := New(nil, nil) // the events route touches neither store nor static
+	// The events route needs the store now: like every route that names a
+	// roadmap it is wrapped in guard, which authorizes the subscriber against
+	// that roadmap before the stream opens. It still needs no static FS.
+	app := New(testStore, nil)
 	ts := httptest.NewServer(app)
 	defer ts.Close()
 
+	id := strconv.FormatInt(seedRoadmap(t, "test-"+t.Name()), 10)
+
 	// http.Get returns once headers arrive, i.e. after the handler's first
 	// flush — so by here it is running and subscribed.
-	resp, err := http.Get(ts.URL + "/api/roadmaps/1/events")
+	resp, err := http.Get(ts.URL + "/api/roadmaps/" + id + "/events")
 	if err != nil {
 		t.Fatal(err)
 	}

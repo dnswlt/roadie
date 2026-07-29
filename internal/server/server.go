@@ -86,22 +86,33 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	// learns the mode at runtime instead of at build time.
 	s.mux.HandleFunc("GET /api/me", s.getMe)
 
+	// Routes that name a roadmap — directly, or via a lane, item, milestone or
+	// snapshot id — are wrapped in guard or snap, which is where the caller is
+	// checked against that roadmap's visibility. The three that name no roadmap
+	// (this listing, create, import) are the exceptions, and they are exceptions
+	// by nature: a listing has no id to check and filters in SQL instead, and
+	// nothing exists yet to authorize when a roadmap is being created.
 	s.mux.HandleFunc("GET /api/roadmaps", s.listRoadmaps)
 	s.mux.HandleFunc("POST /api/roadmaps", s.createRoadmap)
 	s.mux.HandleFunc("POST /api/roadmaps/import", s.importRoadmap)
 	// The trash. A literal segment beats the {id} wildcard below, so this and
 	// GET /api/roadmaps/{id} coexist. See trash.go.
 	s.mux.HandleFunc("GET /api/roadmaps/trash", s.listTrash)
-	s.mux.HandleFunc("POST /api/roadmaps/{id}/restore", s.restoreRoadmap)
-	s.mux.HandleFunc("DELETE /api/roadmaps/{id}/purge", s.purgeRoadmap)
-	s.mux.HandleFunc("POST /api/roadmaps/{id}/duplicate", s.duplicateRoadmap)
-	s.mux.HandleFunc("GET /api/roadmaps/{id}/export", s.exportRoadmap)
-	s.mux.HandleFunc("GET /api/roadmaps/{id}", s.getRoadmap)
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/restore", s.guard(byRoadmapID, s.restoreRoadmap))
+	s.mux.HandleFunc("DELETE /api/roadmaps/{id}/purge", s.guard(byRoadmapID, s.purgeRoadmap))
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/duplicate", s.guard(byRoadmapID, s.duplicateRoadmap))
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/export", s.guard(byRoadmapID, s.exportRoadmap))
+	s.mux.HandleFunc("GET /api/roadmaps/{id}", s.guard(byRoadmapID, s.getRoadmap))
 	s.mux.HandleFunc("PATCH /api/roadmaps/{id}", s.snap(snapThrottle, byRoadmapID, s.patchRoadmap))
+	// Visibility is not roadmap content — it is not snapshotted, and a restore
+	// does not revert it — so it gets its own route rather than riding in the
+	// PATCH above, and guard rather than snap. Access alone isn't enough to
+	// change it; the store additionally requires ownership.
+	s.mux.HandleFunc("PUT /api/roadmaps/{id}/visibility", s.guard(byRoadmapID, s.putVisibility))
 	// Deleting a roadmap moves it to the trash; no auto snapshot, because
 	// nothing is destroyed (and a snapshot couldn't survive a real delete
 	// anyway — the FK cascade would take it along).
-	s.mux.HandleFunc("DELETE /api/roadmaps/{id}", s.deleteRoadmap)
+	s.mux.HandleFunc("DELETE /api/roadmaps/{id}", s.guard(byRoadmapID, s.deleteRoadmap))
 	s.mux.HandleFunc("POST /api/roadmaps/{id}/lanes", s.snap(snapThrottle, byRoadmapID, s.createLane))
 	s.mux.HandleFunc("PUT /api/roadmaps/{id}/lane-order", s.snap(snapThrottle, byRoadmapID, s.reorderLanes))
 	s.mux.HandleFunc("PATCH /api/lanes/{id}", s.snap(snapThrottle, byLaneID, s.patchLane))
@@ -118,13 +129,15 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	// store, so it is deliberately not wrapped with s.snap.
 	// Live change notifications (SSE): viewers of a roadmap subscribe here and
 	// are told when it changes, so they can refetch. See events.go.
-	s.mux.HandleFunc("GET /api/roadmaps/{id}/events", s.handleEvents)
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/events", s.guard(byRoadmapID, s.handleEvents))
 
-	s.mux.HandleFunc("GET /api/roadmaps/{id}/contributors", s.listContributors)
-	s.mux.HandleFunc("GET /api/roadmaps/{id}/snapshots", s.listSnapshots)
-	s.mux.HandleFunc("GET /api/snapshots/{id}", s.getSnapshot)
-	s.mux.HandleFunc("POST /api/snapshots/{id}/restore", s.restoreSnapshot)
-	s.mux.HandleFunc("DELETE /api/snapshots/{id}", s.deleteSnapshot)
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/contributors", s.guard(byRoadmapID, s.listContributors))
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/snapshots", s.guard(byRoadmapID, s.listSnapshots))
+	// The snapshot routes take a snapshot id, so they resolve through it to the
+	// roadmap that owns it: a snapshot is as private as its roadmap.
+	s.mux.HandleFunc("GET /api/snapshots/{id}", s.guard(bySnapshotID, s.getSnapshot))
+	s.mux.HandleFunc("POST /api/snapshots/{id}/restore", s.guard(bySnapshotID, s.restoreSnapshot))
+	s.mux.HandleFunc("DELETE /api/snapshots/{id}", s.guard(bySnapshotID, s.deleteSnapshot))
 
 	s.mux.Handle("/", http.FileServerFS(static))
 
@@ -247,7 +260,7 @@ func writeClientErr(w http.ResponseWriter, err error) {
 // Roadmaps
 
 func (s *Server) listRoadmaps(w http.ResponseWriter, r *http.Request) {
-	roadmaps, err := s.store.ListRoadmaps(r.Context())
+	roadmaps, err := s.store.ListRoadmaps(r.Context(), viewer(r))
 	if err != nil {
 		s.writeErr(w, err)
 		return
@@ -259,13 +272,34 @@ type nameReq struct {
 	Name string `json:"name"`
 }
 
+// newRoadmapReq is createRoadmap's body. It is deliberately *not* nameReq with
+// a visibility bolted on: readJSON rejects unknown fields, so widening the
+// shared type would silently make `visibility` an accepted-and-ignored field on
+// rename, duplicate and lane creation — an API that quietly swallows a field it
+// does not honour.
+type newRoadmapReq struct {
+	Name string `json:"name"`
+	// Visibility is "private" or "public"; empty means public. A private
+	// roadmap needs an owner, so the store rejects one from an anonymous
+	// caller. Changing it later is putVisibility's job, not a rename's.
+	Visibility string `json:"visibility,omitempty"`
+}
+
+// ownership is the access decision for a roadmap the caller is about to
+// create: the requested visibility, owned by whoever is asking. Anonymous
+// callers own nothing, which is exactly what makes their roadmaps permanently
+// public — there is nobody who could later make one private.
+func ownership(r *http.Request, visibility string) store.Ownership {
+	return store.Ownership{Visibility: visibility, Owner: viewer(r)}
+}
+
 func (s *Server) createRoadmap(w http.ResponseWriter, r *http.Request) {
-	var req nameReq
+	var req newRoadmapReq
 	if err := readJSON(w, r, &req); err != nil {
 		writeClientErr(w, err)
 		return
 	}
-	rm, err := s.store.CreateRoadmap(r.Context(), req.Name)
+	rm, err := s.store.CreateRoadmap(r.Context(), req.Name, ownership(r, req.Visibility))
 	if err != nil {
 		s.writeErr(w, err)
 		return
@@ -292,7 +326,10 @@ func (s *Server) duplicateRoadmap(w http.ResponseWriter, r *http.Request) {
 		writeClientErr(w, err)
 		return
 	}
-	rm, err := s.store.DuplicateRoadmap(r.Context(), id, req.Name)
+	// The copy is owned by whoever made it and inherits the source's visibility
+	// (see store.DuplicateRoadmap), so duplicating a private roadmap gives you a
+	// private one of your own rather than quietly publishing it.
+	rm, err := s.store.DuplicateRoadmap(r.Context(), id, req.Name, viewer(r))
 	if err != nil {
 		s.writeErr(w, err)
 		return
@@ -349,7 +386,14 @@ func (s *Server) importRoadmap(w http.ResponseWriter, r *http.Request) {
 		writeClientErr(w, fmt.Errorf("import file version %d is newer than supported (%d)", exp.Version, model.ExportVersion))
 		return
 	}
-	rm, err := s.store.ImportRoadmap(r.Context(), exp.Roadmap)
+	// An import is always public, and the visibility deliberately does not come
+	// from the file: an export carries one (Roadmap is embedded in the payload)
+	// and honouring it would let a file publish itself, or import as private and
+	// belong to nobody. There is no way to ask for a private import either —
+	// the body is the export envelope, with no room for a request of our own —
+	// but the importer is recorded as the owner, so they can make it private
+	// immediately afterwards from the roadmap menu.
+	rm, err := s.store.ImportRoadmap(r.Context(), exp.Roadmap, ownership(r, model.VisibilityPublic))
 	if err != nil {
 		s.writeErr(w, err)
 		return
@@ -391,7 +435,42 @@ func (s *Server) getRoadmap(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, err)
 		return
 	}
+	// Owned is derived per request and never stored, so GetRoadmapFull — which
+	// also feeds snapshot capture, export and duplicate, none of which have a
+	// user — does not compute it. Here there is a user, and the client needs it
+	// to decide whether to offer the visibility control.
+	full.Owned, err = s.store.IsRoadmapOwner(r.Context(), id, viewer(r))
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, full)
+}
+
+// putVisibility makes a roadmap private or public. guard has already checked
+// that the caller can *see* the roadmap; the store additionally requires that
+// they own it, and reports ErrNotFound otherwise. A roadmap with no owner —
+// anything predating visibility, or created with auth off — therefore can never
+// change: there is nobody who could.
+func (s *Server) putVisibility(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var req struct {
+		Visibility string `json:"visibility"`
+	}
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	rm, err := s.store.SetRoadmapVisibility(r.Context(), id, req.Visibility, viewer(r))
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rm)
 }
 
 func (s *Server) patchRoadmap(w http.ResponseWriter, r *http.Request) {

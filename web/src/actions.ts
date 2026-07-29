@@ -7,7 +7,14 @@ import { connectEvents } from "./events";
 import { state } from "./state";
 import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
-import type { Item, ItemFull, ItemPatch, MilestonePatch, NewSchedulePeriod } from "./types";
+import type {
+  Item,
+  ItemFull,
+  ItemPatch,
+  MilestonePatch,
+  NewSchedulePeriod,
+  Visibility,
+} from "./types";
 import { setRoadmapUrl } from "./url";
 
 // Default length of a new top-level item, in days added to the start (end date
@@ -164,11 +171,28 @@ export const actions = {
     state.notify();
   },
 
-  async createRoadmap(name: string): Promise<void> {
+  async createRoadmap(name: string, visibility: Visibility = "public"): Promise<void> {
     try {
-      const rm = await api.createRoadmap(name);
+      const rm = await api.createRoadmap(name, visibility);
       await this.loadRoadmaps();
       await this.selectRoadmap(rm.id);
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
+  // setVisibility makes the current roadmap private or public. Not optimistic:
+  // it is a rare, deliberate action whose whole point is the answer, and only
+  // the owner may do it — a rejection has to be visible rather than flicker.
+  async setVisibility(visibility: Visibility): Promise<void> {
+    if (!state.current) return;
+    try {
+      const rm = await api.setVisibility(state.current.id, visibility);
+      if (state.current?.id === rm.id) state.current.visibility = rm.visibility;
+      const listed = state.roadmaps.find((r) => r.id === rm.id);
+      if (listed) listed.visibility = rm.visibility;
+      state.notify();
+      toast(visibility === "private" ? "Roadmap is now private" : "Roadmap is now public");
     } catch (e) {
       toast(errMsg(e), true);
     }

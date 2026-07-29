@@ -281,7 +281,7 @@ func TestSnapshotDeleteAndCascade(t *testing.T) {
 	}
 
 	// Snapshots are removed when their roadmap is deleted (FK ON DELETE CASCADE).
-	rm2, err := testStore.CreateRoadmap(ctx, "test-"+t.Name()+"-cascade")
+	rm2, err := testStore.CreateRoadmap(ctx, "test-"+t.Name()+"-cascade", Ownership{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,12 +17,12 @@
 
 import { actions } from "./actions";
 import { api } from "./api";
-import { confirmDialog, promptDialog } from "./dialogs";
+import { confirmDialog, newRoadmapDialog, promptDialog } from "./dialogs";
 import { icons } from "./icons";
 import { state } from "./state";
 import { contentRange, formatDay } from "./timescale";
 import { toast } from "./toast";
-import type { Contributor, RoadmapFull, TrashedRoadmap } from "./types";
+import type { Contributor, Roadmap, RoadmapFull, TrashedRoadmap } from "./types";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -129,7 +129,7 @@ function listPane(): HTMLElement {
   const list = document.createElement("div");
   list.className = "home-list";
 
-  const entries: { id: number; name: string }[] = tab === "roadmaps" ? state.roadmaps : trashEntries;
+  const entries: Roadmap[] = tab === "roadmaps" ? state.roadmaps : trashEntries;
   if (entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "menu-empty";
@@ -154,6 +154,16 @@ function listPane(): HTMLElement {
     name.textContent = rm.name;
     name.title = rm.name;
     b.append(mark, name);
+    // A padlock marks the private ones. Only private is marked: public is the
+    // default and by far the common case, so a globe on every other row would
+    // be noise rather than information.
+    if (rm.visibility === "private") {
+      const lock = document.createElement("span");
+      lock.className = "rm-item-lock";
+      lock.title = "Private";
+      lock.append(icons.lock(13));
+      b.append(lock);
+    }
     b.addEventListener("click", () => {
       if (selectedId === rm.id) return;
       selectedId = rm.id;
@@ -303,11 +313,13 @@ function footer(): HTMLElement {
   create.addEventListener("click", () => {
     void (async () => {
       // The prompt stacks over Home; only an actual create closes it, since
-      // createRoadmap opens the new roadmap.
-      const name = await promptDialog("New roadmap", "", "Create");
-      if (name) {
+      // createRoadmap opens the new roadmap. The visibility choice appears only
+      // where it can be honoured: a private roadmap needs an owner, so an
+      // anonymous creator has nothing to choose between.
+      const req = await newRoadmapDialog(state.me.authenticated);
+      if (req) {
         dialogEl().close();
-        void actions.createRoadmap(name);
+        void actions.createRoadmap(req.name, req.visibility);
       }
     })();
   });
@@ -434,6 +446,13 @@ function factsBlock(rm: RoadmapFull, authors: Contributor[]): HTMLElement {
   facts.append(
     factRow("Timespan", range ? `${formatDay(range.startDay)} – ${formatDay(range.endDay)}` : "—"),
   );
+
+  // Who can see it. Shown only for private roadmaps, for the same reason the
+  // list only marks those: "Visible to: Everyone" on every row is not a fact
+  // anyone is deciding between roadmaps on.
+  if (rm.visibility === "private") {
+    facts.append(factRow("Visible to", rm.owned ? "Only you" : "Its members"));
+  }
 
   // "Last edited" is derived from the contributors (the authors table below is
   // alphabetical, so this is not readable from it at a glance). It is the

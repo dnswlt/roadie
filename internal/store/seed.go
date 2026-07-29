@@ -21,7 +21,10 @@ func (s *Store) Seed(ctx context.Context) error {
 		return nil
 	}
 
-	rm, err := s.CreateRoadmap(ctx, "Platform Roadmap")
+	// Public and unowned: the demo roadmap belongs to whoever starts the server,
+	// which is nobody in particular, and it should be visible in both auth modes.
+	// Being unowned also means it can never be made private — fine for a demo.
+	rm, err := s.CreateRoadmap(ctx, "Platform Roadmap", Ownership{})
 	if err != nil {
 		return err
 	}

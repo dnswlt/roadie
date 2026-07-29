@@ -1333,6 +1333,40 @@ dialog input:focus {
   margin-top: 16px;
 }
 
+/* Field caption above a dialog control (currently the New-roadmap visibility
+   picker). Quieter than the dialog's own h3, which titles the whole dialog. */
+.dialog-label {
+  display: block;
+  margin: 14px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* The visibility picker reuses the priority chips' shape so the two pickers in
+   the app look like one control. Its active chip cannot use --c (the lane
+   color) the way .prio-chip.active does — there is no lane here — so it takes
+   the brand indigo, matching .btn-primary beside it in the same dialog. */
+.vis-chips .prio-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vis-chips .prio-chip.active {
+  color: #fff;
+  border-color: transparent;
+  background: #4f46e5;
+}
+
+/* The padlock marking a private roadmap in Home's list. Pushed to the trailing
+   edge, and muted: it identifies the row rather than competing with its name. */
+.rm-item-lock {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--muted);
+}
+
 /* Roadmap facts and authors, shown in the Home dialog's preview sidebar. */
 .info-facts {
   display: flex;

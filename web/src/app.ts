@@ -80,6 +80,27 @@ function renderStalePill(): void {
   document.body.appendChild(pill);
 }
 
+// renderVisibilityItem rebuilds the menu's private/public toggle. It is hidden
+// outright unless the roadmap is one you own, which covers three cases with one
+// condition and no mention of the auth mode: with auth off nobody owns
+// anything, roadmaps predating this feature have no owner, and somebody else's
+// roadmap is not yours to lock. The label states the action, not the state —
+// the state is already visible as the lock beside the roadmap's name in Home.
+function renderVisibilityItem(): void {
+  const btn = $("rm-visibility") as HTMLButtonElement;
+  const rm = state.current;
+  btn.classList.toggle("hidden", !rm?.owned);
+  if (!rm?.owned) return;
+  const goPrivate = rm.visibility === "public";
+  btn.replaceChildren(
+    goPrivate ? icons.lock(14) : icons.globe(14),
+    document.createTextNode(goPrivate ? "Make private" : "Make public"),
+  );
+  btn.title = goPrivate
+    ? "Only you can see this roadmap"
+    : "Everyone can see and edit this roadmap";
+}
+
 function renderTopbar(): void {
   // The name button drops the actions menu for the roadmap it names, so it is
   // disabled when nothing is open — Home stays reachable via the house button,
@@ -96,6 +117,7 @@ function renderTopbar(): void {
   ($("rm-schedule") as HTMLButtonElement).disabled = !state.current;
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
+  renderVisibilityItem();
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focus !== null);
   $("focus-menu").title =
@@ -455,6 +477,25 @@ function wireTopbar(): void {
     // Prefill a distinct name so the copy is deliberately named, not "(2)".
     const name = await promptDialog("Duplicate roadmap", `${state.current.name} (copy)`, "Duplicate");
     if (name) void actions.duplicateRoadmap(name);
+  });
+  $("rm-visibility").addEventListener("click", async () => {
+    menuPop.classList.add("hidden");
+    if (!state.current) return;
+    // Both directions confirm. Publishing obviously has to — it exposes the
+    // roadmap to everyone — but so does locking down, for a different reason:
+    // it is easy to undo yet just as easy to hit by accident and not notice,
+    // and a roadmap that silently vanished from everyone else's list is a
+    // problem nobody knows to look for. Neither is destructive, so both use the
+    // neutral confirm button rather than the red one.
+    const goPrivate = state.current.visibility === "public";
+    const ok = await confirmDialog(
+      goPrivate
+        ? `Make "${state.current.name}" private? Only you will be able to see it.`
+        : `Make "${state.current.name}" public? Everyone will be able to see and edit it.`,
+      goPrivate ? "Make private" : "Make public",
+      false,
+    );
+    if (ok) void actions.setVisibility(goPrivate ? "private" : "public");
   });
   $("rm-history").addEventListener("click", () => {
     menuPop.classList.add("hidden");
@@ -895,7 +936,8 @@ async function boot(): Promise<void> {
   // First call of the session, and on an authenticated deployment also the
   // gate: reaching the app with an expired session gets a 401 here, and the
   // api layer navigates to the login flow instead of returning.
-  renderAccount(await api.me());
+  state.me = await api.me();
+  renderAccount(state.me);
 
   await actions.loadRoadmaps();
 

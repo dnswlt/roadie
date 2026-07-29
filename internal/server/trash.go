@@ -81,7 +81,7 @@ type trashEntry struct {
 // Fetched on demand when the trash is opened, not as part of the roadmap list:
 // the trash is a place you visit, not something every page load pays for.
 func (s *Server) listTrash(w http.ResponseWriter, r *http.Request) {
-	roadmaps, err := s.store.ListTrashedRoadmaps(r.Context())
+	roadmaps, err := s.store.ListTrashedRoadmaps(r.Context(), viewer(r))
 	if err != nil {
 		s.writeErr(w, err)
 		return
