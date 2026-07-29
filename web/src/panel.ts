@@ -136,11 +136,14 @@ export async function addChildToSelection(): Promise<void> {
 }
 
 // focusPanelTitle drops the cursor into the edit panel's Title field with the
-// placeholder pre-selected, so "n" flows straight into typing the real title.
-// Only the shortcut does this — the panel's own + buttons leave focus where it
-// was. Safe to call right after an awaited addItem: state.notify() re-renders
-// the panel synchronously, so the field already exists.
-function focusPanelTitle(): void {
+// text pre-selected, so "n" flows straight into typing the real title. Its
+// callers are the create shortcuts here and the double-click-to-rename
+// gestures (dnd.ts for bars, app.ts for milestones) — the panel's own +
+// buttons leave focus where it was. Safe to call right after the notify that
+// (re)rendered the panel: that happens synchronously, so the field already
+// exists. No-ops when the panel is closed or showing a snapshot preview,
+// where there is no title input to find.
+export function focusPanelTitle(): void {
   const el = document.getElementById(PANEL_TITLE_ID);
   if (!(el instanceof HTMLInputElement)) return;
   el.focus();
@@ -244,24 +247,21 @@ export function renderPanel(panel: HTMLElement): void {
   close.append(icons.x());
   close.addEventListener("click", () => {
     state.clearSelection();
-    state.notify();
+    state.notifySelection();
   });
   const headActions = document.createElement("div");
   headActions.className = "panel-head-actions";
   headActions.append(copyLinkButton("item", item.id), close);
   head.append(kind, headActions);
 
-  const crumb = document.createElement("div");
-  crumb.className = "panel-crumb";
-  crumb.textContent = parent ? `${lane.name} › ${parent.title}` : lane.name;
+  const crumb = crumbLine(parent ? `${lane.name} › ${parent.title}` : lane.name);
 
-  const title = field("Title", "input");
+  const title = titleField(item.title);
   // Stable hook for focusPanelTitle — the panel has several .panel-field
   // inputs, so the Title one needs to be addressable by more than position.
   title.control.id = PANEL_TITLE_ID;
-  (title.control as HTMLInputElement).value = item.title;
   title.control.addEventListener("change", () => {
-    const v = (title.control as HTMLInputElement).value.trim();
+    const v = title.control.value.trim();
     if (v && v !== item.title) void actions.updateItem(item.id, { title: v });
   });
 
@@ -345,7 +345,16 @@ export function renderPanel(panel: HTMLElement): void {
   actionsRow.append(addSibling);
   actionsRow.append(deleteButton("Delete item", () => void confirmAndDeleteItem(item)));
 
-  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, dates, prio, labels, actionsRow);
+  // The panel reads in two zones, split by a hairline: what this item *is*
+  // (title, description, its links) above, how it is *classified* (dates,
+  // priority, labels) below. Without the split all six fields competed at the
+  // same weight and the title — the reason you opened the panel — read as just
+  // another form row.
+  const attrs = document.createElement("div");
+  attrs.className = "panel-attrs";
+  attrs.append(dates, prio, labels);
+
+  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
 
 // deleteButton is the panel's destructive action for both items and
@@ -482,21 +491,21 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
   close.append(icons.x());
   close.addEventListener("click", () => {
     state.clearSelection();
-    state.notify();
+    state.notifySelection();
   });
   const headActions = document.createElement("div");
   headActions.className = "panel-head-actions";
   headActions.append(copyLinkButton("milestone", milestone.id), close);
   head.append(kind, headActions);
 
-  const crumb = document.createElement("div");
-  crumb.className = "panel-crumb";
-  crumb.textContent = lane.name;
+  const crumb = crumbLine(lane.name);
 
-  const title = field("Title", "input");
-  (title.control as HTMLInputElement).value = milestone.title;
+  const title = titleField(milestone.title);
+  // Same hook as the item panel: only one panel renders at a time, so the id
+  // stays unique and focusPanelTitle serves both.
+  title.control.id = PANEL_TITLE_ID;
   title.control.addEventListener("change", () => {
-    const v = (title.control as HTMLInputElement).value.trim();
+    const v = title.control.value.trim();
     if (v && v !== milestone.title) void actions.updateMilestone(milestone.id, { title: v });
   });
 
@@ -523,7 +532,15 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
     deleteButton("Delete milestone", () => void confirmAndDeleteMilestone(milestone)),
   );
 
-  panel.append(head, crumb, title.wrap, dateField.wrap, desc.wrap, linksSection, actionsRow);
+  // Same two zones as the item panel, which puts the date below the
+  // description rather than above it: an item's start/end sit there too, and
+  // the panels reading alike matters more than a milestone's date being its
+  // most important attribute.
+  const attrs = document.createElement("div");
+  attrs.className = "panel-attrs";
+  attrs.append(dateField.wrap);
+
+  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
 
 function field(
@@ -537,6 +554,40 @@ function field(
   const control = document.createElement(tag) as HTMLInputElement | HTMLTextAreaElement;
   wrap.append(span, control);
   return { wrap, control };
+}
+
+// titleField is the panel's heading rather than another labelled row: the name
+// is what you opened the panel to read, so it earns typographic weight instead
+// of sitting at the same size as the date picker. It carries no visible label
+// — the kind chip above it already reads "Item"/"Milestone" — so the name is
+// exposed to assistive tech via aria-label, and the placeholder keeps an
+// untitled item from rendering as blank space.
+function titleField(value: string): { wrap: HTMLElement; control: HTMLInputElement } {
+  const wrap = document.createElement("label");
+  wrap.className = "panel-field panel-title-field";
+  const control = document.createElement("input");
+  control.className = "panel-title-input";
+  control.value = value;
+  control.placeholder = "Untitled";
+  control.setAttribute("aria-label", "Title");
+  wrap.append(control);
+  return { wrap, control };
+}
+
+// crumbLine builds the breadcrumb under the kind chip, led by a dot in the
+// lane's color (the panel already carries --c for the priority chips). Lane
+// color is the app's only color language, so this ties the panel to the lane
+// it is editing without inventing a second one.
+function crumbLine(text: string): HTMLElement {
+  const crumb = document.createElement("div");
+  crumb.className = "panel-crumb";
+  const dot = document.createElement("span");
+  dot.className = "crumb-dot";
+  const label = document.createElement("span");
+  label.className = "crumb-text";
+  label.textContent = text;
+  crumb.append(dot, label);
+  return crumb;
 }
 
 // createLinksSection shows the URLs found in a description as clickable chips.

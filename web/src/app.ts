@@ -10,8 +10,8 @@ import { icons } from "./icons";
 import { initHome, openHome } from "./home";
 import { bindings, initKeys } from "./keys";
 import { LABEL_W } from "./layout";
-import { currentScale, renderChart } from "./render";
-import { renderPanel } from "./panel";
+import { currentScale, projectSelection, renderChart } from "./render";
+import { focusPanelTitle, renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
@@ -563,7 +563,7 @@ function wireChart(): void {
     const milestoneEl = t.closest<HTMLElement>(".milestone");
     if (milestoneEl) {
       state.selectMilestone(Number(milestoneEl.dataset.milestoneId));
-      state.notify();
+      state.notifySelection();
       return;
     }
 
@@ -584,16 +584,23 @@ function wireChart(): void {
     }
     // Click on empty chart space clears the selection.
     if (!t.closest(".bar, .child-bar, .milestone, .lane-label") && state.clearSelection()) {
-      state.notify();
+      state.notifySelection();
     }
   });
 
-  // Double-click a lane name to rename it inline.
+  // Double-click a lane name to rename it inline; double-click a milestone to
+  // rename it in the panel. Real dblclick events, possible because neither
+  // pointerdown is preventDefault-ed and selection no longer rebuilds the
+  // chart between the clicks. Bars get theirs from dnd.ts instead (CLAUDE.md).
   chart.addEventListener("dblclick", (e) => {
-    const nameEl = (e.target as HTMLElement).closest<HTMLElement>(".lane-name");
-    const laneEl = (e.target as HTMLElement).closest<HTMLElement>(".lane");
-    if (!nameEl || !laneEl) return;
-    startLaneRename(nameEl, Number(laneEl.dataset.laneId));
+    const t = e.target as HTMLElement;
+    const nameEl = t.closest<HTMLElement>(".lane-name");
+    const laneEl = t.closest<HTMLElement>(".lane");
+    if (nameEl && laneEl) {
+      startLaneRename(nameEl, Number(laneEl.dataset.laneId));
+      return;
+    }
+    if (t.closest(".milestone")) focusPanelTitle();
   });
 }
 
@@ -902,6 +909,12 @@ function applySelection(sel: UrlTarget["selection"]): void {
 
 async function boot(): Promise<void> {
   state.subscribe(render);
+  // Selection scope: project onto the chart, re-render only the panel (which
+  // guards itself against rebuilding under a focused field).
+  state.subscribeSelection(() => {
+    projectSelection(chart);
+    renderPanel(panel);
+  });
   injectIcons();
   wireTopbar();
   initHome();

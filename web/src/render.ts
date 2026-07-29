@@ -134,6 +134,21 @@ export function renderChart(container: HTMLElement): void {
   }
 }
 
+// projectSelection stamps the current selection onto the already-rendered
+// chart — the subscriber side of state.notifySelection (rationale in
+// CLAUDE.md: selection changes no geometry, and click gestures need the DOM
+// nodes to survive). The honesty rule: recompute the predicate for EVERY
+// element from state, never patch only the nodes assumed to have changed —
+// so a stale .selected is as impossible as it is under a full rebuild.
+export function projectSelection(container: HTMLElement): void {
+  for (const el of container.querySelectorAll<HTMLElement>(".block, .child-bar")) {
+    el.classList.toggle("selected", state.isItemSelected(Number(el.dataset.itemId)));
+  }
+  for (const el of container.querySelectorAll<HTMLElement>(".milestone")) {
+    el.classList.toggle("selected", state.selectedMilestoneId === Number(el.dataset.milestoneId));
+  }
+}
+
 // SCHEDULE_LABEL_PX: hide a period's label below this width, like the months
 // row — the boundaries still show, so the rhythm reads; the full label is on the
 // span's title. Slightly wider than the months threshold since it centers.

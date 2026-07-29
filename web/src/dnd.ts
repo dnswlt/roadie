@@ -6,6 +6,8 @@
 
 import { actions } from "./actions";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
+import { DoubleClickDetector } from "./gesture";
+import { focusPanelTitle } from "./panel";
 import { nearestBoundary, scheduleBounds } from "./schedule";
 import { state } from "./state";
 import { currentScale } from "./render";
@@ -65,6 +67,9 @@ let drag: ItemDrag | LaneDrag | null = null;
 let tooltip: HTMLElement | null = null;
 let chartEl: HTMLElement | null = null;
 
+// Double-click-to-rename on bars (see the click branch in onPointerUp).
+const dblClick = new DoubleClickDetector();
+
 // isDragging reports whether a pointer gesture is actually in progress (past
 // its start threshold). The live-update safe-gate uses it to defer a remote
 // refresh until the gesture completes, rather than yanking the chart out from
@@ -103,6 +108,7 @@ function onPointerDown(e: PointerEvent): void {
 
   const grip = t.closest(".lane-grip");
   if (grip) {
+    dblClick.reset();
     const laneEl = grip.closest<HTMLElement>(".lane");
     if (!laneEl) return;
     drag = {
@@ -122,7 +128,12 @@ function onPointerDown(e: PointerEvent): void {
   }
 
   const barEl = t.closest<HTMLElement>(".bar, .child-bar");
-  if (!barEl) return;
+  if (!barEl) {
+    // A press on anything that is not a bar (milestone, empty canvas, lane
+    // label) breaks a pending rename pair.
+    dblClick.reset();
+    return;
+  }
   const id = Number(barEl.dataset.itemId);
   const loc = state.findItem(id);
   if (!loc) return;
@@ -566,12 +577,24 @@ function onPointerUp(e: PointerEvent): void {
 
   if (!d.started) {
     // A click, not a drag. Shift-click toggles the item in the multi-selection;
-    // a plain click selects it alone and shows the edit panel.
-    if (e.shiftKey) state.toggleItem(d.id);
-    else state.selectItem(d.id);
-    state.notify();
+    // a plain click selects it alone and shows the edit panel; two plain clicks
+    // in quick succession jump into renaming it there — detected by hand
+    // because onPointerDown's preventDefault suppresses native click/dblclick
+    // on bars (see CLAUDE.md).
+    if (e.shiftKey) {
+      dblClick.reset(); // a Shift-click is selection-building, not a rename pair
+      state.toggleItem(d.id);
+      state.notifySelection();
+      return;
+    }
+    const isDouble = dblClick.click({ id: d.id, x: e.clientX, y: e.clientY, at: e.timeStamp });
+    state.selectItem(d.id);
+    state.notifySelection();
+    if (isDouble) focusPanelTitle();
     return;
   }
+  // A completed drag is not a click: click-jiggle-click must not read as a double.
+  dblClick.reset();
 
   // Group drag: shift every member in time by the same delta. No structure.
   if (d.isGroup) {
@@ -621,6 +644,10 @@ function onPointerUp(e: PointerEvent): void {
 }
 
 function resetItemVisuals(d: ItemDrag): void {
+  // `started` gates every preview mutation, so before it there is nothing to
+  // reset — and clearing anyway would wipe a child bar's inline left/width
+  // (its only geometry), which no full re-render repairs on a click anymore.
+  if (!d.started) return;
   for (const m of d.members) {
     m.classList.remove("dragging");
     m.style.pointerEvents = "";
@@ -636,13 +663,20 @@ function resetItemVisuals(d: ItemDrag): void {
 
 function cancelDrag(): void {
   if (!drag) return;
-  if (drag.kind === "item") {
-    resetItemVisuals(drag);
+  const d = drag;
+  drag = null;
+  dblClick.reset();
+  if (d.kind === "item") {
+    resetItemVisuals(d);
+    // A started resize preview overwrote the bar's inline left/width, and for
+    // a child bar those are its only geometry — clearing them cannot bring the
+    // originals back, so rebuild from the model. (Previously this repair came
+    // accidentally, from the Esc keybinding's full notify on deselect.)
+    if (d.started) state.notify();
   } else {
-    drag.laneEl.classList.remove("lane-dragging");
+    d.laneEl.classList.remove("lane-dragging");
     removeLaneIndicator();
   }
-  drag = null;
 }
 
 // Lane reordering

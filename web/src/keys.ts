@@ -44,7 +44,7 @@ export const bindings: Binding[] = [
       if (state.history !== null) {
         void actions.closeHistory();
       } else if (state.clearSelection()) {
-        state.notify();
+        state.notifySelection();
       }
     },
   },

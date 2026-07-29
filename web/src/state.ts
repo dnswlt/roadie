@@ -119,6 +119,20 @@ class AppState {
     for (const fn of this.listeners) fn();
   }
 
+  // The narrower of the two invalidation scopes: selection-only changes,
+  // projected onto the existing chart DOM instead of rebuilding it (see
+  // render.ts projectSelection; rationale in CLAUDE.md). notify() is the
+  // superset — when in doubt, use it.
+  private selectionListeners: Array<() => void> = [];
+
+  subscribeSelection(fn: () => void): void {
+    this.selectionListeners.push(fn);
+  }
+
+  notifySelection(): void {
+    for (const fn of this.selectionListeners) fn();
+  }
+
   findLane(id: number): LaneFull | null {
     return this.current?.lanes.find((l) => l.id === id) ?? null;
   }
