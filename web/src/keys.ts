@@ -13,7 +13,13 @@
 // combos are left to the browser and the OS.
 
 import { actions } from "./actions";
-import { addChildToSelection, addItemToSelection, deleteSelection, toggleFlagSelection } from "./panel";
+import {
+  addChildToSelection,
+  addItemToSelection,
+  deleteSelection,
+  flushPendingEdit,
+  toggleFlagSelection,
+} from "./panel";
 import { state } from "./state";
 
 export interface Binding {
@@ -37,14 +43,17 @@ export const bindings: Binding[] = [
     key: "Escape",
     label: "Esc",
     // Allowed in text fields: backing out of history or a selection from
-    // inside a panel field (blur + deselect) is exactly what it should do.
+    // inside a panel field is exactly what it should do. The flush commits
+    // what was typed first — this is an everything-saves app, so Esc means
+    // "done here", never "discard".
     inTextField: true,
     description: "Clear the selection, or leave version history.",
     run: () => {
       if (state.history !== null) {
         void actions.closeHistory();
-      } else if (state.clearSelection()) {
-        state.notifySelection();
+      } else {
+        flushPendingEdit();
+        if (state.clearSelection()) state.notifySelection();
       }
     },
   },

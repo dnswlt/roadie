@@ -193,7 +193,40 @@ function copyLinkButton(kind: "item" | "milestone", id: number): HTMLButtonEleme
 // re-render can skip rebuilding the panel under the user's cursor.
 let renderedKey: string | null = null;
 
+// The panel element, captured on render so flushPendingEdit can find it.
+let panelEl: HTMLElement | null = null;
+
+// flushPendingEdit commits whatever panel field the user is still typing in.
+// Fields save on `change`, which fires only on blur — but Esc and the Close
+// button tear the panel down while the field still has focus, and an element
+// removed from the DOM fires neither blur nor change, silently dropping the
+// edit. Blurring here fires `change` synchronously, so the field's own commit
+// handler does the saving and no second save path exists.
+export function flushPendingEdit(): void {
+  const el = document.activeElement;
+  if (el instanceof HTMLElement && panelEl?.contains(el)) el.blur();
+}
+
+// closeButton deselects, which closes the panel. Pressing it must not blur the
+// focused field: the field's change handler would re-render the panel and
+// destroy this button before its click could fire (save without close). The
+// click handler flushes instead, so save-and-close is one click everywhere.
+function closeButton(): HTMLButtonElement {
+  const close = document.createElement("button");
+  close.className = "icon-btn";
+  close.title = "Close";
+  close.append(icons.x());
+  close.addEventListener("mousedown", (e) => e.preventDefault());
+  close.addEventListener("click", () => {
+    flushPendingEdit();
+    state.clearSelection();
+    state.notifySelection();
+  });
+  return close;
+}
+
 export function renderPanel(panel: HTMLElement): void {
+  panelEl = panel;
   // While browsing version history the right side belongs to the history list,
   // and a snapshot preview is read-only — so the edit panel steps aside.
   if (state.history !== null) {
@@ -241,17 +274,9 @@ export function renderPanel(panel: HTMLElement): void {
   const kind = document.createElement("span");
   kind.className = "panel-kind";
   kind.textContent = parent ? "Child item" : "Item";
-  const close = document.createElement("button");
-  close.className = "icon-btn";
-  close.title = "Close";
-  close.append(icons.x());
-  close.addEventListener("click", () => {
-    state.clearSelection();
-    state.notifySelection();
-  });
   const headActions = document.createElement("div");
   headActions.className = "panel-head-actions";
-  headActions.append(copyLinkButton("item", item.id), close);
+  headActions.append(copyLinkButton("item", item.id), closeButton());
   head.append(kind, headActions);
 
   const crumb = crumbLine(parent ? `${lane.name} › ${parent.title}` : lane.name);
@@ -485,17 +510,9 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
   const kind = document.createElement("span");
   kind.className = "panel-kind";
   kind.textContent = "Milestone";
-  const close = document.createElement("button");
-  close.className = "icon-btn";
-  close.title = "Close";
-  close.append(icons.x());
-  close.addEventListener("click", () => {
-    state.clearSelection();
-    state.notifySelection();
-  });
   const headActions = document.createElement("div");
   headActions.className = "panel-head-actions";
-  headActions.append(copyLinkButton("milestone", milestone.id), close);
+  headActions.append(copyLinkButton("milestone", milestone.id), closeButton());
   head.append(kind, headActions);
 
   const crumb = crumbLine(lane.name);
