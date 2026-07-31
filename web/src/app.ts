@@ -229,7 +229,7 @@ function openHelpDialog(): void {
   sh.textContent = "Snapping";
   const p = document.createElement("p");
   p.textContent =
-    "Dragging or resizing an item snaps its edges to the grid you pick in the magnet menu (Day, Week, Month, Quarter, or Schedule) and to nearby item edges, milestones, and today.";
+    "Dragging or resizing an item snaps to the grid you pick in the magnet menu (Day, Week, Month, Quarter, or Schedule) and to nearby item edges, milestones, and today. Moving an item aligns its start to the grid, keeping its duration; either edge still clicks onto a nearby item edge, milestone, or today. Resizing snaps the edge you grabbed.";
   section.append(sh, p);
 
   const keys = document.createElement("dl");

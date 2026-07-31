@@ -104,6 +104,11 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **The flag is not a reserved label.** A magic string in free-form text is a
   convention, not an invariant, and toggling would be a read-modify-write that loses
   concurrent label edits under SSE.
+- **A move grid-snaps its start edge only.** The grid has no radius, so two
+  competing edges are two unbounded attractors: the winner flips mid-drag and the
+  bar jumps up to half a grid period. Aligning an *end* is a feature magnet's job
+  (neighbour edges, milestones, today — those keep both edges live, and they are
+  radius-limited, so they can only ever nudge).
 - **Find is a list, not a filter.** Dimming the chart to matches (a third `Focus`
   variant) was considered and dropped.
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement

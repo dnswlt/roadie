@@ -347,25 +347,27 @@ function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number, cands: numbe
 }
 
 // snapMoveDelta resolves a move. Feature snapping (to a boundary in `cands`) wins
-// when an edge boundary is within SNAP_PX of one; otherwise the offset is nudged
-// so whichever edge boundary is nearest a `grid` line lands exactly on it
-// (duration preserved). The move rides the grid but "clicks" onto neighbours.
-// With empty `cands` (Shift) it is pure grid snapping; with an identity grid
-// ("day" mode) it is pure feature snapping; with both, free per-day movement.
+// when either edge boundary is within SNAP_PX of one; otherwise the offset is
+// nudged so the *start* edge lands on a `grid` line, duration preserved. The move
+// rides the grid but "clicks" onto neighbours. With empty `cands` (Shift) it is
+// pure grid snapping; with an identity grid ("day" mode) it is pure feature
+// snapping; with both, free per-day movement.
+//
+// Only the start edge competes for the grid, and the asymmetry is deliberate.
+// Feature snapping is radius-limited, so letting both edges compete costs at most
+// a SNAP_PX correction. Grid snapping has no radius — it always fires — so two
+// competing edges are two unbounded attractors half a grid period apart: the
+// winner flips mid-drag and the bar teleports by up to half a grid step (~45 days
+// on Quarter), silently changing which edge is aligned. Concretely, with a 10-day
+// item on a month grid, dragging 11 days right used to jump it 20 days and leave
+// its *end*, not its start, on the boundary. Aligning an end is still possible —
+// to a neighbour's edge, a milestone, or today, which are feature magnets and
+// keep both edges live — just not to a bare grid line.
 function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, cands: number[], grid: (day: number) => number): number {
   const item = snapMoveToItems(d, dayDelta, px, cands);
   if (item !== dayDelta) return item;
-  let best = dayDelta;
-  let bestDist = Infinity;
-  for (const edge of moveBounds(d, dayDelta)) {
-    const g = grid(edge);
-    const dist = Math.abs(g - edge);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = dayDelta + (g - edge);
-    }
-  }
-  return best;
+  const [startEdge] = moveBounds(d, dayDelta);
+  return dayDelta + (grid(startEdge) - startEdge);
 }
 
 function onPointerMove(e: PointerEvent): void {
