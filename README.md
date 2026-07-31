@@ -108,3 +108,7 @@ make docker-down    # stop both
 
 The app needs `DATABASE_URL` and passes `-addr=:8080` so it listens on all
 interfaces inside the container.
+
+## Operations
+
+[OPERATIONS.md](OPERATIONS.md) — database backup and restore, probes.
