@@ -35,6 +35,13 @@
         </div>
       </div>
       <input id="rm-import-file" type="file" accept=".json,application/json" hidden>
+      <!-- Find searches the loaded roadmap, not the rendered chart: hidden
+           contexts, folded children, labels and descriptions are all reachable
+           here and none of them are reachable by the browser's own Ctrl+F. -->
+      <div class="menu-wrap">
+        <button id="find-menu" class="icon-btn" title="Find items (/)"></button>
+        <div id="find-pop" class="menu find-pop hidden"></div>
+      </div>
       <div class="menu-wrap">
         <button id="lane-vis-menu" class="icon-btn" title="Show/hide contexts"></button>
         <div id="lane-vis-pop" class="menu hidden"></div>

@@ -5,6 +5,7 @@ import { LANE_COLOR_ORDER, laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { initDnd } from "./dnd";
 import { initEvents, refreshNow } from "./events";
+import { initFind } from "./find";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { initHome, openHome } from "./home";
@@ -117,6 +118,8 @@ function renderTopbar(): void {
   ($("rm-schedule") as HTMLButtonElement).disabled = !state.current;
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
+  // Find searches the loaded roadmap, so it has nothing to do without one.
+  ($("find-menu") as HTMLButtonElement).disabled = !state.current;
   renderVisibilityItem();
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focus !== null);
@@ -388,6 +391,7 @@ function renderAccount(me: Me): void {
 
 function injectIcons(): void {
   $("home-btn").prepend(icons.house(16));
+  $("find-menu").append(icons.search(18));
   $("lane-vis-menu").append(icons.eye(18));
   $("focus-menu").append(icons.tag(18));
   $("rm-rename").prepend(icons.pencil(14));
@@ -411,7 +415,8 @@ function wireTopbar(): void {
   const focusPop = $("focus-pop");
   const snapPop = $("snap-pop");
   const accountPop = $("account-pop");
-  const allPops = [menuPop, visPop, focusPop, snapPop, accountPop];
+  const findPop = $("find-pop");
+  const allPops = [menuPop, visPop, focusPop, snapPop, accountPop, findPop];
   // Close every top-bar popover except the one being opened.
   const closeOthers = (keep: HTMLElement): void => {
     for (const p of allPops) if (p !== keep) p.classList.add("hidden");
@@ -627,7 +632,14 @@ function startLaneRename(nameEl: HTMLElement, laneId: number): void {
   input.addEventListener("blur", () => commit(true));
   input.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") commit(true);
-    if (ev.key === "Escape") commit(false);
+    if (ev.key === "Escape") {
+      // This editor owns the Escape. Without stopping it here the global
+      // binding fires too (it is one of the few that run inside text fields),
+      // so cancelling a rename would also clear the selection and close the
+      // edit panel. Panel fields are the deliberate exception — see keys.ts.
+      ev.stopPropagation();
+      commit(false);
+    }
   });
 }
 
@@ -918,6 +930,7 @@ async function boot(): Promise<void> {
   injectIcons();
   wireTopbar();
   initHome();
+  initFind();
   wireChart();
   wirePanelResize();
   initDnd(chart);

@@ -453,6 +453,124 @@ kbd {
   background: var(--border);
 }
 
+/* ---- Find popup (find.ts) --------------------------------------------- */
+
+/* Wider than the other menus: a result row carries a title, its context and a
+   date range, and truncating all three would defeat the point of the list. */
+.find-pop {
+  width: 400px;
+  max-width: calc(100vw - 24px);
+}
+
+.find-input {
+  font: inherit;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.find-input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.find-head {
+  padding: 7px 10px 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.find-head:empty {
+  display: none;
+}
+
+/* Capped by MAX_ROWS, but a 50-row list still has to scroll inside the popup
+   rather than run off the bottom of the window. */
+.find-list {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.find-row {
+  font: inherit;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.find-row .color-dot {
+  flex: none;
+  margin-top: 4px;
+}
+
+/* The cursor is a real highlight, not a hover: it is driven by the arrow keys
+   and has to be visible while the pointer is somewhere else entirely. */
+.find-row:hover {
+  background: var(--grid);
+}
+
+.find-row.is-cursor {
+  background: var(--grid-strong);
+}
+
+.find-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.find-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.find-title-line svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.find-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Names the field a non-title match came from ("label", "notes", "context") —
+   the reason the row is in the list is otherwise invisible. */
+.find-tag {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.find-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.find-meta svg {
+  flex: none;
+}
+
 /* Non-interactive caption at the top of a menu — the signed-in user. */
 .menu-head {
   padding: 7px 10px 9px;

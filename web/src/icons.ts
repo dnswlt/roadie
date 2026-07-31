@@ -163,4 +163,7 @@ export const icons = {
         `<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="m2 2 20 20"/>`,
       size,
     ),
+  search: (size = 16) =>
+    svg(`<circle cx="11" cy="11" r="7"/><path d="m20 20-4.35-4.35"/>`, size),
+  milestone: (size = 16) => svg(`<path d="M12 3 21 12 12 21 3 12z"/>`, size),
 };

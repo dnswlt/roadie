@@ -13,6 +13,7 @@
 // combos are left to the browser and the OS.
 
 import { actions } from "./actions";
+import { openFind } from "./find";
 import {
   addChildToSelection,
   addItemToSelection,
@@ -35,6 +36,11 @@ export interface Binding {
   // Opt in to firing while an input/textarea has focus. Off for anything
   // whose key could be a character the user meant to type.
   inTextField?: boolean;
+  // Suppress the key's own default. Needed when `run` moves focus *into* a
+  // text field: the keystroke that opened it would otherwise be typed into it
+  // as its first character. Declared here rather than fixed inside the handler
+  // so the reason travels with the binding that has the problem.
+  preventDefault?: boolean;
   run: () => void;
 }
 
@@ -46,6 +52,13 @@ export const bindings: Binding[] = [
     // inside a panel field is exactly what it should do. The flush commits
     // what was typed first — this is an everything-saves app, so Esc means
     // "done here", never "discard".
+    //
+    // The rule that makes this consistent: a local editor with its own Escape
+    // meaning consumes the event before it reaches here (the find popup, an
+    // inline lane rename, a drag in progress), because there Esc means "cancel
+    // this", not "back out of everything". The edit panel's fields are the
+    // deliberate exception — they let it through, which is what lets Esc from
+    // a panel field clear the selection and close the panel.
     inTextField: true,
     description: "Clear the selection, or leave version history.",
     run: () => {
@@ -81,6 +94,15 @@ export const bindings: Binding[] = [
     description: "Flag or unflag the selected items.",
     run: () => toggleFlagSelection(),
   },
+  {
+    key: "/",
+    label: "/",
+    description: "Find items, milestones and contexts.",
+    // Opens the find popup and focuses its input, so the "/" must not also be
+    // typed into it.
+    preventDefault: true,
+    run: () => openFind(),
+  },
 ];
 
 // isTextField reports whether the event target owns the characters typed into
@@ -104,6 +126,7 @@ export function initKeys(): void {
     // Escape needs no exception — <dialog> closes itself on Escape.
     if (document.querySelector("dialog[open]")) return;
     if (!binding.inTextField && isTextField(e.target)) return;
+    if (binding.preventDefault) e.preventDefault();
     binding.run();
   });
 }
