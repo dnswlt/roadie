@@ -54,7 +54,8 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`trash.go`) · visibility (`store/access.go`, `s.guard`) · contributors
 (`contributors.go`) · schedule (`schedule.go`, `schedule.ts`) · SSE
 (`server/events.go`, `events.ts`) · auth (`internal/auth`) · find
-(`search.ts` + `find.ts`) · Home dialog (`home.ts`) · shortcuts (`keys.ts`).
+(`search.ts` + `find.ts`) · Home dialog (`home.ts`) · shortcuts (`keys.ts`) ·
+snapping math (`snap.ts`, driven by `dnd.ts`).
 
 ## Rules
 
@@ -87,9 +88,13 @@ pre-mutation snapshot, SSE broadcast, contributor attribution, plus `s.guard` fo
 access. Adding a mutating route outside it silently loses all four. The one
 deliberate exception is roadmap DELETE — see below.
 
-**Snapping (dnd.ts) is the most delicate UX here.** It runs in the boundary domain
-(a bar owns `[start, end+1)`); the file explains why. Treat it carefully and keep
-any new snapping in that domain.
+**Snapping (snap.ts, driven by dnd.ts) is the most delicate UX here.** It runs in
+the boundary domain (a bar owns `[start, end+1)`); the file explains why. Treat it
+carefully and keep any new snapping in that domain — and in snap.ts, which is
+DOM-free precisely so `snap.test.ts` can pin properties (monotonic under a drag,
+duration preserved, features beat the grid) that hand-testing keeps missing. A
+miss is `null`, never "the input unchanged": an edge exactly on a magnet is a hit,
+and conflating the two lets the grid pull it back off.
 
 **Auth off is the default and must keep working** — no login, everyone edits, plain
 `curl` against the API. `auth.From(ctx)` always returns an `Identity` (anonymous
@@ -140,6 +145,6 @@ a second flag · changing what `-auth=off` does.
 Beyond `make test` / `make check`, UI changes must be exercised in a real browser
 **by the user, by hand** — there is no DOM test runner here. Test pure logic by
 extracting it into a DOM-free module (`links.ts` ← `links.test.ts`, `search.ts`,
-`timescale.ts`, `schedule.ts`); frontend tests are `node:test` files next to their
-source, transpiled into `web/test-out/`. When a change needs eyes on it, say so and
-describe what to look at.
+`timescale.ts`, `schedule.ts`, `snap.ts`); frontend tests are `node:test` files
+next to their source, transpiled into `web/test-out/`. When a change needs eyes on
+it, say so and describe what to look at.

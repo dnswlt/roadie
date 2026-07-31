@@ -3,23 +3,22 @@
 //  - drag a bar's edge handles to adjust start/end date
 //  - drag a lane's grip to reorder swimlanes
 // All previews are visual only; the model is updated once on drop.
+//
+// The snapping math lives in snap.ts (DOM-free, tested); this file collects the
+// candidate boundaries, reads the modifier keys, and applies the result.
 
 import { actions } from "./actions";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
 import { DoubleClickDetector } from "./gesture";
 import { focusPanelTitle } from "./panel";
-import { nearestBoundary, scheduleBounds } from "./schedule";
+import { scheduleBounds } from "./schedule";
+import { gridSnapper, snapBoundary, snapMoveDelta } from "./snap";
 import { state } from "./state";
 import { currentScale } from "./render";
-import { dayOf, formatDay, isoOf, snapToGrid, todayDay, xOf } from "./timescale";
+import { dayOf, formatDay, isoOf, todayDay, xOf } from "./timescale";
 import type { ItemFull, ItemPatch, LaneFull } from "./types";
 
 type Mode = "move" | "resize-l" | "resize-r";
-
-// Magnetic snap radius in screen pixels: a resized edge snaps to a nearby
-// item edge (or today) when within this distance. Small enough to keep fine
-// control; hold Alt to bypass entirely.
-const SNAP_PX = 7;
 
 interface ItemDrag {
   kind: "item";
@@ -282,94 +281,6 @@ function collectDragMembers(
   return { exclude, members };
 }
 
-// snapEdge returns the candidate day nearest `day` within SNAP_PX pixels, or
-// `day` unchanged when nothing is close enough.
-function snapEdge(day: number, cands: number[], px: number): number {
-  let best = day;
-  let bestDist = SNAP_PX + 1;
-  for (const c of cands) {
-    const dist = Math.abs(day - c) * px;
-    if (dist <= SNAP_PX && dist < bestDist) {
-      best = c;
-      bestDist = dist;
-    }
-  }
-  return best;
-}
-
-// gridSnapper resolves the coarse grid a dragged edge falls to when no item edge
-// is close, as a pure day->day function. Alt (bypass) disables the grid; the
-// "schedule" mode snaps to the roadmap's schedule-period boundaries, degrading to
-// free placement when it has none; every other mode uses its calendar grid.
-function gridSnapper(bypass: boolean, bounds: number[]): (day: number) => number {
-  if (bypass) return (d) => d;
-  const mode = state.snapMode;
-  if (mode === "schedule") {
-    return bounds.length === 0 ? (d) => d : (d) => nearestBoundary(d, bounds);
-  }
-  return (d) => snapToGrid(d, mode);
-}
-
-// snapBoundary resolves a single dragged/resized edge, given as a boundary
-// position. Item-edge snapping (radius-limited) takes priority — aligning to a
-// real item is the strongest intent — and only when no item boundary is close
-// does the edge fall to the `grid` (see gridSnapper). With the identity grid
-// ("day" mode / Alt) this is pure item snapping.
-function snapBoundary(bound: number, cands: number[], px: number, grid: (day: number) => number): number {
-  const item = snapEdge(bound, cands, px);
-  if (item !== bound) return item;
-  return grid(bound);
-}
-
-// moveBounds returns the dragged bar's two edge boundaries after a rigid shift
-// of `dayDelta`: the left edge sits at start, the right edge at end + 1.
-function moveBounds(d: ItemDrag, dayDelta: number): [number, number] {
-  return [d.startDay + dayDelta, d.endDay + 1 + dayDelta];
-}
-
-// snapMoveToItems adjusts a move's day-offset so that whichever of the two
-// (rigidly shifted) edge boundaries is closest to a feature boundary in `cands`
-// lands exactly on it, within SNAP_PX. Returns dayDelta unchanged when nothing
-// is close enough (including when `cands` is empty — Shift/grid-only).
-function snapMoveToItems(d: ItemDrag, dayDelta: number, px: number, cands: number[]): number {
-  let best = dayDelta;
-  let bestDist = SNAP_PX + 1;
-  for (const edge of moveBounds(d, dayDelta)) {
-    for (const c of cands) {
-      const dist = Math.abs(edge - c) * px;
-      if (dist <= SNAP_PX && dist < bestDist) {
-        bestDist = dist;
-        best = dayDelta + (c - edge);
-      }
-    }
-  }
-  return best;
-}
-
-// snapMoveDelta resolves a move. Feature snapping (to a boundary in `cands`) wins
-// when either edge boundary is within SNAP_PX of one; otherwise the offset is
-// nudged so the *start* edge lands on a `grid` line, duration preserved. The move
-// rides the grid but "clicks" onto neighbours. With empty `cands` (Shift) it is
-// pure grid snapping; with an identity grid ("day" mode) it is pure feature
-// snapping; with both, free per-day movement.
-//
-// Only the start edge competes for the grid, and the asymmetry is deliberate.
-// Feature snapping is radius-limited, so letting both edges compete costs at most
-// a SNAP_PX correction. Grid snapping has no radius — it always fires — so two
-// competing edges are two unbounded attractors half a grid period apart: the
-// winner flips mid-drag and the bar teleports by up to half a grid step (~45 days
-// on Quarter), silently changing which edge is aligned. Concretely, with a 10-day
-// item on a month grid, dragging 11 days right used to jump it 20 days and leave
-// its *end*, not its start, on the boundary. Aligning an end is still possible —
-// to a neighbour's edge, a milestone, or today, which are feature magnets and
-// keep both edges live — just not to a bare grid line.
-function snapMoveDelta(d: ItemDrag, dayDelta: number, px: number, cands: number[], grid: (day: number) => number): number {
-  const item = snapMoveToItems(d, dayDelta, px, cands);
-  if (item !== dayDelta) return item;
-  const [startEdge] = moveBounds(d, dayDelta);
-  return dayDelta + (grid(startEdge) - startEdge);
-}
-
 function onPointerMove(e: PointerEvent): void {
   if (!drag) return;
   if (drag.kind === "lane") {
@@ -396,7 +307,7 @@ function onPointerMove(e: PointerEvent): void {
   }
 
   const px = currentScale().pxPerDay;
-  const grid = gridSnapper(bypass, d.scheduleBounds);
+  const grid = gridSnapper(bypass, state.snapMode, d.scheduleBounds);
   // Feature magnets (other items' edges, milestones, today). Shift drops them so
   // only the selected granularity's grid snaps — calmer when a coarse grid
   // (quarter / schedule) would otherwise fight nearby features.
@@ -405,7 +316,7 @@ function onPointerMove(e: PointerEvent): void {
 
   switch (d.mode) {
     case "move": {
-      const md = bypass ? dayDelta : snapMoveDelta(d, dayDelta, px, cands, grid);
+      const md = bypass ? dayDelta : snapMoveDelta(d.startDay, d.endDay, dayDelta, px, cands, grid);
       d.newStart = d.startDay + md;
       d.newEnd = d.endDay + md;
       // Group drag is horizontal only; a single drag follows the pointer's Y.
