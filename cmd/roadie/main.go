@@ -39,7 +39,7 @@ func run() error {
 	authMode := flag.String("auth", "off", `authentication mode: "off" (everyone may edit anonymously) or "oidc"`)
 	redirectURL := flag.String("oidc-redirect-url", "", "public URL of this server's /auth/callback (required with -auth=oidc)")
 	sessionTTL := flag.Duration("session-ttl", auth.DefaultSessionTTL, "how long a login lasts before re-authentication")
-	insecureTLS := flag.Bool("oidc-insecure-tls", false, "skip TLS verification when talking to the OIDC provider (local mocks only, never in production)")
+	insecureTLS := flag.Bool("oidc-insecure-tls", false, "skip TLS verification when talking to the OIDC provider (local mocks only, never in production; relaxes Roadie's own client, so it cannot help a browser reach a self-signed provider)")
 	authDebug := flag.Bool("auth-debug", envBool("AUTH_DEBUG"),
 		"log every claim the OIDC provider sends (personal data: for diagnosing a provider, not for normal running); also settable as AUTH_DEBUG")
 	flag.Parse()
