@@ -774,7 +774,7 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     })();
   });
 
-  menu.append(rename, addMs, color, del);
+  menu.append(addMs, color, rename, del);
   document.body.append(menu);
   // Right-aligned under the button, which keeps it clear of the right edge.
   placePopover(menu, anchor, "right");
