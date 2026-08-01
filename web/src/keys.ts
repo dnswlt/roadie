@@ -14,6 +14,7 @@
 
 import { actions } from "./actions";
 import { openFind } from "./find";
+import { openHelpDialog } from "./help";
 import {
   addChildToSelection,
   addItemToSelection,
@@ -119,6 +120,15 @@ export const bindings: Binding[] = [
     label: "p",
     description: "Collapse or expand the edit panel.",
     run: () => togglePanel(),
+  },
+  {
+    key: "?",
+    label: "?",
+    // Last, so the reference card ends with the way back to itself. Reopening
+    // is not a concern: the handler ignores every shortcut while a dialog is
+    // open, and Escape closes it natively.
+    description: "Show this help.",
+    run: () => openHelpDialog(bindings),
   },
 ];
 

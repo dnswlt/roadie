@@ -9,6 +9,7 @@ import { initFind } from "./find";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { initHome, openHome } from "./home";
+import { openHelpDialog } from "./help";
 import { bindings, initKeys } from "./keys";
 import { LABEL_W } from "./layout";
 import { currentScale, projectSelection, renderChart } from "./render";
@@ -210,76 +211,6 @@ function buildSnapMenu(pop: HTMLElement): void {
   }
 }
 
-// openHelpDialog shows a centered modal with a small reference card. Start with
-// snapping (the most modal, least discoverable gesture); add sections here as
-// needed. Escape / Close dismiss it (native <dialog>).
-function openHelpDialog(): void {
-  const dlg = document.getElementById("dialog") as HTMLDialogElement;
-  dlg.replaceChildren();
-
-  const h = document.createElement("h3");
-  h.textContent = "Help";
-
-  const body = document.createElement("div");
-  body.className = "help-body";
-
-  const section = document.createElement("div");
-  section.className = "help-section";
-  const sh = document.createElement("h4");
-  sh.textContent = "Snapping";
-  const p = document.createElement("p");
-  p.textContent =
-    "Dragging or resizing an item snaps to the grid you pick in the magnet menu (Day, Week, Month, Quarter, or Schedule) and to nearby item edges, milestones, and today. Moving an item aligns its start to the grid, keeping its duration; either edge still clicks onto a nearby item edge, milestone, or today. Resizing snaps the edge you grabbed.";
-  section.append(sh, p);
-
-  const keys = document.createElement("dl");
-  keys.className = "help-keys";
-  const addKey = (key: string, desc: string): void => {
-    const dt = document.createElement("dt");
-    const kbd = document.createElement("kbd");
-    kbd.textContent = key;
-    dt.append(kbd);
-    const dd = document.createElement("dd");
-    dd.textContent = desc;
-    keys.append(dt, dd);
-  };
-  addKey("Shift", "Snap to the selected grid only — steadier for coarse grids like Quarter or Schedule.");
-  addKey("Alt", "Turn snapping off for free, day-by-day placement.");
-  section.append(keys);
-  body.append(section);
-
-  // Shortcuts are listed straight from the binding table (keys.ts), so adding
-  // one there documents it here.
-  const shortcuts = document.createElement("div");
-  shortcuts.className = "help-section";
-  const kh = document.createElement("h4");
-  kh.textContent = "Shortcuts";
-  const kl = document.createElement("dl");
-  kl.className = "help-keys";
-  for (const b of bindings) {
-    const dt = document.createElement("dt");
-    const kbd = document.createElement("kbd");
-    kbd.textContent = b.label;
-    dt.append(kbd);
-    const dd = document.createElement("dd");
-    dd.textContent = b.description;
-    kl.append(dt, dd);
-  }
-  shortcuts.append(kh, kl);
-  body.append(shortcuts);
-
-  const row = document.createElement("div");
-  row.className = "dialog-actions";
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "btn btn-primary";
-  close.textContent = "Close";
-  close.addEventListener("click", () => dlg.close());
-  row.append(close);
-
-  dlg.append(h, body, row);
-  dlg.showModal();
-}
 
 // openScheduleEditor shows the roadmap's schedule in a textarea (one period per
 // line, START END LABEL) and saves it as a full replace. Parse errors are shown
@@ -443,7 +374,7 @@ function wireTopbar(): void {
     if (snapPop.classList.contains("hidden")) buildSnapMenu(snapPop);
     snapPop.classList.toggle("hidden");
   });
-  $("help-menu").addEventListener("click", () => openHelpDialog());
+  $("help-menu").addEventListener("click", () => openHelpDialog(bindings));
   $("account-menu").addEventListener("click", (e) => {
     e.stopPropagation();
     closeOthers(accountPop);
