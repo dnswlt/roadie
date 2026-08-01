@@ -58,6 +58,21 @@ export function openHelpDialog(bindings: Binding[]): void {
     ),
   );
 
+  // Enter is not in the binding table — it is handled on the title field itself
+  // (panel.ts) — so unlike the shortcuts below it has to be listed by hand. It
+  // earns that: the run-of-items rhythm it enables is the least guessable thing
+  // in the app. Esc belongs to this pair too, but it is a real binding and the
+  // Shortcuts section already prints it; describing it again here would be a
+  // second wording free to drift from the first.
+  body.append(
+    section(
+      "Editing",
+      keyList([
+        ["Enter", "In a title, save and step out of the field — so n and c start the next item."],
+      ]),
+    ),
+  );
+
   // Shortcuts are listed straight from the binding table (keys.ts), so adding
   // one there documents it here.
   body.append(

@@ -730,6 +730,17 @@ function field(
 // — the kind chip above it already reads "Item"/"Milestone" — so the name is
 // exposed to assistive tech via aria-label, and the placeholder keeps an
 // untitled item from rendering as blank space.
+//
+// It is also the field every create path drops the cursor into, so it is where
+// a run of "n, type, n, type" either flows or stalls. Enter steps out of it,
+// which is the whole trick: bare-letter shortcuts are suppressed while a text
+// field has focus (keys.ts), so without a way out "n" would just type an "n".
+// Stepping out keeps the item selected, so "n" and "c" still have a target;
+// Esc is the deeper exit that leaves the item.
+//
+// Blurring is the save: Enter has already fired `change` natively and the
+// field's own commit handler did the writing, so there is no second save path
+// here — exactly as in flushPendingEdit.
 function titleField(value: string): { wrap: HTMLElement; control: HTMLInputElement } {
   const wrap = document.createElement("label");
   wrap.className = "panel-field panel-title-field";
@@ -738,6 +749,9 @@ function titleField(value: string): { wrap: HTMLElement; control: HTMLInputEleme
   control.value = value;
   control.placeholder = "Untitled";
   control.setAttribute("aria-label", "Title");
+  control.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") control.blur();
+  });
   wrap.append(control);
   return { wrap, control };
 }

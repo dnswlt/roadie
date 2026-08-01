@@ -60,8 +60,12 @@ export const bindings: Binding[] = [
     // meaning consumes the event before it reaches here (the find popup, an
     // inline lane rename, a drag in progress), because there Esc means "cancel
     // this", not "back out of everything". The edit panel's fields are the
-    // deliberate exception — they let it through, which is what lets Esc from
-    // a panel field clear the selection and close the panel.
+    // deliberate exception — they let it through, which is what lets Esc from a
+    // panel field clear the selection.
+    //
+    // Enter is the shallower exit, handled on the field itself (see
+    // titleField): it leaves the field but keeps the item selected, so "n" and
+    // "c" still have a target. Esc leaves the item.
     inTextField: true,
     description: "Clear the selection, or leave version history.",
     run: () => {
