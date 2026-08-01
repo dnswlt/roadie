@@ -16,7 +16,7 @@ make dev-oidc             # like `make dev` but with -auth=oidc against that pro
 make test                 # Go tests (store tests skip if DATABASE_URL unset) + frontend tests
 make check                # go vet + tsc --noEmit
 make build                # production binary (embedded frontend) -> bin/roadie
-npm run --prefix web build   # frontend only (also copies index.html to dist)
+npm run --prefix web build   # frontend only (web/build.mjs: hashed assets + index.html)
 npm run --prefix web test    # frontend unit tests only
 ```
 
@@ -114,6 +114,8 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **The edit rail is a fixture, not a popup.** It holds its width whatever is
   selected, so the chart never resizes mid-task. Selecting never reopens a
   collapsed rail; only an explicit edit does (`focusPanelTitle`).
+- **Assets are content-hashed, and nothing else is cached.** `/assets/*` is
+  `immutable`, everything else `no-store` (`cacheHeaders`, server.go).
 - **Find is a list, not a filter.** Dimming the chart to matches (a third `Focus`
   variant) was considered and dropped.
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement

@@ -18,9 +18,8 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
 COPY web/ .
-# web/dist is .dockerignore'd (it is build output), but the build script starts
-# with `cp index.html favicon.svg dist/`, so the directory has to exist first.
-RUN mkdir -p dist && npm run build
+# web/dist is .dockerignore'd (it is build output); build.mjs creates it.
+RUN npm run build
 
 # --- Stage 2: build the Go binary ---
 FROM ${GO_BASE} AS gobuilder

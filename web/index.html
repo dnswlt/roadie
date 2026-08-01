@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Roadie</title>
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="app.css">
+  <link rel="icon" href="{{FAVICON}}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{APP_CSS}}">
 </head>
 <body>
   <div id="app">
     <header class="topbar">
       <span class="brand">
-        <img class="brand-logo" src="favicon.svg" alt="" width="20" height="20">
+        <img class="brand-logo" src="{{FAVICON}}" alt="" width="20" height="20">
         Roadie
       </span>
       <!-- The house opens Home (list, preview, new/import, trash); the name
@@ -84,6 +84,6 @@
          top of it as nested modals. Content is built by home.ts on open. -->
     <dialog id="home-dialog"></dialog>
   </div>
-  <script src="app.js"></script>
+  <script src="{{APP_JS}}"></script>
 </body>
 </html>

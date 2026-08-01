@@ -148,11 +148,36 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 		// only ever sees requests that already carry a valid session.
 		s.handler = s.auth.Middleware(requireClientHeader(s.mux))
 	}
+	// Outermost, so it also covers what the auth middleware writes itself: the
+	// redirect into the login flow, which carries a Set-Cookie.
+	s.handler = cacheHeaders(s.handler)
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
+}
+
+// assetPrefix holds the build's content-hashed output (web/build.mjs). A hashed
+// URL changes whenever its bytes do, which is what makes caching it forever safe.
+const assetPrefix = "/assets/"
+
+// cacheHeaders is the whole cache policy. Hashed assets are immutable;
+// everything else is roadmap data, a session cookie, or the index.html naming
+// those hashes, and must never be stored. Sessions are cookies, not
+// Authorization headers, so RFC 9111 does not stop a shared cache from keeping
+// a private roadmap's JSON without this. Dev serves web/dist from disk and
+// production serves the same tree from go:embed, both through here, so the two
+// cache identically by construction rather than by discipline.
+func cacheHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, assetPrefix) {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireClientHeader rejects mutating API calls that omit X-Client-Id.
