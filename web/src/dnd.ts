@@ -307,7 +307,9 @@ function onPointerMove(e: PointerEvent): void {
   }
 
   const px = currentScale().pxPerDay;
-  const grid = gridSnapper(bypass, state.snapMode, d.scheduleBounds);
+  // Alt is handled here rather than in snap.ts: it suppresses the feature magnets
+  // as well as the grid, so each branch below skips snapping outright.
+  const grid = gridSnapper(state.snapMode, d.scheduleBounds);
   // Feature magnets (other items' edges, milestones, today). Shift drops them so
   // only the selected granularity's grid snaps — calmer when a coarse grid
   // (quarter / schedule) would otherwise fight nearby features.

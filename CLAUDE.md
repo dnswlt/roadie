@@ -89,12 +89,11 @@ access. Adding a mutating route outside it silently loses all four. The one
 deliberate exception is roadmap DELETE — see below.
 
 **Snapping (snap.ts, driven by dnd.ts) is the most delicate UX here.** It runs in
-the boundary domain (a bar owns `[start, end+1)`); the file explains why. Treat it
-carefully and keep any new snapping in that domain — and in snap.ts, which is
-DOM-free precisely so `snap.test.ts` can pin properties (monotonic under a drag,
-duration preserved, features beat the grid) that hand-testing keeps missing. A
-miss is `null`, never "the input unchanged": an edge exactly on a magnet is a hit,
-and conflating the two lets the grid pull it back off.
+the boundary domain (a bar owns `[start, end+1)`). Keep new snapping in that
+domain, and in snap.ts — DOM-free so snap.test.ts can pin what hand-testing
+misses. **Every decision is "nearest target from a fixed set"**, never "try A,
+else B": that is what makes a drag monotonic. Both snapping bugs so far were the
+second shape.
 
 **Auth off is the default and must keep working** — no login, everyone edits, plain
 `curl` against the API. `auth.From(ctx)` always returns an `Identity` (anonymous
@@ -109,11 +108,9 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **The flag is not a reserved label.** A magic string in free-form text is a
   convention, not an invariant, and toggling would be a read-modify-write that loses
   concurrent label edits under SSE.
-- **A move grid-snaps its start edge only.** The grid has no radius, so two
-  competing edges are two unbounded attractors: the winner flips mid-drag and the
-  bar jumps up to half a grid period. Aligning an *end* is a feature magnet's job
-  (neighbour edges, milestones, today — those keep both edges live, and they are
-  radius-limited, so they can only ever nudge).
+- **A move grid-snaps its start edge only.** Both edges competing made the winner
+  flip mid-drag and the bar jump half a grid period. Features still align either
+  edge, so a bar can still close flush against a neighbour.
 - **Find is a list, not a filter.** Dimming the chart to matches (a third `Focus`
   variant) was considered and dropped.
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement
