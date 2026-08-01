@@ -18,8 +18,10 @@ import {
   addChildToSelection,
   addItemToSelection,
   deleteSelection,
+  editSelection,
   flushPendingEdit,
   toggleFlagSelection,
+  togglePanel,
 } from "./panel";
 import { state } from "./state";
 
@@ -89,6 +91,15 @@ export const bindings: Binding[] = [
     run: () => void addChildToSelection(),
   },
   {
+    key: "e",
+    label: "e",
+    description: "Edit the selected item or milestone's title.",
+    // Moves focus into the Title field, so the "e" must not also be typed
+    // into it — same reason as "/".
+    preventDefault: true,
+    run: () => editSelection(),
+  },
+  {
     key: "!",
     label: "!",
     description: "Flag or unflag the selected items.",
@@ -102,6 +113,12 @@ export const bindings: Binding[] = [
     // typed into it.
     preventDefault: true,
     run: () => openFind(),
+  },
+  {
+    key: "p",
+    label: "p",
+    description: "Collapse or expand the edit panel.",
+    run: () => togglePanel(),
   },
 ];
 

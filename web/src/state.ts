@@ -72,6 +72,12 @@ class AppState {
   // item-edge snapping). A global view preference, persisted in localStorage.
   snapMode: SnapMode = "week";
   panelWidth = DEFAULT_PANEL_WIDTH;
+  // The edit rail is a fixture, not a popup: it keeps its width whatever is
+  // selected, so the chart never resizes under the pointer mid-task. Collapsing
+  // is the only thing that narrows it, and selecting never brings it back — only
+  // an explicit edit does (see focusPanelTitle). Persisted in localStorage like
+  // panelWidth (read at boot in app.ts).
+  panelCollapsed = false;
   // Focus mode: when set, items that don't match are dimmed. A transient
   // "what's relevant right now" view, not persisted. The target is either one
   // label or the flag — kept as one exclusive field rather than two, since

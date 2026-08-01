@@ -1316,26 +1316,101 @@ kbd {
 
 /* Panel */
 
+/* The rail is [body][toggle]: a scrolling content column and a fixed gutter at
+   the window edge. Collapsing drops the body, so the gutter is all that's left —
+   which is why the toggle never moves between the two states.
+
+   No width transition, deliberately. It existed to soften the panel popping in
+   and out on every selection; the rail is a fixture now, so the only width
+   changes left are ones the user asked for, and those read better instantly. It
+   also animated the *first* paint — the rail starts at width 0 and the first
+   render opens it, so every page load slid it in. */
 .panel {
+  display: flex;
   width: 0;
   overflow: hidden;
   flex: none;
   background: var(--surface);
   border-left: 1px solid var(--border);
-  transition: width 0.15s ease;
 }
 
 /* Open width comes from an inline style (state.panelWidth); the value here is
-   only a fallback. Dragging the resize handle adds .resizing to skip the
-   open/close transition so the panel tracks the pointer instantly. */
+   only a fallback. */
 .panel.open {
   width: 420px;
-  padding: 16px;
+}
+
+/* Collapsed: the gutter alone, so this matches .panel-toggle's width. Width 0
+   (the base rule) is reserved for version history taking the side over
+   completely — collapsing by hand always leaves the way back on screen. */
+.panel.collapsed {
+  width: 16px;
+}
+
+/* No right padding: the toggle gutter beside it is empty below the chevron, so
+   it serves as the right margin. Padding here as well would gutter the content
+   twice and leave it visibly off-centre in the rail. */
+.panel-body {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 0 16px 16px;
   overflow-y: auto;
 }
 
-.panel.resizing {
-  transition: none;
+/* The gutter is the button, in both states — the chevron only turns around.
+   Its width is the body's padding, so the content sits evenly between the
+   rail's two edges; the chevron's ink covers only the middle of its box, so it
+   still reads as air rather than a crowded edge. Narrow is also the point when
+   collapsed, where this strip is the entire rail.
+
+   The chevron is centred vertically, and deliberately nowhere near the header's
+   icons: near-but-not-aligned read as a failed alignment. Centred it belongs to
+   the rail's edge rather than to any row in it, and it stays put whatever the
+   view shows. */
+.panel-toggle {
+  flex: none;
+  width: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* A button's UA padding is not 0 (~1px 6px): left unset it eats most of a
+     16px-wide box and the glyph shrinks to a sliver. */
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.panel-toggle:hover {
+  background: var(--grid);
+  color: var(--ink);
+}
+
+/* The strip is exactly as wide as the glyph, so the glyph must not be a
+   shrinkable flex item. */
+.panel-toggle svg {
+  flex: none;
+}
+
+/* The rail's no-fields views (nothing selected, several selected). Quiet on
+   purpose: the rail holds its place so the chart stops moving, and it should
+   not compete for attention while it has nothing to say. */
+.panel-note {
+  margin-top: 24px;
+}
+
+.panel-note-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.panel-note-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
 }
 
 /* Drag handle between the chart and the panel; only shown when the panel is

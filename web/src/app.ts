@@ -352,7 +352,6 @@ function wirePanelResize(): void {
     e.preventDefault();
     panelResize.setPointerCapture(e.pointerId);
     panelResize.classList.add("dragging");
-    panel.classList.add("resizing"); // suppress the width transition while dragging
     const startX = e.clientX;
     const startW = panel.offsetWidth;
     const onMove = (ev: PointerEvent) => {
@@ -363,7 +362,6 @@ function wirePanelResize(): void {
     const onUp = (ev: PointerEvent) => {
       panelResize.releasePointerCapture(ev.pointerId);
       panelResize.classList.remove("dragging");
-      panel.classList.remove("resizing");
       panelResize.removeEventListener("pointermove", onMove);
       panelResize.removeEventListener("pointerup", onUp);
       state.panelWidth = panel.offsetWidth;
@@ -576,7 +574,12 @@ function wireChart(): void {
     if (laneEl) {
       const laneId = Number(laneEl.dataset.laneId);
       if (t.closest(".lane-add")) {
-        void actions.addItem(laneId, null);
+        // The mouse twin of "n": create, then drop the cursor in the new title
+        // (which reveals the rail if it was collapsed). Without this, clicking +
+        // and pressing "n" would leave you in two different places.
+        void actions.addItem(laneId, null).then((item) => {
+          if (item) focusPanelTitle();
+        });
         return;
       }
       const menuBtn = t.closest<HTMLElement>(".lane-menu-btn");
@@ -745,7 +748,9 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
   addMs.append(icons.flag(16), text("Add milestone"));
   addMs.addEventListener("click", () => {
     closeLaneMenu();
-    void actions.addMilestone(laneId);
+    // Same as the lane's + button: the milestone is created selected, so put
+    // the cursor in its title rather than leaving it named "New milestone".
+    void actions.addMilestone(laneId).then(() => focusPanelTitle());
   });
 
   const color = document.createElement("button");
@@ -955,6 +960,7 @@ async function boot(): Promise<void> {
   if (storedWidth) {
     state.panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, storedWidth));
   }
+  state.panelCollapsed = localStorage.getItem("roadie.panelCollapsed") === "1";
 
   // Capture the deep link before anything can rewrite the address bar.
   const target = readUrl();

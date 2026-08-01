@@ -137,17 +137,38 @@ export async function addChildToSelection(): Promise<void> {
 
 // focusPanelTitle drops the cursor into the edit panel's Title field with the
 // text pre-selected, so "n" flows straight into typing the real title. Its
-// callers are the create shortcuts here and the double-click-to-rename
-// gestures (dnd.ts for bars, app.ts for milestones) — the panel's own +
-// buttons leave focus where it was. Safe to call right after the notify that
-// (re)rendered the panel: that happens synchronously, so the field already
-// exists. No-ops when the panel is closed or showing a snapshot preview,
-// where there is no title input to find.
+// callers are the create paths and the rename gestures (double-click a bar or
+// milestone, or "e") — the panel's own + buttons leave focus where it was.
+// Safe to call right after the notify that (re)rendered the panel: that happens
+// synchronously, so the field already exists.
+//
+// This is also the one thing that reopens a collapsed rail, and the line worth
+// holding: *selecting* never reopens it, because browsing a roadmap is not
+// editing it and a rail that springs back on every click is the popping panel
+// we replaced. But every caller here has already put the user in an editing
+// context — a new item waiting to be named, a rename they asked for — so a
+// collapsed rail would silently swallow the action. Revealing is skipped while
+// version history owns the side, where it could not take effect anyway and
+// would only leave a surprise behind for when they return.
 export function focusPanelTitle(): void {
+  if (state.panelCollapsed && state.history === null) setPanelCollapsed(false);
   const el = document.getElementById(PANEL_TITLE_ID);
   if (!(el instanceof HTMLInputElement)) return;
   el.focus();
   el.select();
+}
+
+// editSelection is the "e" shortcut: put the cursor in the selected thing's
+// title. The mouse twin is double-clicking a bar or a milestone, so both go
+// through focusPanelTitle and can't drift.
+//
+// Needs exactly one target, like "n" and "c": selectedItemId is null for a
+// multi-selection, so "e" no-ops there rather than picking a title arbitrarily.
+// The guard also keeps a stray "e" from reopening the rail with nothing in it.
+export function editSelection(): void {
+  if (state.preview) return;
+  if (state.selectedMilestoneId === null && state.selectedItemId === null) return;
+  focusPanelTitle();
 }
 
 // toggleFlagSelection flags or unflags every selected item, behind the panel
@@ -214,7 +235,7 @@ export function flushPendingEdit(): void {
 function closeButton(): HTMLButtonElement {
   const close = document.createElement("button");
   close.className = "icon-btn";
-  close.title = "Close";
+  close.title = "Clear selection";
   close.append(icons.x());
   close.addEventListener("mousedown", (e) => e.preventDefault());
   close.addEventListener("click", () => {
@@ -225,22 +246,168 @@ function closeButton(): HTMLButtonElement {
   return close;
 }
 
+// setPanelCollapsed is the only thing that changes the rail's presence, so the
+// persistence lives with it rather than in app.ts (which reads it back at boot).
+// notifySelection is the right scope: the rail's width is not chart geometry —
+// bar positions come from the zoom, not from how much room is left.
+function setPanelCollapsed(collapsed: boolean): void {
+  state.panelCollapsed = collapsed;
+  localStorage.setItem("roadie.panelCollapsed", collapsed ? "1" : "0");
+  state.notifySelection();
+}
+
+// togglePanel is the "p" shortcut, the keyboard twin of the toggle strip. No
+// flushPendingEdit, unlike the strip's own click: "p" cannot fire while a panel
+// field has focus (keys.ts suppresses bare-letter shortcuts in text fields), and
+// a field that has lost focus has already committed on `change`.
+//
+// Ignored while version history owns the side, where it would change nothing on
+// screen and leave the rail in an unexpected state on the way back — the same
+// reason focusPanelTitle does not reveal there.
+export function togglePanel(): void {
+  if (state.history !== null) return;
+  setPanelCollapsed(!state.panelCollapsed);
+}
+
+// toggleStrip is the rail's outer edge: a full-height gutter that is itself the
+// button, with the chevron flipping to say which way it goes. It is furniture —
+// always present, never rebuilt by a view — so collapsing and expanding are one
+// control that never moves, rather than two that have to be lined up.
+//
+// Lightroom puts this strip on the panel's inner edge; here that edge belongs to
+// the resize handle, and the outer edge is steadier anyway: it is the window's
+// edge, so it stays put whatever the rail's width.
+function toggleStrip(collapsed: boolean): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "panel-toggle";
+  b.title = collapsed ? "Show panel" : "Collapse panel";
+  b.append(collapsed ? icons.chevronLeft(16) : icons.chevronRight(16));
+  // Same reason as closeButton: don't blur the focused field before the click.
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  b.addEventListener("click", () => {
+    flushPendingEdit();
+    setPanelCollapsed(!collapsed);
+  });
+  return b;
+}
+
+// railHead builds the header every view shares: what you are looking at on the
+// left, its actions on the right.
+function railHead(kindText: string, ...actions: HTMLElement[]): HTMLElement {
+  const head = document.createElement("div");
+  head.className = "panel-head";
+  const kind = document.createElement("span");
+  kind.className = "panel-kind";
+  kind.textContent = kindText;
+  const headActions = document.createElement("div");
+  headActions.className = "panel-head-actions";
+  headActions.append(...actions);
+  head.append(kind, headActions);
+  return head;
+}
+
+// railBody returns the element the views render into, rebuilding the rail's
+// structure ([body][toggle]) when it isn't there — which is the case on first
+// render and whenever the collapsed strip has replaced it.
+function railBody(panel: HTMLElement): HTMLElement {
+  const existing = panel.querySelector<HTMLElement>(":scope > .panel-body");
+  if (existing) return existing;
+  const body = document.createElement("div");
+  body.className = "panel-body";
+  panel.replaceChildren(body, toggleStrip(false));
+  return body;
+}
+
+// noteBlock is what the rail shows when there are no fields to show: a line
+// saying where you are and a line saying how to get somewhere useful.
+function noteBlock(title: string, hint: string): HTMLElement {
+  const note = document.createElement("div");
+  note.className = "panel-note";
+  const t = document.createElement("p");
+  t.className = "panel-note-title";
+  t.textContent = title;
+  const h = document.createElement("p");
+  h.className = "panel-note-hint";
+  h.textContent = hint;
+  note.append(t, h);
+  return note;
+}
+
+// renderEmptyRail: nothing selected. The rail says so and holds its place,
+// which is the whole point — the alternative is the chart jumping every time
+// you click empty canvas.
+function renderEmptyRail(body: HTMLElement): void {
+  if (renderedKey === "empty") return;
+  renderedKey = "empty";
+  // No head: there is no kind of thing being shown and nothing to act on. The
+  // toggle strip is furniture outside the body, so it is unaffected.
+  body.replaceChildren(noteBlock("Nothing selected", "Pick an item or milestone to edit it."));
+  // Drop the last item's lane accent; nothing here should still be wearing it.
+  body.style.removeProperty("--c");
+}
+
+// renderSelectionPanel: several items selected. The fields are all per-item, so
+// there is nothing to edit here — but Delete is already defined for many (the
+// Del shortcut has always handled it, see deleteSelection), and showing the
+// count turns a panel that used to vanish into one that explains itself.
+function renderSelectionPanel(body: HTMLElement): void {
+  const n = state.selectedItemIds.size;
+  // Keyed on the count alone: the view shows nothing else about *which* items
+  // are selected, and Delete reads the live selection when clicked.
+  const key = `multi:${n}`;
+  if (renderedKey === key) return;
+  renderedKey = key;
+  body.replaceChildren();
+  body.style.removeProperty("--c");
+
+  const note = noteBlock(`${n} items selected`, "Select a single item to edit its fields.");
+
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "panel-actions";
+  actionsRow.append(deleteButton(`Delete ${n} items`, () => deleteSelection()));
+
+  body.append(railHead("Selection", closeButton()), note, actionsRow);
+}
+
+// renderPanel routes the rail to one of four views. The rail itself is a
+// fixture — it holds its width whatever is selected, so selecting and
+// deselecting never resizes the chart out from under you. Only two things ever
+// take it away: collapsing it by hand, and version history, which owns the
+// right-hand side while you browse.
 export function renderPanel(panel: HTMLElement): void {
   panelEl = panel;
   // While browsing version history the right side belongs to the history list,
-  // and a snapshot preview is read-only — so the edit panel steps aside.
+  // and a snapshot preview is read-only — so the edit rail stows entirely.
   if (state.history !== null) {
-    panel.classList.remove("open");
+    panel.classList.remove("open", "collapsed");
     panel.style.width = "";
     panel.replaceChildren();
     renderedKey = null;
     return;
   }
 
+  // Collapsed, the strip is the whole rail. Selecting something does not expand
+  // it — a rail that reopens on selection is the popping panel this replaces.
+  if (state.panelCollapsed) {
+    panel.classList.remove("open");
+    panel.classList.add("collapsed");
+    panel.style.width = "";
+    if (renderedKey === "collapsed") return;
+    renderedKey = "collapsed";
+    panel.replaceChildren(toggleStrip(true));
+    panel.style.removeProperty("--c");
+    return;
+  }
+
+  panel.classList.remove("collapsed");
+  panel.classList.add("open");
+  panel.style.width = `${state.panelWidth}px`;
+  const body = railBody(panel);
+
   const msId = state.selectedMilestoneId;
   const msLoc = msId !== null ? state.findMilestone(msId) : null;
   if (msLoc) {
-    renderMilestonePanel(panel, msLoc);
+    renderMilestonePanel(body, msLoc);
     return;
   }
 
@@ -248,10 +415,10 @@ export function renderPanel(panel: HTMLElement): void {
   const loc = id !== null ? state.findItem(id) : null;
 
   if (!loc) {
-    panel.classList.remove("open");
-    panel.style.width = "";
-    panel.replaceChildren();
-    renderedKey = null;
+    // selectedItemId is null for a multi-selection too, so the two empty-ish
+    // views are distinguished here rather than by the absence of an item.
+    if (state.hasMultiSelection()) renderSelectionPanel(body);
+    else renderEmptyRail(body);
     return;
   }
 
@@ -261,23 +428,17 @@ export function renderPanel(panel: HTMLElement): void {
     return;
   }
   renderedKey = key;
-  panel.classList.add("open");
-  panel.style.width = `${state.panelWidth}px`;
-  panel.replaceChildren();
+  body.replaceChildren();
 
   const { item, lane, parent } = loc;
   // Tie the panel's accent (priority chips) to the item's lane color.
-  panel.style.setProperty("--c", laneColorValue(lane.color));
+  body.style.setProperty("--c", laneColorValue(lane.color));
 
-  const head = document.createElement("div");
-  head.className = "panel-head";
-  const kind = document.createElement("span");
-  kind.className = "panel-kind";
-  kind.textContent = parent ? "Child item" : "Item";
-  const headActions = document.createElement("div");
-  headActions.className = "panel-head-actions";
-  headActions.append(copyLinkButton("item", item.id), closeButton());
-  head.append(kind, headActions);
+  const head = railHead(
+    parent ? "Child item" : "Item",
+    copyLinkButton("item", item.id),
+    closeButton(),
+  );
 
   const crumb = crumbLine(parent ? `${lane.name} › ${parent.title}` : lane.name);
 
@@ -379,7 +540,7 @@ export function renderPanel(panel: HTMLElement): void {
   attrs.className = "panel-attrs";
   attrs.append(dates, prio, labels);
 
-  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
+  body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
 
 // deleteButton is the panel's destructive action for both items and
@@ -492,28 +653,18 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
   return wrap;
 }
 
-function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void {
+function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   const { milestone, lane } = loc;
   const key = `ms:${milestone.id}`;
   // Don't rebuild under the user's cursor while they are typing.
-  if (renderedKey === key && panel.contains(document.activeElement)) {
+  if (renderedKey === key && body.contains(document.activeElement)) {
     return;
   }
   renderedKey = key;
-  panel.classList.add("open");
-  panel.style.width = `${state.panelWidth}px`;
-  panel.replaceChildren();
-  panel.style.setProperty("--c", laneColorValue(lane.color));
+  body.replaceChildren();
+  body.style.setProperty("--c", laneColorValue(lane.color));
 
-  const head = document.createElement("div");
-  head.className = "panel-head";
-  const kind = document.createElement("span");
-  kind.className = "panel-kind";
-  kind.textContent = "Milestone";
-  const headActions = document.createElement("div");
-  headActions.className = "panel-head-actions";
-  headActions.append(copyLinkButton("milestone", milestone.id), closeButton());
-  head.append(kind, headActions);
+  const head = railHead("Milestone", copyLinkButton("milestone", milestone.id), closeButton());
 
   const crumb = crumbLine(lane.name);
 
@@ -557,7 +708,7 @@ function renderMilestonePanel(panel: HTMLElement, loc: MilestoneLocation): void 
   attrs.className = "panel-attrs";
   attrs.append(dateField.wrap);
 
-  panel.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
+  body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
 
 function field(

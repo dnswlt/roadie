@@ -111,6 +111,9 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **A move grid-snaps its start edge only.** Both edges competing made the winner
   flip mid-drag and the bar jump half a grid period. Features still align either
   edge, so a bar can still close flush against a neighbour.
+- **The edit rail is a fixture, not a popup.** It holds its width whatever is
+  selected, so the chart never resizes mid-task. Selecting never reopens a
+  collapsed rail; only an explicit edit does (`focusPanelTitle`).
 - **Find is a list, not a filter.** Dimming the chart to matches (a third `Focus`
   variant) was considered and dropped.
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement

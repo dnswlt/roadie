@@ -87,6 +87,7 @@ export const icons = {
       size,
     ),
   chevronDown: (size = 14) => svg(`<path d="m6 9 6 6 6-6"/>`, size),
+  chevronLeft: (size = 14) => svg(`<path d="m15 6-6 6 6 6"/>`, size),
   chevronRight: (size = 14) => svg(`<path d="m9 6 6 6-6 6"/>`, size),
   copy: (size = 16) =>
     svg(
