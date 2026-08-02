@@ -3,13 +3,14 @@
 // delete) go through actions.ts.
 
 import { actions } from "./actions";
+import { copyText } from "./clipboard";
 import { laneColorValue } from "./colors";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { extractUrls, linkLabel } from "./links";
+import { itemMarkdown } from "./markdown";
 import { state, type MilestoneLocation } from "./state";
-import { toast } from "./toast";
-import type { Item, ItemFull, Milestone } from "./types";
+import type { Item, ItemFull, LaneFull, Milestone } from "./types";
 import { selectionLink } from "./url";
 
 const PANEL_TITLE_ID = "panel-item-title";
@@ -197,15 +198,27 @@ function copyLinkButton(kind: "item" | "milestone", id: number): HTMLButtonEleme
   btn.className = "icon-btn";
   btn.title = "Copy link";
   btn.append(icons.link(16));
-  btn.addEventListener("click", async () => {
+  btn.addEventListener("click", () => {
     const roadmap = state.current;
     if (!roadmap) return;
-    try {
-      await navigator.clipboard.writeText(selectionLink(roadmap, kind, id));
-      toast("Link copied");
-    } catch {
-      toast("Couldn't copy link", true);
-    }
+    void copyText(selectionLink(roadmap, kind, id), "Link");
+  });
+  return btn;
+}
+
+// copyMarkdownButton copies the selected item as Markdown — the chart is the one
+// part of a roadmap you cannot paste into a chat, an issue, or a prompt. Sits
+// beside the link button: both answer "get this out of Roadie", one as a
+// reference and one as content.
+function copyMarkdownButton(item: Item, lane: LaneFull, parent: ItemFull | null): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = "icon-btn";
+  btn.title = "Copy as Markdown";
+  btn.append(icons.copy(16));
+  btn.addEventListener("click", () => {
+    const roadmap = state.current;
+    if (!roadmap) return;
+    void copyText(itemMarkdown(roadmap, lane, item, parent), "Markdown");
   });
   return btn;
 }
@@ -436,6 +449,7 @@ export function renderPanel(panel: HTMLElement): void {
 
   const head = railHead(
     parent ? "Child item" : "Item",
+    copyMarkdownButton(item, lane, parent),
     copyLinkButton("item", item.id),
     closeButton(),
   );

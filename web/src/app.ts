@@ -10,9 +10,11 @@ import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { initHome, openHome } from "./home";
 import { openHelpDialog } from "./help";
+import { copyText } from "./clipboard";
 import { bindings, initKeys } from "./keys";
 import { LABEL_W } from "./layout";
 import { currentScale, projectSelection, renderChart } from "./render";
+import { laneMarkdown, roadmapMarkdown } from "./markdown";
 import { focusPanelTitle, renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
@@ -118,6 +120,7 @@ function renderTopbar(): void {
   ($("rm-history") as HTMLButtonElement).disabled = !state.current;
   ($("rm-schedule") as HTMLButtonElement).disabled = !state.current;
   ($("rm-export") as HTMLButtonElement).disabled = !state.current;
+  ($("rm-copy-md") as HTMLButtonElement).disabled = !state.current;
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
   // Find searches the loaded roadmap, so it has nothing to do without one.
   ($("find-menu") as HTMLButtonElement).disabled = !state.current;
@@ -328,6 +331,7 @@ function injectIcons(): void {
   $("rm-history").prepend(icons.history(14));
   $("rm-schedule").prepend(icons.calendar(14));
   $("rm-export").prepend(icons.download(14));
+  $("rm-copy-md").prepend(icons.copy(14));
   $("rm-delete").prepend(icons.trash(14));
   $("snap-menu").append(icons.magnet(18));
   $("zoom-fit").append(icons.zoomFit());
@@ -442,6 +446,13 @@ function wireTopbar(): void {
   $("rm-export").addEventListener("click", () => {
     menuPop.classList.add("hidden");
     actions.exportRoadmap();
+  });
+  // Export downloads the JSON that import and snapshots round-trip; this copies
+  // the same roadmap as prose, for pasting somewhere that reads rather than
+  // restores it.
+  $("rm-copy-md").addEventListener("click", () => {
+    menuPop.classList.add("hidden");
+    if (state.current) void copyText(roadmapMarkdown(state.current), "Markdown");
   });
   $("rm-delete").addEventListener("click", async () => {
     menuPop.classList.add("hidden");
@@ -696,6 +707,14 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     toggleColorPop(anchor, laneId);
   });
 
+  const copyMd = document.createElement("button");
+  copyMd.className = "menu-item";
+  copyMd.append(icons.copy(16), text("Copy as Markdown"));
+  copyMd.addEventListener("click", () => {
+    closeLaneMenu();
+    if (state.current) void copyText(laneMarkdown(state.current, lane), "Markdown");
+  });
+
   const del = document.createElement("button");
   del.className = "menu-item menu-danger";
   del.append(icons.trash(16), text("Delete context"));
@@ -710,7 +729,7 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     })();
   });
 
-  menu.append(addMs, color, rename, del);
+  menu.append(addMs, color, copyMd, rename, del);
   document.body.append(menu);
   // Right-aligned under the button, which keeps it clear of the right edge.
   placePopover(menu, anchor, "right");
