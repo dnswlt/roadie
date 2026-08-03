@@ -14,6 +14,7 @@ make dev                  # esbuild watch + Go server (-dev -seed) on http://loc
 make -C dev/oidc up       # start the throwaway OIDC provider (dev/oidc)
 make dev-oidc             # like `make dev` but with -auth=oidc against that provider
 make test                 # Go tests (store tests skip if DATABASE_URL unset) + frontend tests
+make test-e2e             # browser gesture tests (web/e2e); needs db-up + `npx --prefix web playwright install chromium` once
 make check                # go vet + tsc --noEmit
 make build                # production binary (embedded frontend) -> bin/roadie
 npm run --prefix web build   # frontend only (web/build.mjs: hashed assets + index.html)
@@ -125,8 +126,13 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**
-- **No browser automation.** Keeping scripts working against this UI costs more than
-  it catches.
+- **E2E is a gesture smoke layer, not a UI test suite** (`web/e2e`, `make test-e2e`).
+  Playwright exists only for what needs a real layout engine — pointer gestures —
+  and every test follows one pattern: **seed via API, act via pointer, assert via
+  API, purge**. The UI is the actuator, the model is the oracle: no DOM-content
+  assertions, no screenshots, and the only selectors are the class contracts the
+  controllers themselves hit-test. Tests run against the open-auth server on their
+  own port and create/purge their own roadmaps, so a live dev DB is safe.
 
 Deliberate exceptions and scope limits, so they don't read as bugs:
 
@@ -140,8 +146,9 @@ Deliberate exceptions and scope limits, so they don't read as bugs:
 
 ## Ask first
 
-A third render scope · multi-track schedule · anything that adds browser automation ·
-a second flag · changing what `-auth=off` does.
+A third render scope · multi-track schedule · e2e tests outside the gesture
+pattern (DOM-content assertions, screenshots, non-gesture flows) · a second flag ·
+changing what `-auth=off` does.
 
 ## Verification
 
@@ -149,5 +156,7 @@ Beyond `make test` / `make check`, UI changes must be exercised in a real browse
 **by the user, by hand** — there is no DOM test runner here. Test pure logic by
 extracting it into a DOM-free module (`links.ts` ← `links.test.ts`, `search.ts`,
 `timescale.ts`, `schedule.ts`, `snap.ts`); frontend tests are `node:test` files
-next to their source, transpiled into `web/test-out/`. When a change needs eyes on
-it, say so and describe what to look at.
+next to their source, transpiled into `web/test-out/`. Pointer gestures — the one
+thing neither route covers — are pinned by the e2e smoke layer (`web/e2e`; see the
+settled pattern below). When a change needs eyes on it, say so and describe what
+to look at.

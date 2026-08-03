@@ -5,9 +5,11 @@
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
     "check": "tsc --noEmit",
-    "test": "rm -rf test-out && esbuild src/*.test.ts --bundle --platform=node --format=cjs --outdir=test-out --log-level=warning && node --test 'test-out/*.test.js'"
+    "test": "rm -rf test-out && esbuild src/*.test.ts --bundle --platform=node --format=cjs --outdir=test-out --log-level=warning && node --test 'test-out/*.test.js'",
+    "e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.1",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.0"

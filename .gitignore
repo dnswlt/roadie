@@ -3,3 +3,5 @@ web/node_modules/
 web/dist/*
 !web/dist/.gitkeep
 web/test-out/
+web/test-results/
+web/playwright-report/

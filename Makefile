@@ -92,6 +92,13 @@ test:
 	DATABASE_URL=$(DATABASE_URL) go test ./...
 	npm run --prefix web test
 
+# Browser gesture tests (web/e2e, Playwright) — deliberately not part of
+# `test`: they need the dev DB up and a browser installed
+# (`npx --prefix web playwright install chromium`, once). They reuse a running
+# `make dev` server, or start their own against the dev DB.
+test-e2e:
+	npm run --prefix web e2e
+
 check:
 	go vet ./...
 	npm run --prefix web check
