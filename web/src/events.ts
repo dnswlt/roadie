@@ -12,6 +12,7 @@
 import { actions } from "./actions";
 import { api, clientId } from "./api";
 import { isDragging } from "./dnd";
+import { isWbsDragging } from "./wbs-dnd";
 import { state } from "./state";
 
 // REFRESH_DEBOUNCE_MS coalesces a burst of events (a parent moved with its
@@ -84,7 +85,7 @@ export function connectEvents(roadmapId: number): void {
 // a snapshot preview (read-only), a live drag, or a focused edit-panel field.
 function isEditing(): boolean {
   if (state.preview) return true;
-  if (isDragging()) return true;
+  if (isDragging() || isWbsDragging()) return true;
   return !!panelEl && panelEl.contains(document.activeElement);
 }
 

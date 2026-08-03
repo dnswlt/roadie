@@ -8,9 +8,11 @@
 // The item rows deliberately share NO classes with the timeline's bars: each
 // pointer controller must only ever see its own view's elements, so dnd.ts
 // (which matches .bar/.child-bar) is structurally inert here rather than
-// gated by a mode check. Row clicks are handled in app.ts wireChart. The
-// shared appearance lives in styles.css; the shared furniture builders
-// (title, pill, flag, link, chevron) come from render.ts.
+// gated by a mode check. Row gestures — click, double-click, and the vertical
+// reorder/nest/cross-lane drag — live in wbs-dnd.ts; milestone rows and the
+// group fold stay on app.ts wireChart. The shared appearance lives in
+// styles.css; the shared furniture builders (title, pill, flag, link,
+// chevron) come from render.ts.
 
 import { laneColorValue } from "./colors";
 import { icons } from "./icons";
@@ -145,6 +147,7 @@ function renderItemBlock(item: ItemFull): HTMLElement {
   const hasChildren = item.children.length > 0;
   const collapsed = hasChildren && state.isCollapsed(item.id);
   const block = div(hasChildren ? "wbs-block has-children" : "wbs-block");
+  block.dataset.itemId = String(item.id); // wbs-dnd.ts resolves drop targets by it
   block.append(renderRow(item, hasChildren ? disclosure(item, collapsed) : null, false));
   if (!collapsed) for (const c of item.children) block.append(renderRow(c, null, true));
   return block;

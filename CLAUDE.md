@@ -48,14 +48,15 @@ internal/store** — not in triggers, not in handlers.
 Frontend: web/src, TypeScript, no framework, esbuild. `state.ts` is the single
 client-side source of truth (subscribe/notify); there is no virtual DOM and no
 diffing. `actions.ts` wraps every mutation (optimistic apply → API → rollback +
-toast). `dnd.ts` is one pointer-event controller for all gestures.
+toast). `dnd.ts` is one pointer-event controller for all timeline gestures;
+`wbs-dnd.ts` is its WBS twin (vertical only), each blind to the other view's DOM.
 
 Where things live: snapshots (store/server/`history.ts`) · trash
 (`trash.go`) · visibility (`store/access.go`, `s.guard`) · contributors
 (`contributors.go`) · schedule (`schedule.go`, `schedule.ts`) · SSE
 (`server/events.go`, `events.ts`) · auth (`internal/auth`) · find
 (`search.ts` + `find.ts`) · Home dialog (`home.ts`) · shortcuts (`keys.ts`) ·
-snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts`).
+snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`).
 
 ## Rules
 

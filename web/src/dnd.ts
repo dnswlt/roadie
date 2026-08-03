@@ -406,7 +406,10 @@ function updateDropTarget(d: ItemDrag, e: PointerEvent): void {
   canvas.classList.add("drop-lane");
 }
 
-function elementsExcept(root: HTMLElement, selector: string, excludeId: number): HTMLElement[] {
+// elementsExcept and indexFromY are shared with wbs-dnd.ts: resolving "which
+// slot is the pointer over" is the same geometry in both views, even though
+// the elements it runs over never are.
+export function elementsExcept(root: HTMLElement, selector: string, excludeId: number): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(
     (el) => Number(el.dataset.itemId) !== excludeId,
   );
@@ -414,7 +417,7 @@ function elementsExcept(root: HTMLElement, selector: string, excludeId: number):
 
 // indexFromY returns the insertion index among `els` (in DOM = rank order)
 // for a pointer at clientY: the number of elements whose center is above it.
-function indexFromY(els: HTMLElement[], clientY: number): number {
+export function indexFromY(els: HTMLElement[], clientY: number): number {
   let idx = 0;
   for (const el of els) {
     const r = el.getBoundingClientRect();

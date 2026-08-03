@@ -1319,6 +1319,7 @@ kbd {
    selectors. */
 
 .wbs-rows {
+  position: relative; /* anchor for wbs-dnd's .item-insert line */
   flex: 1;
   min-width: 0;
   min-height: 56px; /* MIN_LANE_H */
@@ -1329,6 +1330,7 @@ kbd {
 }
 
 .wbs-block {
+  position: relative; /* insert-line anchor, and .dragging's z-index needs it */
   display: flex;
   flex-direction: column;
 }
@@ -1348,6 +1350,7 @@ kbd {
   padding: 0 8px; /* where a bar's resize handles would sit */
   background: var(--c);
   color: #fff;
+  cursor: grab; /* rows drag like bars: vertically, via wbs-dnd.ts */
   box-shadow: var(--shadow);
   user-select: none;
 }

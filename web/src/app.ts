@@ -15,6 +15,7 @@ import { bindings, initKeys } from "./keys";
 import { LABEL_W } from "./layout";
 import { currentScale, projectSelection, renderChart } from "./render";
 import { projectWbsSelection, renderWbs } from "./wbs";
+import { initWbsDnd } from "./wbs-dnd";
 import { laneMarkdown, roadmapMarkdown } from "./markdown";
 import { focusPanelTitle, renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
@@ -534,17 +535,9 @@ function wireChart(): void {
       state.setMilestonesCollapsed(laneId, !state.isMilestonesCollapsed(laneId));
       return;
     }
-    // WBS rows select like bars do in dnd.ts, with the same carve-out for the
-    // link icon (its click navigates). Shift builds the same multi-selection
-    // the timeline uses — no group drag here, but batch flag/delete apply.
-    const wbsRow = t.closest<HTMLElement>(".wbs-row");
-    if (wbsRow && !t.closest(".bar-link")) {
-      const id = Number(wbsRow.dataset.itemId);
-      if (e.shiftKey) state.toggleItem(id);
-      else state.selectItem(id);
-      state.notifySelection();
-      return;
-    }
+    // WBS item rows are wbs-dnd.ts territory (their pointerdown is
+    // preventDefault-ed, so no click ever arrives here); milestone rows are
+    // not draggable and keep their native click.
     const wbsMs = t.closest<HTMLElement>(".wbs-milestone");
     if (wbsMs) {
       state.selectMilestone(Number(wbsMs.dataset.milestoneId));
@@ -572,8 +565,9 @@ function wireChart(): void {
         return;
       }
     }
-    // Click on empty chart space clears the selection. (.wbs-row covers its
-    // link-icon click, which returns above without selecting.)
+    // Click on empty chart space clears the selection. (.wbs-row is listed
+    // for its link-icon clicks — the only row clicks that reach here, since
+    // wbs-dnd.ts lets the anchor's pointerdown through.)
     if (
       !t.closest(".bar, .child-bar, .milestone, .lane-label, .wbs-row, .wbs-milestone") &&
       state.clearSelection()
@@ -582,12 +576,11 @@ function wireChart(): void {
     }
   });
 
-  // Double-click a lane name to rename it inline; double-click a milestone or
-  // a WBS row to rename it in the panel. Real dblclick events, possible
+  // Double-click a lane name to rename it inline; double-click a milestone
+  // (either view's) to rename it in the panel. Real dblclick events, possible
   // because neither pointerdown is preventDefault-ed and selection no longer
-  // rebuilds the chart between the clicks (WBS rows survive on
-  // notifySelection like bars do). Bars get theirs from dnd.ts instead
-  // (CLAUDE.md).
+  // rebuilds the chart between the clicks. Bars get theirs from dnd.ts, WBS
+  // item rows from wbs-dnd.ts (CLAUDE.md).
   chart.addEventListener("dblclick", (e) => {
     const t = e.target as HTMLElement;
     const nameEl = t.closest<HTMLElement>(".lane-name");
@@ -596,7 +589,7 @@ function wireChart(): void {
       startLaneRename(nameEl, Number(laneEl.dataset.laneId));
       return;
     }
-    if (t.closest(".milestone, .wbs-row, .wbs-milestone")) focusPanelTitle();
+    if (t.closest(".milestone, .wbs-milestone")) focusPanelTitle();
   });
 }
 
@@ -936,6 +929,7 @@ async function boot(): Promise<void> {
   wireChart();
   wirePanelResize();
   initDnd(chart);
+  initWbsDnd(chart);
   initEvents(panel);
   initKeys();
 
