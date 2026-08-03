@@ -16,6 +16,8 @@ export interface Seeded {
 export interface ItemNode {
   id: number;
   title: string;
+  startDate: string;
+  endDate: string;
   rank: number;
   parentId: number | null;
   laneId: number;
@@ -29,10 +31,16 @@ async function post<T>(request: APIRequestContext, url: string, data: unknown): 
 }
 
 // seedRoadmap creates a fresh roadmap with one lane holding the given
-// top-level items. The dates are arbitrary but valid: WBS gestures never read
-// them, which is exactly what makes these tests independent of zoom and snap
-// settings.
-export async function seedRoadmap(request: APIRequestContext, titles: string[]): Promise<Seeded> {
+// top-level items. The default dates are arbitrary but valid: WBS gestures
+// never read them. Timeline tests may supply dates suited to their geometry.
+export async function seedRoadmap(
+  request: APIRequestContext,
+  titles: string[],
+  dates: { startDate: string; endDate: string } = {
+    startDate: "2026-01-05",
+    endDate: "2026-02-01",
+  },
+): Promise<Seeded> {
   const rm = await post<{ id: number }>(request, "/api/roadmaps", {
     name: `e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
     visibility: "public",
@@ -44,8 +52,8 @@ export async function seedRoadmap(request: APIRequestContext, titles: string[]):
       await post<ItemNode>(request, `/api/lanes/${lane.id}/items`, {
         title,
         description: "",
-        startDate: "2026-01-05",
-        endDate: "2026-02-01",
+        startDate: dates.startDate,
+        endDate: dates.endDate,
         parentId: null,
       }),
     );
