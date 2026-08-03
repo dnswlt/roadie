@@ -142,7 +142,7 @@ function renderMilestoneRow(m: Milestone): HTMLElement {
 
 // renderItemBlock builds a top-level item's rows: the parent row plus, unless
 // folded, one indented row per child — the same containment the timeline
-// draws, with the tinted block backdrop marking the family.
+// draws, with the block's color spine bracketing the family.
 function renderItemBlock(item: ItemFull): HTMLElement {
   const hasChildren = item.children.length > 0;
   const collapsed = hasChildren && state.isCollapsed(item.id);
@@ -180,6 +180,10 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   }
   const dates = div("wbs-dates");
   dates.textContent = `${formatDay(dayOf(item.startDate))} – ${formatDay(dayOf(item.endDate))}`;
-  row.append(dates, prioPill(item.priority), flagMark(item.flagged));
+  // Dates come last, not pill/flag-outermost as on a bar: every row's range
+  // then shares the right edge, and the dates read as a column — pill and
+  // chip widths vary row to row, so anything trailing the dates would make
+  // the column ragged.
+  row.append(prioPill(item.priority), flagMark(item.flagged), dates);
   return row;
 }

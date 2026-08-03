@@ -1310,13 +1310,15 @@ kbd {
   white-space: nowrap;
 }
 
-/* WBS view (wbs.ts) — the timeline's item language with the time axis
-   projected away: uniform full-width rows, no resize handles, dates as muted
-   text. Every color derives from the lane's --c exactly like the bars above.
-   The .wbs-* classes are deliberately disjoint from .bar/.child-bar so each
-   pointer controller only ever sees its own view's elements; the shared look
-   is achieved by repeating the same color-mix recipes, not by sharing
-   selectors. */
+/* WBS view (wbs.ts) — uniform full-width rows, no resize handles, dates as
+   muted text. Unlike the timeline's bars the rows are NOT filled with the
+   lane color: a bar pays for its saturation with the whitespace around it,
+   and a full-width fill at that saturation turns the outline into a wall of
+   color. Here the color budget is spent on a 3px spine per block (which
+   doubles as the family bracket) plus whisper-light row tints — all still
+   derived from --c. The .wbs-* classes are deliberately disjoint from
+   .bar/.child-bar so each pointer controller only ever sees its own view's
+   elements. */
 
 .wbs-rows {
   position: relative; /* anchor for wbs-dnd's .item-insert line */
@@ -1333,11 +1335,10 @@ kbd {
   position: relative; /* insert-line anchor, and .dragging's z-index needs it */
   display: flex;
   flex-direction: column;
-}
-
-/* Same family backdrop as .block.has-children. */
-.wbs-block.has-children {
-  background: color-mix(in oklab, var(--c) 6%, var(--surface));
+  /* The lane's color, spent as one solid edge spanning the parent row and its
+     children — the spine is both the lane's identity and the family bracket
+     that the timeline draws by containment. */
+  border-left: 3px solid var(--c);
 }
 
 .wbs-row {
@@ -1348,28 +1349,31 @@ kbd {
   gap: 2px;
   height: 30px; /* PARENT_BAR_H */
   padding: 0 8px; /* where a bar's resize handles would sit */
-  background: var(--c);
-  color: #fff;
+  background: color-mix(in oklab, var(--c) 8%, var(--surface));
+  color: var(--ink);
   cursor: grab; /* rows drag like bars: vertically, via wbs-dnd.ts */
-  box-shadow: var(--shadow);
   user-select: none;
 }
 
 .wbs-row:hover {
-  background: color-mix(in oklab, var(--c) 88%, black);
+  background: color-mix(in oklab, var(--c) 16%, var(--surface));
 }
 
-/* Child rows: the .child-bar tints, with indentation carrying the nesting the
-   timeline draws by containment. */
+/* Parent titles carry the hierarchy the solid fill used to. */
+.wbs-row:not(.wbs-child) .bar-title {
+  font-weight: 600;
+}
+
+/* Child rows: fainter still, indented, and separated by a hairline — at these
+   tints, touching rows (CHILD_GAP is 0) would otherwise blur into one. */
 .wbs-child {
   margin-left: 26px;
-  background: color-mix(in oklab, var(--c) 25%, var(--surface));
-  color: color-mix(in oklab, var(--c) 65%, black);
-  box-shadow: none;
+  background: color-mix(in oklab, var(--c) 3%, var(--surface));
+  border-top: 1px solid color-mix(in oklab, var(--c) 12%, var(--surface));
 }
 
 .wbs-child:hover {
-  background: color-mix(in oklab, var(--c) 35%, var(--surface));
+  background: color-mix(in oklab, var(--c) 12%, var(--surface));
 }
 
 .wbs-row.selected {
