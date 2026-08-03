@@ -61,6 +61,18 @@ export async function seedRoadmap(
   return { roadmapId: rm.id, laneId: lane.id, items };
 }
 
+// addLane extends a seeded roadmap when a gesture needs a structural target.
+// It returns only the server id: tests still inspect resulting content through
+// laneItems rather than through the DOM.
+export async function addLane(
+  request: APIRequestContext,
+  roadmapId: number,
+  name: string,
+): Promise<number> {
+  const lane = await post<{ id: number }>(request, `/api/roadmaps/${roadmapId}/lanes`, { name });
+  return lane.id;
+}
+
 // laneItems returns the lane's top-level items as the server sees them — the
 // oracle every test asserts against.
 export async function laneItems(
