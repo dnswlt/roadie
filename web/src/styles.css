@@ -287,6 +287,12 @@ body {
   width: 32px;
 }
 
+/* Hidden while the WBS view is active (renderTopbar) — zoom is a time-axis
+   concept. Per-component `hidden`, per the convention below. */
+.zoom.hidden {
+  display: none;
+}
+
 .zoom .icon-btn:first-child {
   border-right: 1px solid var(--border);
 }
@@ -387,6 +393,12 @@ kbd {
 }
 
 .menu.hidden {
+  display: none;
+}
+
+/* A menu item hidden until its feature applies — rm-visibility, which only
+   an owned roadmap shows (with auth off, nothing is owned). */
+.menu-item.hidden {
   display: none;
 }
 
@@ -1298,6 +1310,184 @@ kbd {
   white-space: nowrap;
 }
 
+/* WBS view (wbs.ts) — the timeline's item language with the time axis
+   projected away: uniform full-width rows, no resize handles, dates as muted
+   text. Every color derives from the lane's --c exactly like the bars above.
+   The .wbs-* classes are deliberately disjoint from .bar/.child-bar so each
+   pointer controller only ever sees its own view's elements; the shared look
+   is achieved by repeating the same color-mix recipes, not by sharing
+   selectors. */
+
+.wbs-rows {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px; /* MIN_LANE_H */
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* BLOCK_GAP */
+}
+
+.wbs-block {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Same family backdrop as .block.has-children. */
+.wbs-block.has-children {
+  background: color-mix(in oklab, var(--c) 6%, var(--surface));
+}
+
+.wbs-row {
+  position: relative; /* so a selected row's z-index lifts its outline */
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px; /* PARENT_BAR_H */
+  padding: 0 8px; /* where a bar's resize handles would sit */
+  background: var(--c);
+  color: #fff;
+  box-shadow: var(--shadow);
+  user-select: none;
+}
+
+.wbs-row:hover {
+  background: color-mix(in oklab, var(--c) 88%, black);
+}
+
+/* Child rows: the .child-bar tints, with indentation carrying the nesting the
+   timeline draws by containment. */
+.wbs-child {
+  margin-left: 26px;
+  background: color-mix(in oklab, var(--c) 25%, var(--surface));
+  color: color-mix(in oklab, var(--c) 65%, black);
+  box-shadow: none;
+}
+
+.wbs-child:hover {
+  background: color-mix(in oklab, var(--c) 35%, var(--surface));
+}
+
+.wbs-row.selected {
+  outline: 2px solid color-mix(in oklab, var(--c) 65%, black);
+  outline-offset: 0;
+  z-index: 1;
+}
+
+/* Title + link icon group, like .bar-main. */
+.wbs-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Label chips, visible only here (bars have no room for them). The
+   .prio-pill treatment — light chip, lane-tinted text — so they read on both
+   the solid parent rows and the pale child rows. */
+.wbs-chips {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  max-width: 40%;
+  overflow: hidden;
+}
+
+.wbs-chip {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 500;
+  background: var(--surface);
+  color: color-mix(in oklab, var(--c) 60%, black);
+  border: 1px solid color-mix(in oklab, var(--c) 35%, var(--surface));
+  pointer-events: none;
+}
+
+/* The dates as muted text: the one place the WBS still shows time. Inherits
+   each row kind's text color and steps back from it. */
+.wbs-dates {
+  flex: none;
+  margin-left: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+/* The milestone group's fold header: subheader styling on purpose, NOT the
+   item-row language — it has no id, no dates, and answers no item gesture, so
+   it must not look like it does. Only the fold chevron is borrowed. */
+.wbs-ms-head {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: -4px; /* its rows sit tighter to it than blocks to each other */
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.wbs-ms-head:hover {
+  color: var(--ink-2);
+}
+
+.wbs-ms-chevron {
+  display: inline-flex;
+}
+
+.wbs-milestone {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  user-select: none;
+}
+
+.wbs-milestone.selected {
+  outline: 2px solid color-mix(in oklab, var(--c) 65%, black);
+  outline-offset: 0;
+  z-index: 1;
+}
+
+/* The timeline's diamond, inline. */
+.wbs-ms-diamond {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: var(--c);
+}
+
+.wbs-ms-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.wbs-milestone .wbs-dates {
+  margin-left: 0;
+  color: var(--muted);
+  opacity: 1;
+}
+
 /* Empty state */
 
 .empty-state {
@@ -2025,7 +2215,9 @@ dialog input:focus {
 .child-bar.dimmed,
 .bar-outside.dimmed,
 .milestone.dimmed,
-.milestone-line.dimmed {
+.milestone-line.dimmed,
+.wbs-row.dimmed,
+.wbs-milestone.dimmed {
   opacity: 0.12;
   filter: grayscale(0.85);
 }

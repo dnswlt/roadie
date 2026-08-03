@@ -140,6 +140,7 @@ export const actions = {
       state.focus = null; // labels and flags are per-roadmap; don't carry focus across
       state.loadHiddenLanes();
       state.loadCollapsed();
+      state.loadWbsMsCollapsed();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
       setRoadmapUrl(state.current);
@@ -167,6 +168,7 @@ export const actions = {
     }
     state.loadHiddenLanes(); // prune view prefs for lanes/parents that changed
     state.loadCollapsed();
+    state.loadWbsMsCollapsed();
     state.stale = false;
     state.notify();
   },

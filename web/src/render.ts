@@ -43,15 +43,7 @@ export function renderChart(container: HTMLElement): void {
   container.replaceChildren();
 
   if (!rm) {
-    const empty = div("empty-state");
-    const msg = div("empty-msg");
-    msg.textContent = "No roadmap yet.";
-    const btn = document.createElement("button");
-    btn.className = "btn btn-primary";
-    btn.id = "empty-create";
-    btn.textContent = "Create your first roadmap";
-    empty.append(msg, btn);
-    container.append(empty);
+    container.append(emptyState());
     return;
   }
 
@@ -134,6 +126,20 @@ export function renderChart(container: HTMLElement): void {
   }
 }
 
+// emptyState builds the no-roadmap-yet notice with its create button (wired
+// in app.ts by id). Shared with the WBS view (wbs.ts).
+export function emptyState(): HTMLElement {
+  const empty = div("empty-state");
+  const msg = div("empty-msg");
+  msg.textContent = "No roadmap yet.";
+  const btn = document.createElement("button");
+  btn.className = "btn btn-primary";
+  btn.id = "empty-create";
+  btn.textContent = "Create your first roadmap";
+  empty.append(msg, btn);
+  return empty;
+}
+
 // projectSelection stamps the current selection onto the already-rendered
 // chart — the subscriber side of state.notifySelection (rationale in
 // CLAUDE.md: selection changes no geometry, and click gestures need the DOM
@@ -191,12 +197,12 @@ function renderScheduleRow(periods: SchedulePeriod[]): HTMLElement {
   return row;
 }
 
-function renderLane(lane: LaneFull, chartW: number): HTMLElement {
-  const layout = layoutLane(lane, scale, (id) => state.isCollapsed(id));
-  const laneEl = div("lane");
-  laneEl.dataset.laneId = String(lane.id);
-  laneEl.style.setProperty("--c", laneColorValue(lane.color));
-
+// laneLabel builds a lane's sticky label column: grip, name, hover actions.
+// Shared with the WBS view (wbs.ts), which renders the same rail — every
+// label gesture (rename, the lane menu, reorder by grip) is view-independent,
+// so both views reuse the .lane/.lane-label classes and the handlers wired to
+// them (app.ts wireChart, dnd.ts lane drag).
+export function laneLabel(lane: LaneFull): HTMLElement {
   const label = div("lane-label");
   const grip = document.createElement("button");
   grip.className = "lane-grip";
@@ -217,6 +223,14 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   menu.append(icons.dots(16));
   laneActions.append(add, menu);
   label.append(grip, name, laneActions);
+  return label;
+}
+
+function renderLane(lane: LaneFull, chartW: number): HTMLElement {
+  const layout = layoutLane(lane, scale, (id) => state.isCollapsed(id));
+  const laneEl = div("lane");
+  laneEl.dataset.laneId = String(lane.id);
+  laneEl.style.setProperty("--c", laneColorValue(lane.color));
 
   const canvas = div("lane-canvas");
   canvas.style.width = `${chartW}px`;
@@ -260,7 +274,7 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
     canvas.append(renderMilestone(m, limit - (xOf(scale, dayOf(m.date)) + MS_LABEL_LEFT)));
   });
 
-  laneEl.append(label, canvas);
+  laneEl.append(laneLabel(lane), canvas);
   return laneEl;
 }
 
@@ -387,8 +401,11 @@ function fillBar(
 // disclosure builds a parent's fold control. It rides with the title (inside
 // the bar, or on the outside label when the title spilled), which is what makes
 // it reachable on a two-pixel bar. Kept as tight as the glyph allows: it sits
-// ahead of every parent title, so its width is pure indentation.
-function disclosure(item: ItemFull, collapsed: boolean): HTMLElement {
+// ahead of every parent title, so its width is pure indentation. Shared with
+// the WBS view, as are the other exported item-furniture builders below: the
+// glyphs mean the same thing in both projections, and app.ts wireChart owns
+// the .disclosure click in both.
+export function disclosure(item: ItemFull, collapsed: boolean): HTMLElement {
   const b = document.createElement("button");
   b.className = "disclosure";
   b.dataset.itemId = String(item.id);
@@ -462,7 +479,7 @@ function measureTitleWidth(text: string): number {
 
 // A small P1..P4 badge shown at the right end of a bar. Non-interactive
 // (pointer-events: none) so it never interferes with drag/drop hit-testing.
-function prioPill(priority: number | null): Node {
+export function prioPill(priority: number | null): Node {
   if (!priority) return document.createTextNode("");
   const el = document.createElement("span");
   el.className = `prio-pill p${priority}`;
@@ -473,7 +490,7 @@ function prioPill(priority: number | null): Node {
 // The "needs attention" flag, outermost on a bar. Like prioPill it is
 // non-interactive: flagging happens in the edit panel or via the "!" shortcut,
 // never by clicking the glyph, so it can't swallow a drag that starts on it.
-function flagMark(flagged: boolean): Node {
+export function flagMark(flagged: boolean): Node {
   if (!flagged) return document.createTextNode("");
   const el = document.createElement("span");
   el.className = "bar-flag";
@@ -494,7 +511,7 @@ function barMain(title: string, description: string): HTMLElement {
 // found in the item's description in a new tab. First link only — an item can
 // reference many, but the card stays uncluttered and the rule is memorable.
 // dnd.ts skips drag-start on `.bar-link` so the click navigates instead.
-function barLink(description: string): Node {
+export function barLink(description: string): Node {
   const url = extractUrls(description)[0];
   if (!url) return document.createTextNode("");
   const a = document.createElement("a");
@@ -507,7 +524,7 @@ function barLink(description: string): Node {
   return a;
 }
 
-function barTitle(text: string): HTMLElement {
+export function barTitle(text: string): HTMLElement {
   const span = document.createElement("span");
   span.className = "bar-title";
   span.textContent = text;

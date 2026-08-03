@@ -33,6 +33,11 @@ export interface MilestoneLocation {
 // label of that name.
 export type Focus = { kind: "label"; label: string } | { kind: "flagged" };
 
+// Which projection of the roadmap is on screen: the timeline chart
+// (render.ts) or the WBS outline (wbs.ts). Both render from the same state;
+// only app.ts branches on this.
+export type ViewMode = "timeline" | "wbs";
+
 // AppState is the single source of truth on the client. All views render
 // from it; mutations go through actions.ts, which keeps it in sync with
 // the server.
@@ -71,6 +76,10 @@ class AppState {
   // Calendar grid a dragged/resized edge snaps to (in addition to always-on
   // item-edge snapping). A global view preference, persisted in localStorage.
   snapMode: SnapMode = "week";
+  // Timeline or WBS outline. A global view preference like snapMode — a way
+  // of working, not a property of any one roadmap — persisted in localStorage
+  // (read at boot in app.ts), toggled by "v" and the topbar button.
+  viewMode: ViewMode = "timeline";
   panelWidth = DEFAULT_PANEL_WIDTH;
   // The edit rail is a fixture, not a popup: it keeps its width whatever is
   // selected, so the chart never resizes under the pointer mid-task. Collapsing
@@ -94,6 +103,11 @@ class AppState {
   // Parent items whose children are folded away. Like hiddenLanes: a view
   // preference, per roadmap, never sent to the server.
   collapsed = new Set<number>();
+  // Lanes whose "Milestones" group is folded in the WBS view. Keyed by lane
+  // id — the group is a WBS fixture, not an item, so it cannot live in
+  // `collapsed` (item ids and lane ids would collide). Same lifecycle as the
+  // other two: per roadmap, localStorage, never sent to the server.
+  wbsMsCollapsed = new Set<number>();
 
   // Version-history browsing. `history` holds the loaded snapshot list while
   // the history side-list is open (null = closed). `preview` is set when a
@@ -225,6 +239,69 @@ class AppState {
     this.notify();
   }
 
+  // setViewMode switches between the timeline chart and the WBS outline. Any
+  // current selection is scrolled into view after the switch, so toggling
+  // reads as re-projecting the same spot of the model, not as jumping to an
+  // unrelated page. A selected milestone is always renderable in the WBS:
+  // selecting one unfolds its group (see selectMilestone).
+  setViewMode(mode: ViewMode): void {
+    if (mode === this.viewMode) return;
+    this.viewMode = mode;
+    localStorage.setItem("roadie.view", mode);
+    if (this.selectedItemIds.size > 0 || this.selectedMilestoneId !== null) {
+      this.scrollToSelection = true;
+    }
+    this.notify();
+  }
+
+  isMilestonesCollapsed(laneId: number): boolean {
+    return this.wbsMsCollapsed.has(laneId);
+  }
+
+  private wbsMsKey(): string | null {
+    return this.current ? `roadie.wbsMs.${this.current.id}` : null;
+  }
+
+  // Loads the folded-milestone-group set for the current roadmap. Call after
+  // `current` is set. Prunes lanes that no longer exist or lost their last
+  // milestone, so an emptied group comes back expanded rather than staying
+  // folded forever (the same rule loadCollapsed applies to parents).
+  loadWbsMsCollapsed(): void {
+    this.wbsMsCollapsed = new Set();
+    const key = this.wbsMsKey();
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      for (const id of JSON.parse(raw) as number[]) {
+        if (this.current?.lanes.some((l) => l.id === id && l.milestones.length > 0)) {
+          this.wbsMsCollapsed.add(id);
+        }
+      }
+    } catch {
+      // Corrupt entry — ignore and treat every group as expanded.
+    }
+  }
+
+  private saveWbsMsCollapsed(): void {
+    const key = this.wbsMsKey();
+    if (key) localStorage.setItem(key, JSON.stringify([...this.wbsMsCollapsed]));
+  }
+
+  // setMilestonesCollapsed folds or unfolds one lane's WBS milestone group.
+  // Folding deselects a selected milestone of that lane — the setCollapsed
+  // rule: the panel never edits something that isn't on screen.
+  setMilestonesCollapsed(laneId: number, collapsed: boolean): void {
+    if (collapsed) this.wbsMsCollapsed.add(laneId);
+    else this.wbsMsCollapsed.delete(laneId);
+    this.saveWbsMsCollapsed();
+    if (collapsed && this.selectedMilestoneId !== null) {
+      const loc = this.findMilestone(this.selectedMilestoneId);
+      if (loc?.lane.id === laneId) this.selectedMilestoneId = null;
+    }
+    this.notify();
+  }
+
   findItem(id: number): ItemLocation | null {
     if (!this.current) return null;
     for (const lane of this.current.lanes) {
@@ -318,9 +395,19 @@ class AppState {
     this.selectedItemIds.delete(id);
   }
 
+  // Selecting a milestone also unfolds its lane's WBS milestone group: the
+  // selection may come from find or a deep link, and the panel must never
+  // edit a row that isn't on screen. When the group is already open (a click
+  // on a visible row) this is a no-op — exactly the case where callers may
+  // follow with notifySelection() alone; every path that actually unfolds
+  // (find, boot, the view toggle) ends in a full notify.
   selectMilestone(id: number | null): void {
     this.selectedMilestoneId = id;
     this.selectedItemIds = new Set();
+    if (id !== null) {
+      const loc = this.findMilestone(id);
+      if (loc && this.wbsMsCollapsed.delete(loc.lane.id)) this.saveWbsMsCollapsed();
+    }
   }
 
   clearSelection(): boolean {

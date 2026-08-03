@@ -126,6 +126,12 @@ export const bindings: Binding[] = [
     run: () => togglePanel(),
   },
   {
+    key: "v",
+    label: "v",
+    description: "Switch between timeline and WBS view.",
+    run: () => state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs"),
+  },
+  {
     key: "?",
     label: "?",
     // Last, so the reference card ends with the way back to itself. Reopening

@@ -14,6 +14,7 @@ import { copyText } from "./clipboard";
 import { bindings, initKeys } from "./keys";
 import { LABEL_W } from "./layout";
 import { currentScale, projectSelection, renderChart } from "./render";
+import { projectWbsSelection, renderWbs } from "./wbs";
 import { laneMarkdown, roadmapMarkdown } from "./markdown";
 import { focusPanelTitle, renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
@@ -61,7 +62,8 @@ function snapActive(): boolean {
 
 function render(): void {
   renderTopbar();
-  renderChart(chart);
+  if (state.viewMode === "wbs") renderWbs(chart);
+  else renderChart(chart);
   renderPanel(panel);
   renderHistory(historyEl, snapshotBanner);
   renderStalePill();
@@ -137,6 +139,15 @@ function renderTopbar(): void {
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
   $("snap-menu").title = `Snap to ${snapLabel} — see Help (?) for modifier keys`;
+  // The view toggle shows the view it switches TO (like rm-visibility: the
+  // label states the action). Snap and zoom act on the time axis, which the
+  // WBS projects away, so they hide rather than sit around disabled.
+  const wbs = state.viewMode === "wbs";
+  const viewBtn = $("view-toggle");
+  viewBtn.replaceChildren(wbs ? icons.ganttChart(18) : icons.listTree(18));
+  viewBtn.title = wbs ? "Switch to timeline view (v)" : "Switch to WBS view (v)";
+  $("snap-wrap").classList.toggle("hidden", wbs);
+  $("zoom-controls").classList.toggle("hidden", wbs);
 }
 
 // setZoom keeps the date under the viewport center fixed while zooming.
@@ -464,12 +475,16 @@ function wireTopbar(): void {
     );
     if (ok) void actions.deleteRoadmap();
   });
+  $("view-toggle").addEventListener("click", () => {
+    state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs");
+  });
   $("zoom-fit").addEventListener("click", () => zoomToFit());
   $("zoom-in").addEventListener("click", () => setZoom(state.pxPerDay * 1.4));
   $("zoom-out").addEventListener("click", () => setZoom(state.pxPerDay / 1.4));
   chart.addEventListener(
     "wheel",
     (e) => {
+      if (state.viewMode !== "timeline") return; // zoom is a time-axis concept
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       setZoom(state.pxPerDay * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
@@ -512,6 +527,31 @@ function wireChart(): void {
       return;
     }
 
+    // WBS view. The milestone group's fold header toggles like a disclosure.
+    const msHead = t.closest<HTMLElement>(".wbs-ms-head");
+    if (msHead) {
+      const laneId = Number(msHead.dataset.laneId);
+      state.setMilestonesCollapsed(laneId, !state.isMilestonesCollapsed(laneId));
+      return;
+    }
+    // WBS rows select like bars do in dnd.ts, with the same carve-out for the
+    // link icon (its click navigates). Shift builds the same multi-selection
+    // the timeline uses — no group drag here, but batch flag/delete apply.
+    const wbsRow = t.closest<HTMLElement>(".wbs-row");
+    if (wbsRow && !t.closest(".bar-link")) {
+      const id = Number(wbsRow.dataset.itemId);
+      if (e.shiftKey) state.toggleItem(id);
+      else state.selectItem(id);
+      state.notifySelection();
+      return;
+    }
+    const wbsMs = t.closest<HTMLElement>(".wbs-milestone");
+    if (wbsMs) {
+      state.selectMilestone(Number(wbsMs.dataset.milestoneId));
+      state.notifySelection();
+      return;
+    }
+
     const laneEl = t.closest<HTMLElement>(".lane");
     if (laneEl) {
       const laneId = Number(laneEl.dataset.laneId);
@@ -532,16 +572,22 @@ function wireChart(): void {
         return;
       }
     }
-    // Click on empty chart space clears the selection.
-    if (!t.closest(".bar, .child-bar, .milestone, .lane-label") && state.clearSelection()) {
+    // Click on empty chart space clears the selection. (.wbs-row covers its
+    // link-icon click, which returns above without selecting.)
+    if (
+      !t.closest(".bar, .child-bar, .milestone, .lane-label, .wbs-row, .wbs-milestone") &&
+      state.clearSelection()
+    ) {
       state.notifySelection();
     }
   });
 
-  // Double-click a lane name to rename it inline; double-click a milestone to
-  // rename it in the panel. Real dblclick events, possible because neither
-  // pointerdown is preventDefault-ed and selection no longer rebuilds the
-  // chart between the clicks. Bars get theirs from dnd.ts instead (CLAUDE.md).
+  // Double-click a lane name to rename it inline; double-click a milestone or
+  // a WBS row to rename it in the panel. Real dblclick events, possible
+  // because neither pointerdown is preventDefault-ed and selection no longer
+  // rebuilds the chart between the clicks (WBS rows survive on
+  // notifySelection like bars do). Bars get theirs from dnd.ts instead
+  // (CLAUDE.md).
   chart.addEventListener("dblclick", (e) => {
     const t = e.target as HTMLElement;
     const nameEl = t.closest<HTMLElement>(".lane-name");
@@ -550,7 +596,7 @@ function wireChart(): void {
       startLaneRename(nameEl, Number(laneEl.dataset.laneId));
       return;
     }
-    if (t.closest(".milestone")) focusPanelTitle();
+    if (t.closest(".milestone, .wbs-row, .wbs-milestone")) focusPanelTitle();
   });
 }
 
@@ -879,7 +925,8 @@ async function boot(): Promise<void> {
   // Selection scope: project onto the chart, re-render only the panel (which
   // guards itself against rebuilding under a focused field).
   state.subscribeSelection(() => {
-    projectSelection(chart);
+    if (state.viewMode === "wbs") projectWbsSelection(chart);
+    else projectSelection(chart);
     renderPanel(panel);
   });
   injectIcons();
@@ -906,6 +953,8 @@ async function boot(): Promise<void> {
   ) {
     state.snapMode = storedSnap;
   }
+  // Timeline is the default; only the other value is worth reading back.
+  if (localStorage.getItem("roadie.view") === "wbs") state.viewMode = "wbs";
   const storedWidth = Number(localStorage.getItem("roadie.panelWidth"));
   if (storedWidth) {
     state.panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, storedWidth));
