@@ -51,29 +51,25 @@ export const bindings: Binding[] = [
   {
     key: "Escape",
     label: "Esc",
-    // Allowed in text fields: backing out of history or a selection from
-    // inside a panel field is exactly what it should do. The flush commits
-    // what was typed first — this is an everything-saves app, so Esc means
-    // "done here", never "discard".
+    // Allowed in text fields: Esc finishes a panel edit by blurring the field,
+    // which fires its change handler and saves. It deliberately keeps the
+    // selection; clearing an ordinary persistent selection is not a dismissal.
     //
     // The rule that makes this consistent: a local editor with its own Escape
     // meaning consumes the event before it reaches here (the find popup, an
     // inline lane rename, a drag in progress), because there Esc means "cancel
-    // this", not "back out of everything". The edit panel's fields are the
-    // deliberate exception — they let it through, which is what lets Esc from a
-    // panel field clear the selection.
+    // this". The edit panel's fields are the deliberate exception — they let
+    // it through so the global binding can finish and save the edit.
     //
-    // Enter is the shallower exit, handled on the field itself (see
-    // titleField): it leaves the field but keeps the item selected, so "n" and
-    // "c" still have a target. Esc leaves the item.
+    // Enter on the title is handled on the field itself (see titleField); it
+    // has the same finish-and-retain-selection result.
     inTextField: true,
-    description: "Clear the selection, or leave version history.",
+    description: "Finish editing, or leave version history.",
     run: () => {
       if (state.history !== null) {
         void actions.closeHistory();
       } else {
         flushPendingEdit();
-        if (state.clearSelection()) state.notifySelection();
       }
     },
   },

@@ -72,9 +72,8 @@ function buildShell(): void {
 function onInputKey(e: KeyboardEvent): void {
   switch (e.key) {
     case "Escape":
-      // Swallowed here on purpose: the global Esc binding is one of the few
-      // that fires inside text fields (keys.ts), and it would clear the
-      // selection instead of closing this popup.
+      // Swallowed here on purpose: this transient popup owns Escape. The
+      // global binding is reserved for finishing edits in panel fields.
       e.stopPropagation();
       closeFind();
       return;

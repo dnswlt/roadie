@@ -617,10 +617,8 @@ function startLaneRename(nameEl: HTMLElement, laneId: number): void {
   input.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") commit(true);
     if (ev.key === "Escape") {
-      // This editor owns the Escape. Without stopping it here the global
-      // binding fires too (it is one of the few that run inside text fields),
-      // so cancelling a rename would also clear the selection and close the
-      // edit panel. Panel fields are the deliberate exception — see keys.ts.
+      // This editor owns Escape: here it means discard the inline rename,
+      // whereas panel fields let the global binding blur and save them.
       ev.stopPropagation();
       commit(false);
     }

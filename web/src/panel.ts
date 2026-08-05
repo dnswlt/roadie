@@ -231,11 +231,11 @@ let renderedKey: string | null = null;
 let panelEl: HTMLElement | null = null;
 
 // flushPendingEdit commits whatever panel field the user is still typing in.
-// Fields save on `change`, which fires only on blur — but Esc and the Close
-// button tear the panel down while the field still has focus, and an element
-// removed from the DOM fires neither blur nor change, silently dropping the
-// edit. Blurring here fires `change` synchronously, so the field's own commit
-// handler does the saving and no second save path exists.
+// Fields save on `change`, which fires only on blur. Esc uses this to finish an
+// edit while retaining the selection; Close uses it before tearing the panel
+// down, since an element removed from the DOM fires neither blur nor change.
+// Blurring here fires `change` synchronously, so the field's own commit handler
+// does the saving and no second save path exists.
 export function flushPendingEdit(): void {
   const el = document.activeElement;
   if (el instanceof HTMLElement && panelEl?.contains(el)) el.blur();
@@ -749,8 +749,8 @@ function field(
 // a run of "n, type, n, type" either flows or stalls. Enter steps out of it,
 // which is the whole trick: bare-letter shortcuts are suppressed while a text
 // field has focus (keys.ts), so without a way out "n" would just type an "n".
-// Stepping out keeps the item selected, so "n" and "c" still have a target;
-// Esc is the deeper exit that leaves the item.
+// Stepping out keeps the item selected, so "n" and "c" still have a target.
+// Esc follows the same rule globally and works for every panel field.
 //
 // Blurring is the save: Enter has already fired `change` natively and the
 // field's own commit handler did the writing, so there is no second save path

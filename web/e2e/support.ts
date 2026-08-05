@@ -16,6 +16,7 @@ export interface Seeded {
 export interface ItemNode {
   id: number;
   title: string;
+  description: string;
   startDate: string;
   endDate: string;
   rank: number;
