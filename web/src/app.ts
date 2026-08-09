@@ -127,6 +127,14 @@ function renderTopbar(): void {
   ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
   // Find searches the loaded roadmap, so it has nothing to do without one.
   ($("find-menu") as HTMLButtonElement).disabled = !state.current;
+  // Bulk folding follows the action-label convention: when every parent is
+  // folded it offers Expand; otherwise it offers Collapse. No child items
+  // means there is no operation, so the control stays visible but disabled.
+  const foldAll = $("fold-all") as HTMLButtonElement;
+  const expandAll = state.allParentsCollapsed();
+  foldAll.replaceChildren(expandAll ? icons.expandAll(18) : icons.collapseAll(18));
+  foldAll.title = expandAll ? "Expand all child items" : "Collapse all child items";
+  foldAll.disabled = !state.hasParentItems();
   renderVisibilityItem();
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focus !== null);
@@ -478,6 +486,9 @@ function wireTopbar(): void {
   });
   $("view-toggle").addEventListener("click", () => {
     state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs");
+  });
+  $("fold-all").addEventListener("click", () => {
+    state.setAllParentsCollapsed(!state.allParentsCollapsed());
   });
   $("zoom-fit").addEventListener("click", () => zoomToFit());
   $("zoom-in").addEventListener("click", () => setZoom(state.pxPerDay * 1.4));

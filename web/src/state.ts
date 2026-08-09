@@ -195,6 +195,26 @@ class AppState {
     return this.collapsed.has(id);
   }
 
+  // Every item that has children, in roadmap order. The one definition of
+  // "parent" the fold code works from: what can fold, what `collapsed` may
+  // legally hold, and what a bulk fold acts on are all this list.
+  private parentItems(): ItemFull[] {
+    return (this.current?.lanes ?? []).flatMap((lane) =>
+      lane.items.filter((item) => item.children.length > 0),
+    );
+  }
+
+  // Whether the toolbar's next bulk fold action is Expand. False also covers
+  // a roadmap with no parents; the caller disables the control in that case.
+  allParentsCollapsed(): boolean {
+    const parents = this.parentItems();
+    return parents.length > 0 && parents.every((item) => this.collapsed.has(item.id));
+  }
+
+  hasParentItems(): boolean {
+    return this.parentItems().length > 0;
+  }
+
   private collapsedKey(): string | null {
     return this.current ? `roadie.collapsed.${this.current.id}` : null;
   }
@@ -209,10 +229,7 @@ class AppState {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) return;
-      const parents = new Set<number>();
-      for (const lane of this.current?.lanes ?? []) {
-        for (const item of lane.items) if (item.children.length > 0) parents.add(item.id);
-      }
+      const parents = new Set(this.parentItems().map((item) => item.id));
       for (const id of JSON.parse(raw) as number[]) {
         if (parents.has(id)) this.collapsed.add(id);
       }
@@ -234,6 +251,23 @@ class AppState {
       // the panel never edits something that isn't on screen.
       for (const selId of [...this.selectedItemIds]) {
         if (this.findItem(selId)?.parent?.id === id) this.selectedItemIds.delete(selId);
+      }
+    }
+    this.notify();
+  }
+
+  // Fold or unfold every parent in one state change. Collapsing also drops
+  // selected children, exactly as setCollapsed does for one parent, but saves
+  // and renders once rather than once per parent.
+  setAllParentsCollapsed(collapsed: boolean): void {
+    const parents = this.parentItems();
+    this.collapsed = collapsed ? new Set(parents.map((item) => item.id)) : new Set();
+    const key = this.collapsedKey();
+    if (key) localStorage.setItem(key, JSON.stringify([...this.collapsed]));
+    if (collapsed) {
+      const childIDs = new Set(parents.flatMap((item) => item.children.map((child) => child.id)));
+      for (const id of [...this.selectedItemIds]) {
+        if (childIDs.has(id)) this.selectedItemIds.delete(id);
       }
     }
     this.notify();
