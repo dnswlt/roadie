@@ -10,6 +10,11 @@
 import type { Binding } from "./keys";
 
 // keyList renders a <dl> of key/description pairs, the shape both sections use.
+// Descriptions carry light inline markup: a *starred* phrase renders bold, so
+// the eye can pick out the action while scanning the list, and a `backticked`
+// key renders as a <kbd> chip, so keys named mid-sentence look like the keys in
+// the left column. The convention keeps the binding table (keys.ts) plain
+// strings.
 function keyList(pairs: [key: string, description: string][]): HTMLElement {
   const dl = document.createElement("dl");
   dl.className = "help-keys";
@@ -19,7 +24,19 @@ function keyList(pairs: [key: string, description: string][]): HTMLElement {
     kbd.textContent = key;
     dt.append(kbd);
     const dd = document.createElement("dd");
-    dd.textContent = description;
+    for (const part of description.split(/(\*[^*]+\*|`[^`]+`)/)) {
+      if (part.startsWith("*") && part.endsWith("*")) {
+        const b = document.createElement("b");
+        b.textContent = part.slice(1, -1);
+        dd.append(b);
+      } else if (part.startsWith("`") && part.endsWith("`")) {
+        const k = document.createElement("kbd");
+        k.textContent = part.slice(1, -1);
+        dd.append(k);
+      } else if (part) {
+        dd.append(part);
+      }
+    }
     dl.append(dt, dd);
   }
   return dl;
@@ -46,14 +63,14 @@ export function openHelpDialog(bindings: Binding[]): void {
 
   const p = document.createElement("p");
   p.textContent =
-    "Dragging or resizing an item snaps to the grid you pick in the magnet menu (Day, Week, Month, Quarter, or Schedule) and to nearby item edges, milestones, and today. Moving an item aligns its start to the grid, keeping its duration; either edge still clicks onto a nearby item edge, milestone, or today. Resizing snaps the edge you grabbed.";
+    "While you drag, items snap to the grid selected in the magnet menu (Day, Week, Month, Quarter, or Schedule) and to nearby item edges, milestones, and today. Moving keeps an item's duration: its start aligns to the grid, and either edge can still catch a nearby target. Resizing snaps the edge you grabbed.";
   body.append(
     section(
       "Snapping",
       p,
       keyList([
-        ["Shift", "Snap to the selected grid only — steadier for coarse grids like Quarter or Schedule."],
-        ["Alt", "Turn snapping off for free, day-by-day placement."],
+        ["Shift", "*Snap to the grid only* — steadier for coarse grids like Quarter or Schedule."],
+        ["Alt", "*Turn snapping off* for free, day-by-day placement."],
       ]),
     ),
   );
@@ -63,12 +80,17 @@ export function openHelpDialog(bindings: Binding[]): void {
   // earns that: the run-of-items rhythm it enables is the least guessable thing
   // in the app. Esc belongs to this pair too, but it is a real binding and the
   // Shortcuts section already prints it; describing it again here would be a
-  // second wording free to drift from the first.
+  // second wording free to drift from the first. Same for "p", the chevron's
+  // keyboard twin — the prose covers only the mouse side.
+  const editP = document.createElement("p");
+  editP.textContent =
+    "Double-click a bar or milestone to open the side panel with its title ready to edit. The chevron strip along the panel's outer edge collapses and reopens it.";
   body.append(
     section(
       "Editing",
+      editP,
       keyList([
-        ["Enter", "In a title, save and step out of the field — so n and c start the next item."],
+        ["Enter", "In a title, *save and step out* of the field — so `n` and `c` start the next item."],
       ]),
     ),
   );

@@ -35,6 +35,8 @@ export interface Binding {
   key: string;
   // How the key is drawn in Help (kbd label), which is not always `key`.
   label: string;
+  // Shown in Help; a *starred* phrase renders bold there, a `backticked` key
+  // as a <kbd> chip (see help.ts keyList).
   description: string;
   // Opt in to firing while an input/textarea has focus. Off for anything
   // whose key could be a character the user meant to type.
@@ -64,7 +66,7 @@ export const bindings: Binding[] = [
     // Enter on the title is handled on the field itself (see titleField); it
     // has the same finish-and-retain-selection result.
     inTextField: true,
-    description: "Finish editing, or leave version history.",
+    description: "*Finish editing*, or leave version history.",
     run: () => {
       if (state.history !== null) {
         void actions.closeHistory();
@@ -76,25 +78,25 @@ export const bindings: Binding[] = [
   {
     key: "Delete",
     label: "Del",
-    description: "Delete the selected items or milestone.",
+    description: "*Delete* the selected items or milestone.",
     run: () => deleteSelection(),
   },
   {
     key: "n",
     label: "n",
-    description: "New item beside the selection.",
+    description: "*New item* beside the selection.",
     run: () => void addItemToSelection(),
   },
   {
     key: "c",
     label: "c",
-    description: "New child item under the selection.",
+    description: "*New child item* under the selection.",
     run: () => void addChildToSelection(),
   },
   {
     key: "e",
     label: "e",
-    description: "Edit the selected item or milestone's title.",
+    description: "*Edit* the selected item or milestone's title.",
     // Moves focus into the Title field, so the "e" must not also be typed
     // into it — same reason as "/".
     preventDefault: true,
@@ -103,13 +105,13 @@ export const bindings: Binding[] = [
   {
     key: "!",
     label: "!",
-    description: "Flag or unflag the selected items.",
+    description: "*Flag or unflag* the selected items.",
     run: () => toggleFlagSelection(),
   },
   {
     key: "/",
     label: "/",
-    description: "Find items, milestones and contexts.",
+    description: "*Find* items, milestones, and contexts.",
     // Opens the find popup and focuses its input, so the "/" must not also be
     // typed into it.
     preventDefault: true,
@@ -118,13 +120,13 @@ export const bindings: Binding[] = [
   {
     key: "p",
     label: "p",
-    description: "Collapse or expand the edit panel.",
+    description: "*Collapse or expand* the edit panel.",
     run: () => togglePanel(),
   },
   {
     key: "v",
     label: "v",
-    description: "Switch between timeline and WBS view.",
+    description: "*Switch view* between timeline and WBS.",
     run: () => state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs"),
   },
   {
@@ -133,7 +135,7 @@ export const bindings: Binding[] = [
     // Last, so the reference card ends with the way back to itself. Reopening
     // is not a concern: the handler ignores every shortcut while a dialog is
     // open, and Escape closes it natively.
-    description: "Show this help.",
+    description: "Show this *help*.",
     run: () => openHelpDialog(bindings),
   },
 ];
