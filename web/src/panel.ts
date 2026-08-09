@@ -5,7 +5,7 @@
 import { actions } from "./actions";
 import { copyText } from "./clipboard";
 import { laneColorValue } from "./colors";
-import { dependenciesSection } from "./deps";
+import { dependenciesSection, depsGraphButton } from "./deps";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { extractUrls, linkLabel } from "./links";
@@ -450,6 +450,7 @@ export function renderPanel(panel: HTMLElement): void {
 
   const head = railHead(
     parent ? "Child item" : "Item",
+    depsGraphButton({ kind: "item", id: item.id }),
     copyMarkdownButton(item, lane, parent),
     copyLinkButton("item", item.id),
     closeButton(),
@@ -680,7 +681,12 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   body.replaceChildren();
   body.style.setProperty("--c", laneColorValue(lane.color));
 
-  const head = railHead("Milestone", copyLinkButton("milestone", milestone.id), closeButton());
+  const head = railHead(
+    "Milestone",
+    depsGraphButton({ kind: "milestone", id: milestone.id }),
+    copyLinkButton("milestone", milestone.id),
+    closeButton(),
+  );
 
   const crumb = crumbLine(lane.name);
 

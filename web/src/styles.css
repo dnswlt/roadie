@@ -1703,7 +1703,7 @@ kbd {
    rather than as the first of six identical form rows, showing its box only on
    hover/focus so it still invites editing. The negative inset keeps the text's
    left edge flush with the labels below despite the input's own padding. */
-.panel-field input.panel-title-input {
+.panel-field > input.panel-title-input {
   margin-left: -8px;
   width: calc(100% + 8px);
   padding: 3px 8px;
@@ -1715,11 +1715,11 @@ kbd {
   background: transparent;
 }
 
-.panel-field input.panel-title-input:hover {
+.panel-field > input.panel-title-input:hover {
   border-color: var(--border);
 }
 
-.panel-field input.panel-title-input:focus {
+.panel-field > input.panel-title-input:focus {
   background: var(--surface);
   border-color: var(--focus);
 }
@@ -1728,8 +1728,14 @@ kbd {
   margin-bottom: 14px;
 }
 
-.panel-field input,
-.panel-field textarea {
+/* Direct children only. A panel field is sometimes a *container* for a widget
+   that owns its own look — the label editor, the dependency picker's search
+   input — and a descendant selector here outranks those components' own rules
+   (0,1,1 beats 0,1,0), silently restyling them. Scoping to the field's own
+   controls is what keeps one component from looking different depending on
+   which panel section it was dropped into. */
+.panel-field > input,
+.panel-field > textarea {
   width: 100%;
   font: inherit;
   padding: 6px 8px;
@@ -1743,7 +1749,7 @@ kbd {
    rather than on white: a white box on a white panel has no shape, so the body
    text was disappearing into the surface. Focus lifts it to white, which reads
    as "now you're editing" for free. */
-.panel-field textarea {
+.panel-field > textarea {
   min-height: 160px;
   resize: vertical;
   background: var(--bg);
@@ -1751,18 +1757,18 @@ kbd {
   line-height: 1.5;
 }
 
-.panel-field textarea:hover {
+.panel-field > textarea:hover {
   border-color: var(--border);
 }
 
-.panel-field input:focus,
-.panel-field textarea:focus {
+.panel-field > input:focus,
+.panel-field > textarea:focus {
   outline: none;
   border-color: var(--focus);
   box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
 }
 
-.panel-field textarea:focus {
+.panel-field > textarea:focus {
   background: var(--surface);
 }
 
@@ -2184,6 +2190,9 @@ dialog input:focus {
   background: var(--border-strong);
 }
 
+/* Borderless because the editor box around it carries the border and the
+   focus ring (:focus-within). No specificity fight with the panel-field
+   controls above: those are scoped to direct children, and this is nested. */
 .label-input {
   flex: 1;
   min-width: 90px;
@@ -2197,10 +2206,18 @@ dialog input:focus {
 
 /* ---- Dependencies (deps.ts) ------------------------------------------- */
 
+/* Dependencies are a subsection rather than one more scalar field: the
+   divider keeps their two directional lists from floating under Labels. */
+.deps-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
 .dep-groups {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 
 /* Anchors .dep-pop: the add-dropdown opens under the group it adds to, which
@@ -2287,19 +2304,6 @@ dialog input:focus {
 
 .dep-pop .find-list {
   max-height: 240px;
-}
-
-/* Section head: the field label plus the graph button. The label span carries
-   panel-field-label styling of its own; the flex row does the vertical
-   centering, so its stacking margin goes. */
-.deps-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.deps-head .panel-field-label {
-  margin-bottom: 0;
 }
 
 /* ---- The local graph overlay (deps.ts) -------------------------------- */

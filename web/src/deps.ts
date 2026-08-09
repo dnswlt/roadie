@@ -49,25 +49,33 @@ function resolveRef(ref: DependencyRef): { title: string; laneColor: string } | 
   return loc ? { title: loc.milestone.title, laneColor: loc.lane.color } : null;
 }
 
+// depsGraphButton is the overlay's mouse twin of the "d" shortcut, for the
+// panel head — beside Copy link and Copy as Markdown, which is where actions
+// on the selected entity live. It is deliberately not on the Dependencies
+// caption: a 28px control cannot share a 13px caption line without either
+// pushing the label out of the panel's rhythm or shrinking below a usable
+// target size. Shown whatever the entity's edges are, like Copy link: "nothing
+// depends on this" is an answer the overlay gives.
+export function depsGraphButton(ref: DependencyRef): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = "icon-btn";
+  btn.title = "Dependency graph (d)";
+  btn.setAttribute("aria-label", "Dependency graph");
+  btn.append(icons.waypoints(16));
+  btn.addEventListener("click", () => openDepsOverlay(ref));
+  return btn;
+}
+
 // dependenciesSection builds the panel block for one item or milestone.
 export function dependenciesSection(ref: DependencyRef): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "panel-field deps-section";
-  const head = document.createElement("div");
-  head.className = "deps-head";
   const label = document.createElement("span");
   label.className = "panel-field-label";
   label.textContent = "Dependencies";
-  const graph = document.createElement("button");
-  graph.className = "icon-btn";
-  graph.title = "Dependency graph (d)";
-  graph.setAttribute("aria-label", "Dependency graph");
-  graph.append(icons.waypoints(14));
-  graph.addEventListener("click", () => openDepsOverlay(ref));
-  head.append(label, graph);
   const groups = document.createElement("div");
   groups.className = "dep-groups";
-  wrap.append(head, groups);
+  wrap.append(label, groups);
 
   const render = (): void => {
     groups.replaceChildren(depGroup(ref, "dependsOn", render), depGroup(ref, "neededBy", render));
