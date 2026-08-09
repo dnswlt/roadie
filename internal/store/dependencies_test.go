@@ -55,6 +55,14 @@ func TestDependencyCRUD(t *testing.T) {
 	if d1.From != itemRef(a.ID) || d1.To != itemRef(b.ID) {
 		t.Errorf("edge endpoints: %+v", d1)
 	}
+	var storedRoadmapID int64
+	if err := testStore.pool.QueryRow(ctx,
+		`SELECT roadmap_id FROM dependencies WHERE id = $1`, d1.ID).Scan(&storedRoadmapID); err != nil {
+		t.Fatal(err)
+	}
+	if storedRoadmapID != rm.ID {
+		t.Errorf("stored roadmap id: got %d, want %d", storedRoadmapID, rm.ID)
+	}
 	d2, err := testStore.CreateDependency(ctx, rm.ID, itemRef(b.ID), msRef(m.ID))
 	if err != nil {
 		t.Fatal(err)

@@ -737,7 +737,7 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 			}
 		}
 	}
-	if err := insertDependencies(ctx, tx, src, itemIDs, msIDs); err != nil {
+	if err := insertDependencies(ctx, tx, roadmapID, src, itemIDs, msIDs); err != nil {
 		return err
 	}
 	// The schedule is roadmap-scoped (not under any lane), so it is inserted once

@@ -85,6 +85,7 @@ CREATE INDEX milestones_lane_idx ON milestones (lane_id);
 -- are enforced in internal/store, per the house rule.
 CREATE TABLE dependencies (
     id                BIGSERIAL PRIMARY KEY,
+    roadmap_id        BIGINT NOT NULL REFERENCES roadmaps(id) ON DELETE CASCADE,
     from_item_id      BIGINT REFERENCES items(id)      ON DELETE CASCADE,
     from_milestone_id BIGINT REFERENCES milestones(id) ON DELETE CASCADE,
     to_item_id        BIGINT REFERENCES items(id)      ON DELETE CASCADE,
@@ -99,8 +100,10 @@ CREATE TABLE dependencies (
 CREATE UNIQUE INDEX dependencies_edge_idx ON dependencies
     (from_item_id, from_milestone_id, to_item_id, to_milestone_id) NULLS NOT DISTINCT;
 
+CREATE INDEX dependencies_roadmap_idx ON dependencies (roadmap_id, id);
+
 -- One index per endpoint column: the FK cascades delete by each of these, and
--- the per-roadmap load joins through the from_ side.
+-- endpoint deletion looks up edges through each side.
 CREATE INDEX dependencies_from_item_idx ON dependencies (from_item_id);
 CREATE INDEX dependencies_from_milestone_idx ON dependencies (from_milestone_id);
 CREATE INDEX dependencies_to_item_idx ON dependencies (to_item_id);

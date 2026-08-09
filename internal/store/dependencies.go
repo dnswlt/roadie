@@ -57,20 +57,10 @@ func validDepKind(ref model.DependencyRef) error {
 	return nil
 }
 
-// depsFromClause joins an edge to the lane of its from-endpoint. Both
-// endpoints always share a roadmap (store-enforced), so scoping edges to a
-// roadmap only needs one side.
-const depsFromClause = `
-	FROM dependencies d
-	LEFT JOIN items fi ON fi.id = d.from_item_id
-	LEFT JOIN milestones fm ON fm.id = d.from_milestone_id
-	JOIN lanes l ON l.id = COALESCE(fi.lane_id, fm.lane_id)`
-
 // getDependencies returns all dependency edges of a roadmap, ordered by id.
 func getDependencies(ctx context.Context, q querier, roadmapID int64) ([]model.Dependency, error) {
 	rows, err := q.Query(ctx,
-		`SELECT d.id, d.from_item_id, d.from_milestone_id, d.to_item_id, d.to_milestone_id`+
-			depsFromClause+` WHERE l.roadmap_id = $1 ORDER BY d.id`, roadmapID)
+		`SELECT `+depCols+` FROM dependencies WHERE roadmap_id = $1 ORDER BY id`, roadmapID)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +88,7 @@ func depEdges(deps []model.Dependency) []depEdge {
 // ErrNotFound — the resolver behind the DELETE route's authorization.
 func (s *Store) RoadmapIDByDependency(ctx context.Context, depID int64) (int64, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx,
-		`SELECT l.roadmap_id`+depsFromClause+` WHERE d.id = $1`, depID).Scan(&id)
+	err := s.pool.QueryRow(ctx, `SELECT roadmap_id FROM dependencies WHERE id = $1`, depID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNotFound
 	}
@@ -109,8 +98,7 @@ func (s *Store) RoadmapIDByDependency(ctx context.Context, depID int64) (int64, 
 // lockRoadmapByDependency locks the roadmap owning depID and returns its id.
 func (s *Store) lockRoadmapByDependency(ctx context.Context, tx pgx.Tx, depID int64) (int64, error) {
 	var roadmapID int64
-	err := tx.QueryRow(ctx,
-		`SELECT l.roadmap_id`+depsFromClause+` WHERE d.id = $1`, depID).Scan(&roadmapID)
+	err := tx.QueryRow(ctx, `SELECT roadmap_id FROM dependencies WHERE id = $1`, depID).Scan(&roadmapID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNotFound
 	}
@@ -272,8 +260,8 @@ func (s *Store) CreateDependency(ctx context.Context, roadmapID int64, from, to 
 	}
 
 	d, err := scanDependency(tx.QueryRow(ctx,
-		`INSERT INTO dependencies (from_item_id, from_milestone_id, to_item_id, to_milestone_id)
-		 VALUES ($1, $2, $3, $4) RETURNING `+depCols, fi, fm, ti, tm))
+		`INSERT INTO dependencies (roadmap_id, from_item_id, from_milestone_id, to_item_id, to_milestone_id)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING `+depCols, roadmapID, fi, fm, ti, tm))
 	if err != nil {
 		return model.Dependency{}, err
 	}
@@ -307,7 +295,7 @@ func (s *Store) DeleteDependency(ctx context.Context, id int64) error {
 // cycles are rejected — the store enforces the DAG on every path, not just the
 // API one — while exact duplicate edges are silently collapsed (the same edge
 // twice is still one edge). Called by insertRoadmapContents.
-func insertDependencies(ctx context.Context, tx pgx.Tx, src model.RoadmapFull, itemIDs, msIDs map[int64]int64) error {
+func insertDependencies(ctx context.Context, tx pgx.Tx, roadmapID int64, src model.RoadmapFull, itemIDs, msIDs map[int64]int64) error {
 	if len(src.Dependencies) == 0 {
 		return nil
 	}
@@ -375,8 +363,8 @@ func insertDependencies(ctx context.Context, tx pgx.Tx, src model.RoadmapFull, i
 	}
 	for _, r := range rows {
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO dependencies (from_item_id, from_milestone_id, to_item_id, to_milestone_id)
-			 VALUES ($1, $2, $3, $4)`, r.fi, r.fm, r.ti, r.tm); err != nil {
+			`INSERT INTO dependencies (roadmap_id, from_item_id, from_milestone_id, to_item_id, to_milestone_id)
+			 VALUES ($1, $2, $3, $4, $5)`, roadmapID, r.fi, r.fm, r.ti, r.tm); err != nil {
 			return err
 		}
 	}
