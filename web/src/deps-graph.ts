@@ -3,7 +3,7 @@
 // from"); everything a view wants — per-entity adjacency, the local
 // neighborhood, date sanity — is derived here.
 
-import type { Dependency, DependencyRef, LaneFull } from "./types";
+import type { Dependency, DependencyRef, LaneFull, RoadmapFull } from "./types";
 
 export function sameRef(a: DependencyRef, b: DependencyRef): boolean {
   return a.kind === b.kind && a.id === b.id;
@@ -49,6 +49,69 @@ export function splitDeps(
   dependsOn.sort(at((d) => d.from));
   neededBy.sort(at((d) => d.to));
   return { dependsOn, neededBy };
+}
+
+// What one entity's edges add up to: how many touch it in each direction, and
+// how many of those the calendar contradicts. This is what the chart's small
+// per-item mark is drawn from — presence, and whether presence is a problem.
+export interface DepSummary {
+  dependsOn: number;
+  neededBy: number;
+  conflicts: number;
+}
+
+// depSummaries reduces the roadmap's flat edge list to one entry per entity
+// that actually has edges; an entity with none is absent from the map, so a
+// missing entry *is* "draw no mark". Built once per render pass, because the
+// alternative — asking per bar — rescans every edge for every item.
+export function depSummaries(rm: RoadmapFull | null): Map<string, DepSummary> {
+  const out = new Map<string, DepSummary>();
+  if (!rm) return out;
+
+  // Endpoint spans for the conflict test, indexed first so the edge walk stays
+  // one pass. A milestone has no duration, so its single date stands as both
+  // of its ends: nothing may finish after it, and it starts when it lands.
+  const span = new Map<string, { start: string; end: string }>();
+  for (const lane of rm.lanes) {
+    for (const item of lane.items) {
+      span.set(refKey({ kind: "item", id: item.id }), { start: item.startDate, end: item.endDate });
+      for (const child of item.children) {
+        span.set(refKey({ kind: "item", id: child.id }), { start: child.startDate, end: child.endDate });
+      }
+    }
+    for (const ms of lane.milestones) {
+      span.set(refKey({ kind: "milestone", id: ms.id }), { start: ms.date, end: ms.date });
+    }
+  }
+
+  const entryOf = (key: string): DepSummary => {
+    let e = out.get(key);
+    if (!e) {
+      e = { dependsOn: 0, neededBy: 0, conflicts: 0 };
+      out.set(key, e);
+    }
+    return e;
+  };
+
+  for (const d of rm.dependencies) {
+    const fromKey = refKey(d.from);
+    const toKey = refKey(d.to);
+    const from = span.get(fromKey);
+    const to = span.get(toKey);
+    // An edge whose endpoint vanished under an SSE refresh marks nothing; the
+    // next refetch drops the edge itself.
+    if (!from || !to) continue;
+    entryOf(toKey).dependsOn++;
+    entryOf(fromKey).neededBy++;
+    if (dateConflict(from.end, to.start)) {
+      // The contradiction belongs to the pair, not to one end of it, so both
+      // carry it: a late prerequisite is as visible from the work it blocks as
+      // from itself, which is what makes the warning findable while scanning.
+      entryOf(fromKey).conflicts++;
+      entryOf(toKey).conflicts++;
+    }
+  }
+  return out;
 }
 
 // linkedRefs returns the set of refKeys already connected to `ref` in either

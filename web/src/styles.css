@@ -1093,6 +1093,36 @@ kbd {
   pointer-events: none;
 }
 
+/* The dependency mark (depMark in render.ts). Colour is inherited rather than
+   set, so one rule serves white-on-lane inside a bar and ink on a WBS row; the
+   opacity keeps it quieter than the title it trails, since taking part in the
+   graph is not by itself worth interrupting anyone. */
+.bar-dep {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 3px 0 0;
+  color: inherit;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+/* A dependency the calendar contradicts: a prerequisite that finishes after
+   the work needing it starts. Built like the flag, and in the flag's colour,
+   for the flag's stated reason — that token exists because a marker has to
+   read against all five lane themes, which no --c shade and no --danger can
+   do (a --danger chip disappears on the red lane). The shared colour is not a
+   collision: both markers mean "look here", and the glyph says which kind.
+   It is also the more honest tone — an unmeetable date is a warning about a
+   valid state, not an error. */
+.bar-dep.dep-conflict {
+  padding: 2px 3px;
+  border-radius: 3px;
+  background: var(--flag);
+  color: #fff;
+  opacity: 1;
+}
+
 /* Priority chips in the edit panel. */
 .prio-chips {
   display: flex;
@@ -1231,6 +1261,35 @@ kbd {
 .milestone.selected .milestone-diamond {
   outline: 2px solid color-mix(in oklab, var(--c) 65%, black);
   outline-offset: 2px;
+}
+
+/* A timeline milestone has no furniture run — it is a diamond and an
+   absolutely-positioned label — so it warns on the diamond itself, and only
+   about the contradiction: "has edges" has nowhere to go here, and "d" answers
+   it. (The WBS milestone row has room for the real glyph and uses it instead;
+   see renderMilestoneRow.)
+
+   The warning is a ring rather than a repaint, so the lane's fill survives it
+   and the chart gains no new solid shape — and it is the *same* ring selection
+   draws directly above, 2px at 2px offset, which is what makes it read as this
+   diamond's own language rather than a new one. Standing off the diamond is
+   the point: hugged tight, the warning was easy to miss. */
+.milestone.dep-conflict .milestone-diamond {
+  outline: 2px solid var(--flag);
+  outline-offset: 2px;
+}
+
+/* Selected as well. One outline can only say one thing, so selection — the
+   thing the user just did, and which they can undo — takes it back, and the
+   warning steps inward to a hugging ring. Both stay visible, and the resting
+   state, which is the one being scanned, keeps the warning in the prominent
+   position. Ordered after the two rules it arbitrates between, so the cascade
+   is doing what it looks like it is doing. */
+.milestone.dep-conflict.selected .milestone-diamond {
+  outline-color: color-mix(in oklab, var(--c) 65%, black);
+  box-shadow:
+    0 0 0 2px var(--flag),
+    var(--shadow);
 }
 
 /* A milestone's title, right of its diamond in the band. --avail — set per
@@ -2330,8 +2389,8 @@ dialog.deps-dialog {
   stroke-width: 1.5;
 }
 
-.deps-wire.is-conflict {
-  stroke: var(--danger);
+.deps-wire.dep-conflict {
+  stroke: var(--flag);
 }
 
 /* The columns sit above the wires (positioned + later in the DOM), so a wire
@@ -2397,12 +2456,15 @@ button.deps-node:hover {
 }
 
 /* A date conflict tints the card, not just the wire: the wire is thin and the
-   red has to survive a quick scan. The lane accent stays — which lane it is
-   remains true; when it is due does not. */
-.deps-node.is-conflict {
-  border-color: var(--danger);
-  border-left-color: var(--danger);
-  background: var(--danger-soft);
+   warning has to survive a quick scan. The lane accent stays — which lane it
+   is remains true; when it is due does not. Same --flag as the chart's mark:
+   one condition, one colour, so pressing "d" on an amber bar does not open a
+   red dialog. The tint is mixed rather than tokenised — there is exactly one
+   place that needs a soft flag wash. */
+.deps-node.dep-conflict {
+  border-color: var(--flag);
+  border-left-color: var(--flag);
+  background: color-mix(in oklab, var(--flag) 12%, var(--surface));
 }
 
 .deps-node-center {

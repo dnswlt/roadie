@@ -2,6 +2,7 @@
 // on every state change; scroll position is preserved across rebuilds.
 
 import { laneColorValue } from "./colors";
+import { type DepSummary, depSummaries, refKey } from "./deps-graph";
 import { icons } from "./icons";
 import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
 import { extractUrls } from "./links";
@@ -22,6 +23,18 @@ import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./type
 
 let scale: Scale = { startDay: 0, endDay: 0, pxPerDay: 3 };
 
+// The dependency summaries backing this pass's marks, rebuilt at the top of
+// renderChart — same lifecycle as `scale`, and for the same reason: it is
+// derived from the state the pass is drawing, and every reader below is
+// reached from that pass. The WBS builds its own (wbs.ts); depMark itself
+// takes the entry, so neither view can read the other's.
+let depSums = new Map<string, DepSummary>();
+
+// depsOf looks up an item's summary for this pass. Undefined = no edges.
+function depsOf(item: Item): DepSummary | undefined {
+  return depSums.get(refKey({ kind: "item", id: item.id }));
+}
+
 export function currentScale(): Scale {
   return scale;
 }
@@ -37,6 +50,8 @@ export function renderChart(container: HTMLElement): void {
   const today = todayDay();
   const range = computeRange(rm, today);
   scale = { ...range, pxPerDay: state.pxPerDay };
+
+  depSums = depSummaries(rm);
 
   const scrollLeft = container.scrollLeft;
   const scrollTop = container.scrollTop;
@@ -306,6 +321,14 @@ function renderMilestone(m: Milestone, labelPx: number): HTMLElement {
   const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
   // Milestones carry neither labels nor a flag, so any active focus dims them.
   if (state.focus !== null) el.classList.add("dimmed");
+  // A milestone has no furniture run to hold the dependency mark — it is a
+  // diamond and an absolutely-positioned label — so it carries the warning on
+  // the diamond itself. Only the warning: "has edges" has nowhere to go here,
+  // and is a click ("d") away, while "cannot be met as scheduled" is the thing
+  // that must not wait to be asked for.
+  if ((depSums.get(refKey({ kind: "milestone", id: m.id }))?.conflicts ?? 0) > 0) {
+    el.classList.add("dep-conflict");
+  }
   el.dataset.milestoneId = String(m.id);
   el.style.left = `${xOf(scale, dayOf(m.date))}px`;
   const label = div("milestone-label");
@@ -387,10 +410,16 @@ function fillBar(
   geom: BarGeom,
   lead: HTMLElement | null = null,
 ): void {
+  const deps = depsOf(item);
   bar.append(handle("rh rh-l"));
-  if (titleFits(item, geom.width, lead !== null)) {
+  if (titleFits(item, geom.width, lead !== null, deps !== undefined)) {
     if (lead) bar.append(lead);
-    bar.append(barMain(item.title, item.description), prioPill(item.priority), flagMark(item.flagged));
+    bar.append(
+      barMain(item.title, item.description),
+      prioPill(item.priority),
+      depMark(deps),
+      flagMark(item.flagged),
+    );
   } else {
     bar.append(div("bar-fill")); // flex spacer so the handles stay at the edges
     block.append(barOutside(item, geom, lead));
@@ -427,7 +456,13 @@ function barOutside(item: Item, geom: BarGeom, lead: HTMLElement | null = null):
   // Mirrored order: inside a bar the title comes first and the flag sits
   // outermost on the right, so on an outside label — which runs leftwards from
   // the title — outermost means ahead of the pill.
-  lbl.append(flagMark(item.flagged), prioPill(item.priority), barTitle(item.title), barLink(item.description));
+  lbl.append(
+    flagMark(item.flagged),
+    depMark(depsOf(item)),
+    prioPill(item.priority),
+    barTitle(item.title),
+    barLink(item.description),
+  );
   return lbl;
 }
 
@@ -440,16 +475,19 @@ const TITLE_PAD = 4;
 const FIT_SLACK = 4;
 const PILL_RESERVE = 32;
 const FLAG_RESERVE = 22;
+const DEP_RESERVE = 19; // the dependency mark, when the item has edges
 const LINK_RESERVE = 18;
 const DISCLOSURE_RESERVE = 13; // a parent's fold chevron, when shown inside the bar
 const OUTSIDE_GAP = 6; // gap between a bar and its outside label
 
-// titleFits reports whether `item`'s title (plus its pill/flag/link/chevron, if
-// any) fits in a bar `width` px wide. Empty titles never spill.
-function titleFits(item: Item, width: number, hasDisclosure = false): boolean {
+// titleFits reports whether `item`'s title (plus its pill/flag/link/chevron
+// and dependency mark, if any) fits in a bar `width` px wide. Empty titles
+// never spill.
+function titleFits(item: Item, width: number, hasDisclosure = false, hasDeps = false): boolean {
   if (!item.title) return true;
   let reserved = RH_TOTAL + TITLE_PAD + FIT_SLACK;
   if (hasDisclosure) reserved += DISCLOSURE_RESERVE;
+  if (hasDeps) reserved += DEP_RESERVE;
   if (item.priority) reserved += PILL_RESERVE;
   if (item.flagged) reserved += FLAG_RESERVE;
   if (extractUrls(item.description)[0]) reserved += LINK_RESERVE;
@@ -495,6 +533,29 @@ export function flagMark(flagged: boolean): Node {
   const el = document.createElement("span");
   el.className = "bar-flag";
   el.append(icons.flag(13));
+  return el;
+}
+
+// The dependency mark: this item takes part in the graph. Absent when it has
+// no edges — the summary map only holds entities that do, so "no entry" is
+// "no mark" and the chart stays quiet for the common case.
+//
+// The glyph is diagramMerge, the same one the panel head's graph button wears:
+// one mark means "dependencies" wherever it appears. Normally quiet — presence
+// is not alarm — so it takes no fill and inherits its color, white-on-lane
+// inside a bar and ink on a WBS row, which is the .bar-link precedent and
+// needs no per-view rule. It turns into a filled amber chip — the flag's
+// colour, for the flag's reason — when the calendar contradicts one of those
+// edges, which is the one dependency state worth interrupting someone for.
+//
+// It carries no tooltip and no click: "d" opens the graph overlay, which
+// answers what and why far better than a hover ever would, and staying inert
+// keeps it out of the drag controllers' way like the rest of the furniture.
+export function depMark(summary: DepSummary | undefined): Node {
+  if (!summary) return document.createTextNode("");
+  const el = document.createElement("span");
+  el.className = summary.conflicts > 0 ? "bar-dep dep-conflict" : "bar-dep";
+  el.append(icons.diagramMerge(13));
   return el;
 }
 

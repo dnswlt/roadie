@@ -16,6 +16,11 @@ function svg(inner: string, size = 16): SVGSVGElement {
   return el;
 }
 
+// Below this rendered size a small outlined shape stops reading as a shape and
+// becomes a blob, so glyphs built from tiny nodes fill them instead. See
+// diagramMerge, the only icon that currently spans both regimes.
+const NODE_FILL_PX = 15;
+
 export const icons = {
   pencil: (size = 16) =>
     svg(
@@ -167,15 +172,27 @@ export const icons = {
   search: (size = 16) =>
     svg(`<circle cx="11" cy="11" r="7"/><path d="m20 20-4.35-4.35"/>`, size),
   milestone: (size = 16) => svg(`<path d="M12 3 21 12 12 21 3 12z"/>`, size),
-  // Three linked nodes (lucide "waypoints"): the dependency graph.
-  waypoints: (size = 16) =>
-    svg(
-      `<circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/>` +
-        `<circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/>` +
-        `<circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/>` +
-        `<circle cx="12" cy="19.5" r="2.5"/>`,
+  // The dependency glyph: three nodes converging, two on the left feeding one
+  // on the right. The fan-*in* direction is deliberate — fanned the other way
+  // this is the universal share glyph, a meaning nobody would unlearn.
+  // Converging instead reads as a merge, which is what a prerequisite is.
+  //
+  // One shape, two weights, chosen by size rather than by the caller. Below
+  // NODE_FILL_PX a stroked square closes up into a blob, so the nodes are
+  // filled — that is the only reason the fill exists, and it costs weight: at
+  // button size the same solid mark is visibly heavier than the stroked icons
+  // beside it. So from there up the nodes are outlined like every other icon
+  // in this set. The geometry never changes, so it stays one mark.
+  diagramMerge: (size = 16) => {
+    const node = size < NODE_FILL_PX ? ` fill="currentColor" stroke="none"` : "";
+    return svg(
+      `<rect x="1.5" y="2" width="6.5" height="6.5" rx="1.2"${node}/>` +
+        `<rect x="1.5" y="15.5" width="6.5" height="6.5" rx="1.2"${node}/>` +
+        `<rect x="16" y="8.75" width="6.5" height="6.5" rx="1.2"${node}/>` +
+        `<path d="M8 5.25 16 12"/><path d="M8 18.75 16 12"/>`,
       size,
-    ),
+    );
+  },
   // The two faces of the view toggle: offset horizontal bars for the
   // timeline, a nested outline for the WBS.
   ganttChart: (size = 16) =>

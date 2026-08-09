@@ -61,7 +61,7 @@ export function depsGraphButton(ref: DependencyRef): HTMLButtonElement {
   btn.className = "icon-btn";
   btn.title = "Dependency graph (d)";
   btn.setAttribute("aria-label", "Dependency graph");
-  btn.append(icons.waypoints(16));
+  btn.append(icons.diagramMerge(16));
   btn.addEventListener("click", () => openDepsOverlay(ref));
   return btn;
 }
@@ -300,7 +300,7 @@ function nodeCard(
   card.className = opts.center ? "deps-node deps-node-center" : "deps-node";
   if (opts.side) (card as HTMLElement).dataset.side = opts.side;
   if (opts.conflict) {
-    card.classList.add("is-conflict");
+    card.classList.add("dep-conflict");
     card.title = "Dates conflict: the prerequisite is scheduled to end after this dependency needs it.";
   }
   card.style.setProperty("--c", laneColorValue(disp.laneColor));
@@ -444,7 +444,7 @@ function drawWires(dlg: HTMLElement): void {
     path.setAttribute("d", `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`);
     path.setAttribute(
       "class",
-      card.classList.contains("is-conflict") ? "deps-wire is-conflict" : "deps-wire",
+      card.classList.contains("dep-conflict") ? "deps-wire dep-conflict" : "deps-wire",
     );
     svg.append(path);
   }

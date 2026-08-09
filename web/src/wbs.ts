@@ -11,12 +11,22 @@
 // gated by a mode check. Row gestures — click, double-click, and the vertical
 // reorder/nest/cross-lane drag — live in wbs-dnd.ts; milestone rows and the
 // group fold stay on app.ts wireChart. The shared appearance lives in
-// styles.css; the shared furniture builders (title, pill, flag, link,
-// chevron) come from render.ts.
+// styles.css; the shared furniture builders (title, pill, flag, dependency
+// mark, link, chevron) come from render.ts.
 
 import { laneColorValue } from "./colors";
+import { type DepSummary, depSummaries, refKey } from "./deps-graph";
 import { icons } from "./icons";
-import { barLink, barTitle, disclosure, emptyState, flagMark, laneLabel, prioPill } from "./render";
+import {
+  barLink,
+  barTitle,
+  depMark,
+  disclosure,
+  emptyState,
+  flagMark,
+  laneLabel,
+  prioPill,
+} from "./render";
 import { state } from "./state";
 import { dayOf, formatDay } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone } from "./types";
@@ -27,6 +37,12 @@ function div(className: string): HTMLDivElement {
   return el;
 }
 
+// This pass's dependency summaries, rebuilt at the top of renderWbs. The
+// timeline keeps its own (render.ts): the two views render independently, and
+// depMark takes the entry rather than reading a shared global, so neither can
+// draw from the other's pass.
+let depSums = new Map<string, DepSummary>();
+
 export function renderWbs(container: HTMLElement): void {
   const rm = state.current;
   const scrollTop = container.scrollTop;
@@ -36,6 +52,8 @@ export function renderWbs(container: HTMLElement): void {
     container.append(emptyState());
     return;
   }
+
+  depSums = depSummaries(rm);
 
   const lanesEl = div("lanes");
   const visibleLanes = rm.lanes.filter((l) => !state.isLaneHidden(l.id));
@@ -136,7 +154,16 @@ function renderMilestoneRow(m: Milestone): HTMLElement {
   title.textContent = m.title;
   const date = div("wbs-dates");
   date.textContent = formatDay(dayOf(m.date));
-  el.append(div("wbs-ms-diamond"), title, date);
+  // Unlike the timeline's diamond, a row has room for the real mark, so a
+  // milestone here says what an item says, the same way — including the
+  // presence case the timeline has to leave out. That makes the warning ring
+  // redundant on this row, so it is not drawn: one condition, one marker.
+  el.append(
+    div("wbs-ms-diamond"),
+    title,
+    depMark(depSums.get(refKey({ kind: "milestone", id: m.id }))),
+    date,
+  );
   return el;
 }
 
@@ -184,6 +211,11 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   // then shares the right edge, and the dates read as a column — pill and
   // chip widths vary row to row, so anything trailing the dates would make
   // the column ragged.
-  row.append(prioPill(item.priority), flagMark(item.flagged), dates);
+  row.append(
+    prioPill(item.priority),
+    depMark(depSums.get(refKey({ kind: "item", id: item.id }))),
+    flagMark(item.flagged),
+    dates,
+  );
   return row;
 }

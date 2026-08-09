@@ -1,7 +1,15 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { dateConflict, linkedRefs, refKey, sameRef, splitDeps } from "./deps-graph";
-import type { Dependency, DependencyRef, Item, ItemFull, LaneFull, Milestone } from "./types";
+import { dateConflict, depSummaries, linkedRefs, refKey, sameRef, splitDeps } from "./deps-graph";
+import type {
+  Dependency,
+  DependencyRef,
+  Item,
+  ItemFull,
+  LaneFull,
+  Milestone,
+  RoadmapFull,
+} from "./types";
 
 const item = (id: number): DependencyRef => ({ kind: "item", id });
 const ms = (id: number): DependencyRef => ({ kind: "milestone", id });
@@ -100,4 +108,100 @@ test("dateConflict flags only a strict overlap", () => {
   assert.ok(dateConflict("2026-02-01", "2026-01-15")); // prerequisite ends after start
   assert.ok(!dateConflict("2026-01-15", "2026-01-15")); // same-day handover is fine
   assert.ok(!dateConflict("2026-01-10", "2026-01-15"));
+});
+
+// depSummaries needs real dates, which the lane() helper above fixes at one
+// day; these build spans explicitly instead.
+function datedItem(id: number, start: string, end: string): ItemFull {
+  return { ...baseItem(id, 1, 0), startDate: start, endDate: end, children: [] };
+}
+
+function roadmap(items: ItemFull[], milestones: Milestone[], dependencies: Dependency[]): RoadmapFull {
+  return {
+    id: 1,
+    name: "R",
+    createdAt: "2026-01-01T00:00:00Z",
+    visibility: "public",
+    lanes: [{ id: 1, roadmapId: 1, name: "L", position: 0, color: "blue", items, milestones }],
+    periods: [],
+    dependencies,
+  };
+}
+
+const milestone = (id: number, date: string): Milestone => ({
+  id,
+  laneId: 1,
+  title: `M${id}`,
+  description: "",
+  date,
+});
+
+test("depSummaries counts each direction and omits entities with no edges", () => {
+  const rm = roadmap(
+    [
+      datedItem(1, "2026-01-01", "2026-01-31"),
+      datedItem(2, "2026-02-01", "2026-02-28"),
+      datedItem(3, "2026-03-01", "2026-03-31"), // untouched by any edge
+    ],
+    [],
+    [edge(item(1), item(2))],
+  );
+  const s = depSummaries(rm);
+  assert.deepEqual(s.get("item:1"), { dependsOn: 0, neededBy: 1, conflicts: 0 });
+  assert.deepEqual(s.get("item:2"), { dependsOn: 1, neededBy: 0, conflicts: 0 });
+  // No entry at all, which is what tells the renderer to draw no mark.
+  assert.equal(s.get("item:3"), undefined);
+});
+
+test("depSummaries marks a date conflict on both ends of the edge", () => {
+  // Item 1 runs into March but item 2, which needs it, starts in February.
+  const rm = roadmap(
+    [datedItem(1, "2026-01-01", "2026-03-31"), datedItem(2, "2026-02-01", "2026-02-28")],
+    [],
+    [edge(item(1), item(2))],
+  );
+  const s = depSummaries(rm);
+  assert.equal(s.get("item:1")?.conflicts, 1);
+  assert.equal(s.get("item:2")?.conflicts, 1);
+});
+
+test("depSummaries treats a milestone's date as both of its ends", () => {
+  // The work finishes after the milestone it is supposed to enable.
+  const late = roadmap(
+    [datedItem(1, "2026-01-01", "2026-03-31")],
+    [milestone(7, "2026-02-01")],
+    [edge(item(1), ms(7))],
+  );
+  assert.equal(depSummaries(late).get("milestone:7")?.conflicts, 1);
+
+  // Landing exactly on the milestone's date is a handover, not a conflict.
+  const onTime = roadmap(
+    [datedItem(1, "2026-01-01", "2026-02-01")],
+    [milestone(7, "2026-02-01")],
+    [edge(item(1), ms(7))],
+  );
+  const s = depSummaries(onTime);
+  assert.equal(s.get("milestone:7")?.conflicts, 0);
+  assert.equal(s.get("milestone:7")?.dependsOn, 1);
+});
+
+test("depSummaries ignores an edge whose endpoint has vanished", () => {
+  const rm = roadmap([datedItem(1, "2026-01-01", "2026-01-31")], [], [edge(item(1), item(99))]);
+  const s = depSummaries(rm);
+  assert.equal(s.size, 0);
+});
+
+test("depSummaries covers child items, which carry their own dates", () => {
+  const parent: ItemFull = {
+    ...baseItem(1, 1, 0),
+    startDate: "2026-01-01",
+    endDate: "2026-06-30",
+    children: [{ ...baseItem(2, 1, 0), startDate: "2026-01-01", endDate: "2026-01-15" }],
+  };
+  const rm = roadmap([parent, datedItem(3, "2026-01-10", "2026-02-01")], [], [
+    edge(item(2), item(3)),
+  ]);
+  const s = depSummaries(rm);
+  assert.equal(s.get("item:2")?.neededBy, 1);
+  assert.equal(s.get("item:2")?.conflicts, 1); // child ends Jan 15, item 3 started Jan 10
 });
