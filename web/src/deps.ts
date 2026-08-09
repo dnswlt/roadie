@@ -3,11 +3,10 @@
 // The edit panel's "Dependencies" section: two lists seen from the selected
 // entity — "Depends on" (its prerequisites) and "Needed by" (what it unblocks)
 // — so the edge's direction is chosen by *which* list you add to, never by a
-// toggle. The far endpoint is picked through a dropdown that reuses the find
-// machinery (search.ts): same matching, same ranking, same row language. Like
-// labelsField, the section owns its DOM and re-renders itself after every
-// local mutation: while its input has focus, the panel deliberately skips its
-// own rebuild.
+// toggle. The far endpoint is picked with a search-list.ts picker: the same
+// matching, keyboard and rows as the find popup. Like labelsField, the section
+// owns its DOM and re-renders itself after every local mutation: while its
+// input has focus, the panel deliberately skips its own rebuild.
 //
 // The local graph overlay: one entity with its one-hop neighborhood, drawn
 // topologically (prerequisites → node → dependents), deliberately *not* on the
@@ -21,12 +20,12 @@ import { actions } from "./actions";
 import { laneColorValue } from "./colors";
 import { dateConflict, linkedRefs, refKey, splitDeps } from "./deps-graph";
 import { icons } from "./icons";
-import { type Match, search } from "./search";
+import { createSearchList } from "./search-list";
 import { state } from "./state";
 import { dayOf, formatDay } from "./timescale";
 import type { Dependency, DependencyRef } from "./types";
 
-// How many dropdown rows are drawn. Tighter than the find popup's cap: this
+// How many picker rows are drawn. Tighter than the find popup's cap: this
 // list lives inside a 300px-min panel, and a query that needs more rows than
 // this needs more letters, not more scrolling.
 const MAX_ROWS = 8;
@@ -91,7 +90,12 @@ function depGroup(ref: DependencyRef, dir: Direction, rerender: () => void): HTM
   add.title = GROUP_TEXT[dir].add;
   add.setAttribute("aria-label", GROUP_TEXT[dir].add);
   add.append(icons.plus(14));
-  add.addEventListener("click", () => openAddDropdown(group, ref, dir, rerender));
+  add.addEventListener("click", (e) => {
+    // Openers swallow their own click, as in wireTopbar: the picker's
+    // click-away handler must not see the click that opened it.
+    e.stopPropagation();
+    openPicker(group, ref, dir, rerender);
+  });
   head.append(label, add);
 
   const rows = document.createElement("div");
@@ -143,147 +147,68 @@ function depRow(dep: Dependency, far: DependencyRef, rerender: () => void): HTML
   return row;
 }
 
-// openAddDropdown swaps a search input + result list into the group. It is the
-// find popup in miniature — same search(), same row shape — but local to the
-// panel and pre-filtered: the entity itself and everything already linked to
-// it (either direction — re-adding or directly reversing an edge is a
-// guaranteed rejection) never show up. Indirect cycles stay in the list on
-// purpose: the server rejects them with the chain spelled out, and that toast
-// is the explanation.
-function openAddDropdown(
+// openPicker swaps a search-list picker into the group, pre-filtered: the
+// entity itself and everything already linked to it (either direction —
+// re-adding or directly reversing an edge is a guaranteed rejection) never
+// show up. Indirect cycles stay in the list on purpose: the server rejects
+// them with the chain spelled out, and that toast is the explanation.
+//
+// The picker follows the topbar popovers' lifecycle rules (wireTopbar):
+// exclusive-open — opening one closes any other — and click-away — a click
+// outside dismisses it. It manages that itself only because it is a transient
+// node the topbar's document handler doesn't know about.
+
+// close() of the currently open picker, or null. Module-level because
+// exclusivity is app-wide: two pickers can never be open at once.
+let openPickerClose: (() => void) | null = null;
+
+function openPicker(
   group: HTMLElement,
   ref: DependencyRef,
   dir: Direction,
   rerender: () => void,
 ): void {
-  // One dropdown at a time across the whole section.
-  document.querySelector(".dep-pop")?.remove();
+  openPickerClose?.();
 
   const pop = document.createElement("div");
   pop.className = "menu dep-pop";
-  const input = document.createElement("input");
-  input.className = "find-input";
-  input.type = "text";
-  input.placeholder = GROUP_TEXT[dir].placeholder;
-  input.autocomplete = "off";
-  input.spellcheck = false;
-  const list = document.createElement("div");
-  list.className = "find-list";
-  pop.append(input, list);
-  group.append(pop);
 
-  let matches: Match[] = [];
-  let cursor = 0;
-
-  // Idempotent, and it has to be: removing the pop while its input holds
-  // focus makes Chrome fire blur *during* the removal, and the blur handler
-  // below is this very function. Without the guard the re-entrant call
-  // detaches the pop under the outer remove(), which then throws — killing
-  // the commit before the API call ever runs.
-  let closed = false;
+  const onDocClick = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) close();
+  };
+  // Safe to call more than once: removing a removed listener and a detached
+  // node are both no-ops.
   const close = (): void => {
-    if (closed) return;
-    closed = true;
+    if (openPickerClose === close) openPickerClose = null;
+    document.removeEventListener("click", onDocClick);
     pop.remove();
   };
+  openPickerClose = close;
+  document.addEventListener("click", onDocClick);
 
-  const commit = (m: Match): void => {
-    const far: DependencyRef = { kind: m.kind, id: m.id };
-    const [from, to] = dir === "dependsOn" ? [far, ref] : [ref, far];
-    close();
-    void actions.addDependency(from, to).then((ok) => {
-      if (ok) rerender();
-    });
-  };
+  const excluded = linkedRefs(state.current?.dependencies ?? [], ref);
+  excluded.add(refKey(ref));
 
-  const runQuery = (): void => {
-    const rm = state.current;
-    if (!rm) {
-      matches = [];
-      return;
-    }
-    const excluded = linkedRefs(rm.dependencies, ref);
-    excluded.add(refKey(ref));
-    matches = search(rm, input.value)
-      .filter((m) => !excluded.has(refKey({ kind: m.kind, id: m.id })))
-      .slice(0, MAX_ROWS);
-    cursor = 0;
-  };
-
-  const note = (text: string): HTMLElement => {
-    const el = document.createElement("div");
-    el.className = "menu-empty";
-    el.textContent = text;
-    return el;
-  };
-
-  const draw = (): void => {
-    list.replaceChildren();
-    if (input.value.trim() === "") {
-      list.append(note("Type to search items and milestones."));
-      return;
-    }
-    if (matches.length === 0) {
-      list.append(note("No matches."));
-      return;
-    }
-    matches.forEach((m, i) => {
-      const row = document.createElement("button");
-      row.className = i === cursor ? "find-row is-cursor" : "find-row";
-      row.type = "button";
-      const dot = document.createElement("span");
-      dot.className = "color-dot";
-      dot.style.background = laneColorValue(m.laneColor);
-      const line = document.createElement("span");
-      line.className = "find-title-line";
-      if (m.kind === "milestone") line.append(icons.milestone(12));
-      const title = document.createElement("span");
-      title.className = "find-title";
-      title.textContent = m.title || "(untitled)";
-      line.append(title);
-      row.append(dot, line);
-      // Keep focus in the input, so the click commits before any blur-close.
-      row.addEventListener("mousedown", (e) => e.preventDefault());
-      row.addEventListener("click", () => commit(m));
-      list.append(row);
-    });
-  };
-
-  input.addEventListener("input", () => {
-    runQuery();
-    draw();
+  const picker = createSearchList({
+    placeholder: GROUP_TEXT[dir].placeholder,
+    maxRows: MAX_ROWS,
+    emptyHint: "Type to search items and milestones.",
+    filter: (m) => !excluded.has(refKey({ kind: m.kind, id: m.id })),
+    onCommit: (m) => {
+      const far: DependencyRef = { kind: m.kind, id: m.id };
+      const [from, to] = dir === "dependsOn" ? [far, ref] : [ref, far];
+      close();
+      void actions.addDependency(from, to).then((ok) => {
+        if (ok) rerender();
+      });
+    },
+    onDismiss: close,
   });
-  input.addEventListener("keydown", (e) => {
-    switch (e.key) {
-      case "Escape":
-        // This transient dropdown owns Escape, like the find popup: without
-        // the stop, the global binding would also blur-and-finish the panel.
-        e.stopPropagation();
-        close();
-        return;
-      case "ArrowDown":
-      case "ArrowUp":
-        e.preventDefault();
-        if (matches.length > 0) {
-          cursor = Math.min(matches.length - 1, Math.max(0, cursor + (e.key === "ArrowDown" ? 1 : -1)));
-          draw();
-        }
-        return;
-      case "Enter": {
-        e.preventDefault();
-        const m = matches[cursor];
-        if (m) commit(m);
-        return;
-      }
-      default:
-    }
-  });
-  // Row clicks never blur (mousedown is prevented), so a blur is always a
-  // genuine "clicked elsewhere" and simply dismisses the dropdown.
-  input.addEventListener("blur", close);
 
-  draw();
-  input.focus();
+  pop.append(picker.el);
+  group.append(pop);
+  picker.refresh();
+  picker.focus();
 }
 
 // ---- The local graph overlay -------------------------------------------

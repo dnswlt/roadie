@@ -465,7 +465,13 @@ kbd {
   background: var(--border);
 }
 
-/* ---- Find popup (find.ts) --------------------------------------------- */
+/* ---- Find popup (find.ts) and the shared search list ------------------ */
+
+/* The search-list wrapper (search-list.ts) is layout-neutral: its input, head
+   and list lay out as children of whichever popup hosts them. */
+.search-list {
+  display: contents;
+}
 
 /* Wider than the other menus: a result row carries a title, its context and a
    date range, and truncating all three would defeat the point of the list. */

@@ -57,7 +57,7 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`trash.go`) · visibility (`store/access.go`, `s.guard`) · contributors
 (`contributors.go`) · schedule (`schedule.go`, `schedule.ts`) · SSE
 (`server/events.go`, `events.ts`) · auth (`internal/auth`) · find
-(`search.ts` + `find.ts`) · Home dialog (`home.ts`) · shortcuts (`keys.ts`) ·
+(`search.ts` + `search-list.ts` + `find.ts`) · Home dialog (`home.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`).
 
