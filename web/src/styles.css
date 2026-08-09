@@ -2281,6 +2281,161 @@ dialog input:focus {
   max-height: 240px;
 }
 
+/* Section head: the field label plus the graph button. The label span carries
+   panel-field-label styling of its own; the flex row does the vertical
+   centering, so its stacking margin goes. */
+.deps-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.deps-head .panel-field-label {
+  margin-bottom: 0;
+}
+
+/* ---- The local graph overlay (deps.ts) -------------------------------- */
+
+dialog.deps-dialog {
+  width: min(860px, 92vw);
+}
+
+/* Anchors the wire SVG under the card columns. */
+.deps-canvas {
+  position: relative;
+  margin: 4px 0 10px;
+}
+
+.deps-wires {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.deps-wire {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+
+.deps-wire.is-conflict {
+  stroke: var(--danger);
+}
+
+/* The columns sit above the wires (positioned + later in the DOM), so a wire
+   visually starts and ends at card edges. */
+.deps-cols {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1.1fr 1fr;
+  gap: 36px;
+  align-items: center;
+}
+
+.deps-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deps-col-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deps-col-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* The center column has no label — the card itself is the subject — so it
+   centers on the row the wires aim at. */
+.deps-col-center {
+  gap: 0;
+}
+
+.deps-node {
+  font: inherit;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 10px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--c);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+
+button.deps-node {
+  cursor: pointer;
+}
+
+button.deps-node:hover {
+  background: var(--grid);
+  border-color: var(--border-strong);
+  border-left-color: var(--c);
+}
+
+/* A date conflict tints the card, not just the wire: the wire is thin and the
+   red has to survive a quick scan. The lane accent stays — which lane it is
+   remains true; when it is due does not. */
+.deps-node.is-conflict {
+  border-color: var(--danger);
+  border-left-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.deps-node-center {
+  border-left-width: 4px;
+  box-shadow: var(--shadow-pop);
+}
+
+.deps-node-center .deps-node-title-text {
+  font-weight: 600;
+}
+
+.deps-node-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deps-node-title svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.deps-node-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deps-node-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.deps-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.deps-hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+
 /* Focus dropdown rows: a fixed-width check column keeps labels aligned whether
    or not a row is the active one. */
 .menu-check {

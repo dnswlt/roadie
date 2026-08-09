@@ -39,7 +39,8 @@ views are derived from it.**
 Model: `roadmaps` → `lanes` ("contexts", the swimlanes) → `items` (inclusive
 start/end dates, nullable `parent_id`, explicit `rank`). Lanes also hold
 `milestones` (a single date, no duration, no rank, not nested). Roadmaps hold
-`schedule_periods` (sprints/PIs) — roadmap-scoped, unlike everything else.
+`schedule_periods` (sprints/PIs) — roadmap-scoped, unlike everything else — and
+`dependencies` (directed item/milestone edges, also roadmap-scoped).
 
 Backend: stdlib `net/http` (Go 1.22 method routing) + pgx, hand-written SQL.
 internal/server is a thin JSON layer (`store.ErrNotFound` → 404,
@@ -57,7 +58,8 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`contributors.go`) · schedule (`schedule.go`, `schedule.ts`) · SSE
 (`server/events.go`, `events.ts`) · auth (`internal/auth`) · find
 (`search.ts` + `find.ts`) · Home dialog (`home.ts`) · shortcuts (`keys.ts`) ·
-snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`).
+snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
+dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`).
 
 ## Rules
 
@@ -82,8 +84,8 @@ A third scope means designing a real invalidation model — ask first.
 
 **The restore test**, for any new roadmap-scoped data: *if I restore a snapshot,
 should this revert too?* Yes ⇒ it belongs in the `RoadmapExport` envelope. No ⇒ it
-gets its own endpoint. Contributors and visibility are "no"; flags and schedule are
-"yes".
+gets its own endpoint. Contributors and visibility are "no"; flags, schedule and
+dependencies are "yes".
 
 **Mutating routes go through the `s.snap` wrapper**, which does three jobs at once:
 pre-mutation snapshot, SSE broadcast, contributor attribution, plus `s.guard` for
@@ -123,6 +125,13 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement
   `applyItemPatch`'s invariant logic as a second source of truth.
 - **Schedule is single-track** (sprints *or* PIs, not both nested).
+- **A dependency is one directed edge with no attributes** — no types, lag, or
+  labels (the user-colored-star argument again). Stored prerequisite → dependent;
+  roadmap-scoped only; a DAG, enforced in the store with rejections that name the
+  conflicting chain. Nesting implies no edges.
+- **Dependencies are never drawn on the timeline.** The chart projects time;
+  edges across it are the spaghetti this feature avoids. The local one-hop
+  overlay (`deps.ts`, recenter by clicking) is the only graph projection.
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**
@@ -148,7 +157,8 @@ Deliberate exceptions and scope limits, so they don't read as bugs:
 
 A third render scope · multi-track schedule · e2e tests outside the gesture
 pattern (DOM-content assertions, screenshots, non-gesture flows) · a second flag ·
-changing what `-auth=off` does.
+changing what `-auth=off` does · dependency edge attributes or kinds · drawing
+dependencies on the timeline.
 
 ## Verification
 

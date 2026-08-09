@@ -13,6 +13,7 @@
 // combos are left to the browser and the OS.
 
 import { actions } from "./actions";
+import { openDepsForSelection } from "./deps";
 import { openFind } from "./find";
 import { openHelpDialog } from "./help";
 import {
@@ -107,6 +108,12 @@ export const bindings: Binding[] = [
     label: "!",
     description: "*Flag or unflag* the selected items.",
     run: () => toggleFlagSelection(),
+  },
+  {
+    key: "d",
+    label: "d",
+    description: "*Dependency graph* of the selected item or milestone.",
+    run: () => openDepsForSelection(),
   },
   {
     key: "/",

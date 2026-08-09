@@ -167,6 +167,15 @@ export const icons = {
   search: (size = 16) =>
     svg(`<circle cx="11" cy="11" r="7"/><path d="m20 20-4.35-4.35"/>`, size),
   milestone: (size = 16) => svg(`<path d="M12 3 21 12 12 21 3 12z"/>`, size),
+  // Three linked nodes (lucide "waypoints"): the dependency graph.
+  waypoints: (size = 16) =>
+    svg(
+      `<circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/>` +
+        `<circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/>` +
+        `<circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/>` +
+        `<circle cx="12" cy="19.5" r="2.5"/>`,
+      size,
+    ),
   // The two faces of the view toggle: offset horizontal bars for the
   // timeline, a nested outline for the WBS.
   ganttChart: (size = 16) =>
