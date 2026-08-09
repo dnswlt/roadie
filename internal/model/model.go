@@ -150,6 +150,30 @@ type LaneFull struct {
 	Milestones []Milestone `json:"milestones"`
 }
 
+// Dependency endpoint kinds.
+const (
+	DepItem      = "item"
+	DepMilestone = "milestone"
+)
+
+// DependencyRef names one endpoint of a dependency edge: an item or a
+// milestone, both always in the edge's own roadmap.
+type DependencyRef struct {
+	Kind string `json:"kind"` // DepItem or DepMilestone
+	ID   int64  `json:"id"`
+}
+
+// Dependency is one directed edge in a roadmap's dependency graph: From is
+// the prerequisite, To the dependent — "To needs From". An edge carries no
+// attributes (no type, no lag, no label) on purpose: one edge kind, meaning
+// owned by the product. The graph is roadmap-scoped and acyclic, enforced in
+// internal/store.
+type Dependency struct {
+	ID   int64         `json:"id"`
+	From DependencyRef `json:"from"`
+	To   DependencyRef `json:"to"`
+}
+
 // SchedulePeriod is one named span in a roadmap's schedule (a sprint, PI, ...).
 // It has an inclusive end date and, like milestones, no rank: periods are
 // positioned purely by their dates. A period belongs to the roadmap, not a lane.
@@ -160,11 +184,14 @@ type SchedulePeriod struct {
 	EndDate   Date   `json:"endDate"`
 }
 
-// RoadmapFull is the complete payload the frontend works with.
+// RoadmapFull is the complete payload the frontend works with. Dependencies
+// are a flat roadmap-level list rather than per-item adjacency arrays, so
+// every edge is stated exactly once; views derive what they need from it.
 type RoadmapFull struct {
 	Roadmap
-	Lanes   []LaneFull       `json:"lanes"`
-	Periods []SchedulePeriod `json:"periods"`
+	Lanes        []LaneFull       `json:"lanes"`
+	Periods      []SchedulePeriod `json:"periods"`
+	Dependencies []Dependency     `json:"dependencies"`
 }
 
 // Export format markers. The on-disk file is a small envelope around a

@@ -22,11 +22,11 @@ var (
 )
 
 // privateRoadmap builds a private roadmap owned by `owner`, with one lane, one
-// item, one milestone and one snapshot, and returns the ids of each. Every
-// route that names a roadmap does so through one of these five ids, which is
-// what lets the sweep below cover all of them.
+// item, one milestone, one dependency and one snapshot, and returns the ids of
+// each. Every route that names a roadmap does so through one of these six ids,
+// which is what lets the sweep below cover all of them.
 type privateFixture struct {
-	roadmap, lane, item, milestone, snapshot int64
+	roadmap, lane, item, milestone, dependency, snapshot int64
 }
 
 func newPrivateFixture(t *testing.T) privateFixture {
@@ -57,11 +57,17 @@ func newPrivateFixture(t *testing.T) privateFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dep, err := testStore.CreateDependency(ctx, rm.ID,
+		model.DependencyRef{Kind: model.DepItem, ID: item.ID},
+		model.DependencyRef{Kind: model.DepMilestone, ID: ms.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return privateFixture{rm.ID, lane.ID, item.ID, ms.ID, snap.ID}
+	return privateFixture{rm.ID, lane.ID, item.ID, ms.ID, dep.ID, snap.ID}
 }
 
 // apiCall is one route exercised by the sweep: the mux pattern it is registered
@@ -104,6 +110,10 @@ func (f privateFixture) calls() []apiCall {
 
 		{"PATCH /api/milestones/{id}", "PATCH", fmt.Sprintf("/api/milestones/%d", f.milestone), `{"title":"Stolen"}`},
 		{"DELETE /api/milestones/{id}", "DELETE", fmt.Sprintf("/api/milestones/%d", f.milestone), ""},
+
+		{"POST /api/roadmaps/{id}/dependencies", "POST", rm("/dependencies"),
+			fmt.Sprintf(`{"from":{"kind":"milestone","id":%d},"to":{"kind":"item","id":%d}}`, f.milestone, f.item)},
+		{"DELETE /api/dependencies/{id}", "DELETE", fmt.Sprintf("/api/dependencies/%d", f.dependency), ""},
 
 		{"GET /api/snapshots/{id}", "GET", fmt.Sprintf("/api/snapshots/%d", f.snapshot), ""},
 		{"POST /api/snapshots/{id}/restore", "POST", fmt.Sprintf("/api/snapshots/%d/restore", f.snapshot), ""},

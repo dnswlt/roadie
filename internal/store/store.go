@@ -537,6 +537,10 @@ func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull
 	if err != nil {
 		return full, err
 	}
+	full.Dependencies, err = getDependencies(ctx, q, id)
+	if err != nil {
+		return full, err
+	}
 	return full, nil
 }
 
@@ -642,13 +646,22 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ow
 	return rm, tx.Commit(ctx)
 }
 
-// insertRoadmapContents writes the lanes, items (with children) and milestones
-// of src into the already-created roadmap roadmapID, within tx. Lane order
-// (position) and item order (rank) come from the array order, not the stored
-// fields, so the result is dense and consistent regardless of the source. It
-// assumes roadmapID has no lanes yet (a fresh import target, or one just
-// cleared by RestoreSnapshot). Shared by ImportRoadmap and RestoreSnapshot.
+// insertRoadmapContents writes the lanes, items (with children), milestones
+// and dependencies of src into the already-created roadmap roadmapID, within
+// tx. Lane order (position) and item order (rank) come from the array order,
+// not the stored fields, so the result is dense and consistent regardless of
+// the source. It assumes roadmapID has no lanes yet (a fresh import target, or
+// one just cleared by RestoreSnapshot). Shared by ImportRoadmap and
+// RestoreSnapshot.
 func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID int64, src model.RoadmapFull) error {
+	// Dependency edges reference the ids embedded in src, so the item and
+	// milestone inserts record how those map to the fresh rows. A source id of
+	// 0 (a hand-written file omitting ids) is not recorded: it names nothing an
+	// edge could refer to, and letting several id-less rows share the key would
+	// bind an edge to whichever happened to come last.
+	itemIDs := map[int64]int64{}
+	msIDs := map[int64]int64{}
+
 	// insertItem writes one item and returns its new ID. parentID is nil for
 	// top-level items; rank is the caller-supplied dense index.
 	insertItem := func(it model.Item, laneID int64, parentID *int64, rank int) (int64, error) {
@@ -693,9 +706,16 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 			if err != nil {
 				return err
 			}
+			if item.ID != 0 {
+				itemIDs[item.ID] = parentID
+			}
 			for crank, child := range item.Children {
-				if _, err := insertItem(child, laneID, &parentID, crank); err != nil {
+				childID, err := insertItem(child, laneID, &parentID, crank)
+				if err != nil {
 					return err
+				}
+				if child.ID != 0 {
+					itemIDs[child.ID] = childID
 				}
 			}
 		}
@@ -706,12 +726,19 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 			if ms.Date.IsZero() {
 				return invalidf("milestone %q is missing a date", ms.Title)
 			}
-			if _, err := tx.Exec(ctx,
-				`INSERT INTO milestones (lane_id, title, description, date) VALUES ($1, $2, $3, $4)`,
-				laneID, ms.Title, ms.Description, ms.Date.Time); err != nil {
+			var msID int64
+			if err := tx.QueryRow(ctx,
+				`INSERT INTO milestones (lane_id, title, description, date) VALUES ($1, $2, $3, $4) RETURNING id`,
+				laneID, ms.Title, ms.Description, ms.Date.Time).Scan(&msID); err != nil {
 				return err
 			}
+			if ms.ID != 0 {
+				msIDs[ms.ID] = msID
+			}
 		}
+	}
+	if err := insertDependencies(ctx, tx, src, itemIDs, msIDs); err != nil {
+		return err
 	}
 	// The schedule is roadmap-scoped (not under any lane), so it is inserted once
 	// here rather than per lane.

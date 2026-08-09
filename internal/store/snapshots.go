@@ -171,13 +171,16 @@ func (s *Store) GetSnapshotContents(ctx context.Context, snapID int64) (model.Ro
 // for historical blobs.
 //
 // Only a collection added *after* the snapshot feature can actually be absent
-// from a stored blob — currently just Periods. Every earlier collection (lanes,
-// items, milestones, labels) predates snapshots, so all blobs already carry it;
-// no guard is needed for those. Add a line here when a new collection is
-// introduced after this point.
+// from a stored blob — currently Periods and Dependencies. Every earlier
+// collection (lanes, items, milestones, labels) predates snapshots, so all
+// blobs already carry it; no guard is needed for those. Add a line here when a
+// new collection is introduced after this point.
 func normalizeSnapshotContents(full model.RoadmapFull) model.RoadmapFull {
 	if full.Periods == nil {
 		full.Periods = []model.SchedulePeriod{}
+	}
+	if full.Dependencies == nil {
+		full.Dependencies = []model.Dependency{}
 	}
 	return full
 }

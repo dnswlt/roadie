@@ -124,6 +124,12 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s.mux.HandleFunc("POST /api/lanes/{id}/milestones", s.snap(snapThrottle, byLaneID, s.createMilestone))
 	s.mux.HandleFunc("PATCH /api/milestones/{id}", s.snap(snapThrottle, byMilestoneID, s.patchMilestone))
 	s.mux.HandleFunc("DELETE /api/milestones/{id}", s.snap(snapForce, byMilestoneID, s.deleteMilestone))
+	// Dependencies are edges between items/milestones; reads ride in the
+	// roadmap payload, so only the two mutations exist. Deleting one is
+	// snapForce like the other deletes: an edge is not recoverable from
+	// anything else.
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/dependencies", s.snap(snapThrottle, byRoadmapID, s.createDependency))
+	s.mux.HandleFunc("DELETE /api/dependencies/{id}", s.snap(snapForce, byDependencyID, s.deleteDependency))
 
 	// Snapshots (version history). Restore captures the pre-restore state in the
 	// store, so it is deliberately not wrapped with s.snap.
