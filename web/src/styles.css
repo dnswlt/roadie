@@ -2257,6 +2257,8 @@ dialog input:focus {
 
 .dep-go .color-dot {
   flex: none;
+  width: 7px;
+  height: 7px;
 }
 
 .dep-go svg {

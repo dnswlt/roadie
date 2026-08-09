@@ -100,7 +100,7 @@ function depGroup(ref: DependencyRef, dir: Direction, rerender: () => void): HTM
 
   const rows = document.createElement("div");
   rows.className = "dep-rows";
-  const split = splitDeps(state.current?.dependencies ?? [], ref);
+  const split = splitDeps(state.current?.dependencies ?? [], ref, state.current?.lanes ?? []);
   for (const dep of dir === "dependsOn" ? split.dependsOn : split.neededBy) {
     const far = dir === "dependsOn" ? dep.from : dep.to;
     const row = depRow(dep, far, rerender);
@@ -354,7 +354,7 @@ function renderGraph(dlg: HTMLDialogElement, ref: DependencyRef): void {
     return { el, list };
   };
 
-  const split = splitDeps(state.current?.dependencies ?? [], ref);
+  const split = splitDeps(state.current?.dependencies ?? [], ref, state.current?.lanes ?? []);
   const left = column("Depends on", "No prerequisites.");
   const right = column("Needed by", "Nothing depends on this.");
   const fill = (list: HTMLElement, cards: (HTMLElement | null)[]): void => {

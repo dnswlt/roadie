@@ -3,7 +3,7 @@
 // from"); everything a view wants — per-entity adjacency, the local
 // neighborhood, date sanity — is derived here.
 
-import type { Dependency, DependencyRef } from "./types";
+import type { Dependency, DependencyRef, LaneFull } from "./types";
 
 export function sameRef(a: DependencyRef, b: DependencyRef): boolean {
   return a.kind === b.kind && a.id === b.id;
@@ -22,6 +22,7 @@ export function refKey(ref: DependencyRef): string {
 export function splitDeps(
   deps: Dependency[],
   ref: DependencyRef,
+  lanes: LaneFull[] = [],
 ): { dependsOn: Dependency[]; neededBy: Dependency[] } {
   const dependsOn: Dependency[] = [];
   const neededBy: Dependency[] = [];
@@ -29,6 +30,24 @@ export function splitDeps(
     if (sameRef(d.to, ref)) dependsOn.push(d);
     else if (sameRef(d.from, ref)) neededBy.push(d);
   }
+  // The roadmap payload is already in its canonical display order: lanes by
+  // position; milestones by date; items by rank, with each parent's ranked
+  // children directly after it. Match the WBS's milestone-group-then-items
+  // projection so dependency lists do not expose incidental edge creation ids.
+  const order = new Map<string, number>();
+  let position = 0;
+  for (const lane of lanes) {
+    for (const milestone of lane.milestones) order.set(refKey({ kind: "milestone", id: milestone.id }), position++);
+    for (const item of lane.items) {
+      order.set(refKey({ kind: "item", id: item.id }), position++);
+      for (const child of item.children) order.set(refKey({ kind: "item", id: child.id }), position++);
+    }
+  }
+  const at = (endpoint: (d: Dependency) => DependencyRef) => (a: Dependency, b: Dependency): number =>
+    (order.get(refKey(endpoint(a))) ?? Number.MAX_SAFE_INTEGER) -
+    (order.get(refKey(endpoint(b))) ?? Number.MAX_SAFE_INTEGER);
+  dependsOn.sort(at((d) => d.from));
+  neededBy.sort(at((d) => d.to));
   return { dependsOn, neededBy };
 }
 
