@@ -395,6 +395,10 @@ function renderGraph(dlg: HTMLDialogElement, ref: DependencyRef): void {
   close.type = "button";
   close.className = "btn btn-primary";
   close.textContent = "Close";
+  // showModal otherwise focuses the first focusable node card, giving an
+  // arbitrary neighbour a focus outline as though it were special. The
+  // dialog's primary dismissal action is the stable initial focus target.
+  close.autofocus = true;
   close.addEventListener("click", () => dlg.close());
   row.append(show, close);
 
