@@ -12,17 +12,17 @@ import { initHome, openHome } from "./home";
 import { openHelpDialog } from "./help";
 import { copyText } from "./clipboard";
 import { bindings, initKeys } from "./keys";
-import { LABEL_W } from "./layout";
-import { currentScale, projectSelection, renderChart } from "./render";
+import { projectSelection, renderChart } from "./render";
 import { projectWbsSelection, renderWbs } from "./wbs";
 import { initWbsDnd } from "./wbs-dnd";
 import { laneMarkdown, roadmapMarkdown } from "./markdown";
 import { focusPanelTitle, renderPanel } from "./panel";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
-import { contentRange, MAX_PX_PER_DAY, MIN_PX_PER_DAY, type SnapMode, xOf } from "./timescale";
+import { type SnapMode } from "./timescale";
 import type { Me } from "./types";
 import { readUrl, type UrlTarget } from "./url";
+import { restoreZoom, setZoom, zoomToFit } from "./zoom";
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -157,47 +157,6 @@ function renderTopbar(): void {
   viewBtn.title = wbs ? "Switch to timeline view (v)" : "Switch to WBS view (v)";
   $("snap-wrap").classList.toggle("hidden", wbs);
   $("zoom-controls").classList.toggle("hidden", wbs);
-}
-
-// setZoom keeps the date under the viewport center fixed while zooming.
-function setZoom(pxPerDay: number): void {
-  const px = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, pxPerDay));
-  if (px === state.pxPerDay) return;
-  const ratio = px / state.pxPerDay;
-  const centerX = chart.scrollLeft + chart.clientWidth / 2 - LABEL_W;
-  state.pxPerDay = px;
-  localStorage.setItem("roadie.zoom", String(px));
-  state.notify();
-  chart.scrollLeft = Math.max(0, centerX * ratio - chart.clientWidth / 2 + LABEL_W);
-}
-
-// Breathing room left on either side of the framed span by zoomToFit, so the
-// first and last bars don't sit flush against the viewport edges.
-const FIT_GUTTER_PX = 32;
-
-// zoomToFit frames the items and milestones of the *visible* lanes: it picks
-// the largest pxPerDay at which their span fits the viewport, then scrolls to
-// the span's start. It deliberately ignores today (unlike the chart's own
-// range, which pads out to include it), so a roadmap that lives entirely in
-// the future is framed on the work rather than on empty months. MIN_PX_PER_DAY
-// still clamps, so a very long roadmap fits as much as it can and no more.
-function zoomToFit(): void {
-  const lanes = (state.current?.lanes ?? []).filter((l) => !state.isLaneHidden(l.id));
-  const range = contentRange(lanes);
-  if (!range) return;
-  const days = range.endDay - range.startDay + 1; // end dates are inclusive
-  const avail = chart.clientWidth - LABEL_W - FIT_GUTTER_PX;
-  if (avail <= 0) return;
-  const px = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, avail / days));
-  state.pxPerDay = px;
-  localStorage.setItem("roadie.zoom", String(px));
-  // Not setZoom: fitting must re-scroll even when the zoom level is unchanged,
-  // so that a second click still recentres after panning away.
-  state.notify();
-  // Scroll so the span's start lands just right of the lane labels. They are
-  // sticky at left: 0 and so overlay the first LABEL_W pixels of the viewport;
-  // scrolling to the span's own x would tuck its first bars underneath them.
-  chart.scrollLeft = Math.max(0, xOf(currentScale(), range.startDay) - FIT_GUTTER_PX / 2);
 }
 
 // buildSnapMenu (re)populates the snap-grid popover: one row per mode, the
@@ -942,10 +901,7 @@ async function boot(): Promise<void> {
   initEvents(panel);
   initKeys();
 
-  const storedZoom = Number(localStorage.getItem("roadie.zoom"));
-  if (storedZoom) {
-    state.pxPerDay = Math.min(MAX_PX_PER_DAY, Math.max(MIN_PX_PER_DAY, storedZoom));
-  }
+  restoreZoom();
   const storedSnap = localStorage.getItem("roadie.snap");
   if (
     storedSnap === "day" ||

@@ -26,6 +26,7 @@ import {
   togglePanel,
 } from "./panel";
 import { state } from "./state";
+import { zoomToFit } from "./zoom";
 
 export interface Binding {
   // Matched against KeyboardEvent.key, so it is the character produced by the
@@ -135,6 +136,12 @@ export const bindings: Binding[] = [
     label: "v",
     description: "*Switch view* between timeline and WBS.",
     run: () => state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs"),
+  },
+  {
+    key: "z",
+    label: "z",
+    description: "*Zoom to fit* all items in shown contexts (timeline view).",
+    run: () => zoomToFit(),
   },
   {
     key: "?",
