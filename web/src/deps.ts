@@ -175,7 +175,17 @@ function openAddDropdown(
   let matches: Match[] = [];
   let cursor = 0;
 
-  const close = (): void => pop.remove();
+  // Idempotent, and it has to be: removing the pop while its input holds
+  // focus makes Chrome fire blur *during* the removal, and the blur handler
+  // below is this very function. Without the guard the re-entrant call
+  // detaches the pop under the outer remove(), which then throws — killing
+  // the commit before the API call ever runs.
+  let closed = false;
+  const close = (): void => {
+    if (closed) return;
+    closed = true;
+    pop.remove();
+  };
 
   const commit = (m: Match): void => {
     const far: DependencyRef = { kind: m.kind, id: m.id };
