@@ -51,6 +51,7 @@ function roadmap(...lanes: LaneFull[]): RoadmapFull {
     visibility: "public",
     lanes,
     periods: [],
+    dependencies: [],
   };
 }
 

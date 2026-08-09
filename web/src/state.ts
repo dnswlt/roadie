@@ -417,6 +417,30 @@ class AppState {
     return true;
   }
 
+  // revealAndSelect makes an item or milestone visible and selects it,
+  // scrolled into view — the one way to jump to an entity from somewhere else
+  // (the find popup, a dependency row). Resolving against live state first
+  // matters: the caller's reference may be stale (an SSE refresh between
+  // building a list and clicking it), and revealing before resolving would let
+  // a stale row unhide a lane on its way to finding nothing. Reveal must then
+  // precede selection: selecting something unrendered scrolls nowhere, so a
+  // hidden lane is unhidden and a folded parent unfolded. Ends in a full
+  // notify — revealing changes geometry, and only a full render honours the
+  // scroll request. Returns false if the target no longer exists.
+  revealAndSelect(kind: "item" | "milestone", id: number): boolean {
+    const loc = kind === "item" ? this.findItem(id) : this.findMilestone(id);
+    if (!loc) return false;
+    if (this.isLaneHidden(loc.lane.id)) this.setLaneHidden(loc.lane.id, false);
+    if ("parent" in loc && loc.parent && this.isCollapsed(loc.parent.id)) {
+      this.setCollapsed(loc.parent.id, false);
+    }
+    if (kind === "item") this.selectItem(id);
+    else this.selectMilestone(id);
+    this.scrollToSelection = true;
+    this.notify();
+    return true;
+  }
+
   snapshot(): RoadmapFull | null {
     return this.current ? (structuredClone(this.current) as RoadmapFull) : null;
   }

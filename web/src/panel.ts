@@ -5,6 +5,7 @@
 import { actions } from "./actions";
 import { copyText } from "./clipboard";
 import { laneColorValue } from "./colors";
+import { dependenciesSection } from "./deps";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { extractUrls, linkLabel } from "./links";
@@ -549,10 +550,11 @@ export function renderPanel(panel: HTMLElement): void {
   // (title, description, its links) above, how it is *classified* (dates,
   // priority, labels) below. Without the split all six fields competed at the
   // same weight and the title — the reason you opened the panel — read as just
-  // another form row.
+  // another form row. Dependencies join the second zone: how the item relates
+  // is classification, not identity.
   const attrs = document.createElement("div");
   attrs.className = "panel-attrs";
-  attrs.append(dates, prio, labels);
+  attrs.append(dates, prio, labels, dependenciesSection({ kind: "item", id: item.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
@@ -720,7 +722,7 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   // most important attribute.
   const attrs = document.createElement("div");
   attrs.className = "panel-attrs";
-  attrs.append(dateField.wrap);
+  attrs.append(dateField.wrap, dependenciesSection({ kind: "milestone", id: milestone.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }

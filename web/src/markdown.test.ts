@@ -42,6 +42,7 @@ function roadmap(over: Partial<RoadmapFull> = {}): RoadmapFull {
     visibility: "public",
     lanes: [],
     periods: [],
+    dependencies: [],
     ...over,
   };
 }

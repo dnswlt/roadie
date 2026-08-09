@@ -74,6 +74,24 @@ export interface LaneFull extends Lane {
   milestones: Milestone[];
 }
 
+// One endpoint of a dependency edge: an item or a milestone, always in the
+// edge's own roadmap. The two kinds share the graph but not an id space.
+export interface DependencyRef {
+  kind: "item" | "milestone";
+  id: number;
+}
+
+// One directed dependency edge: `from` is the prerequisite, `to` the dependent
+// — "to needs from". An edge carries no attributes (no type, no lag, no label)
+// by design: one edge kind, meaning owned by the product. The graph is
+// roadmap-scoped and acyclic; the server rejects violations with a message
+// naming the conflicting chain.
+export interface Dependency {
+  id: number;
+  from: DependencyRef;
+  to: DependencyRef;
+}
+
 // A named span in a roadmap's schedule (a sprint, PI, ...). endDate is
 // inclusive. Periods are roadmap-scoped and ordered by start date, no rank.
 export interface SchedulePeriod {
@@ -94,6 +112,9 @@ export interface NewSchedulePeriod {
 export interface RoadmapFull extends Roadmap {
   lanes: LaneFull[];
   periods: SchedulePeriod[];
+  // A flat roadmap-level edge list, like periods: every edge is stated once,
+  // and views derive per-entity adjacency from it (see deps-graph.ts).
+  dependencies: Dependency[];
 }
 
 // One person who has edited a roadmap, shown above the version-history list.

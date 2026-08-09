@@ -39,6 +39,7 @@ function roadmap(items: ItemFull[]): RoadmapFull {
     visibility: "public",
     lanes: [lane],
     periods: [],
+    dependencies: [],
   };
 }
 

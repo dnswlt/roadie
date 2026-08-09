@@ -1,5 +1,7 @@
 import type {
   Contributor,
+  Dependency,
+  DependencyRef,
   Item,
   ItemPatch,
   Lane,
@@ -121,4 +123,10 @@ export const api = {
 
   replaceSchedule: (roadmapId: number, periods: NewSchedulePeriod[]) =>
     req<SchedulePeriod[]>("PUT", `/api/roadmaps/${roadmapId}/schedule`, { periods }),
+
+  // Dependency reads ride in the RoadmapFull payload; only the two mutations
+  // have endpoints. from = prerequisite, to = dependent ("to needs from").
+  createDependency: (roadmapId: number, from: DependencyRef, to: DependencyRef) =>
+    req<Dependency>("POST", `/api/roadmaps/${roadmapId}/dependencies`, { from, to }),
+  deleteDependency: (id: number) => req<void>("DELETE", `/api/dependencies/${id}`),
 };

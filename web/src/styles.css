@@ -2189,6 +2189,98 @@ dialog input:focus {
   color: var(--ink);
 }
 
+/* ---- Dependencies (deps.ts) ------------------------------------------- */
+
+.dep-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Anchors .dep-pop: the add-dropdown opens under the group it adds to, which
+   is what makes the direction of the new edge visible while typing. */
+.dep-group {
+  position: relative;
+}
+
+.dep-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+}
+
+.dep-group-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dep-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dep-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The row body is the navigation button; the trailing x removes the edge. */
+.dep-go {
+  font: inherit;
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.dep-go:hover {
+  background: var(--grid);
+}
+
+.dep-go .color-dot {
+  flex: none;
+}
+
+.dep-go svg {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.dep-go-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dep-x {
+  flex: none;
+  color: var(--muted);
+}
+
+/* The add-dropdown: the find popup in miniature, inheriting .menu's chrome and
+   the find-* row styles; only the anchoring is its own (full group width). */
+.dep-pop {
+  right: 0;
+  min-width: 0;
+  padding: 6px;
+}
+
+.dep-pop .find-list {
+  max-height: 240px;
+}
+
 /* Focus dropdown rows: a fixed-width check column keeps labels aligned whether
    or not a row is the active one. */
 .menu-check {

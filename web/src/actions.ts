@@ -8,6 +8,7 @@ import { state } from "./state";
 import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
 import type {
+  DependencyRef,
   Item,
   ItemFull,
   ItemPatch,
@@ -122,6 +123,19 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
       renumber(lane.items);
     }
   }
+}
+
+// dropDepsTouching removes the dependency edges referencing any of the given
+// endpoints — the local mirror of the DB's FK cascade, so an optimistic delete
+// of an item, milestone or lane doesn't leave dangling edges until the next
+// refetch.
+function dropDepsTouching(items: Set<number>, milestones: Set<number>): void {
+  if (!state.current) return;
+  const hit = (r: DependencyRef): boolean =>
+    r.kind === "item" ? items.has(r.id) : milestones.has(r.id);
+  state.current.dependencies = state.current.dependencies.filter(
+    (d) => !hit(d.from) && !hit(d.to),
+  );
 }
 
 export const actions = {
@@ -325,7 +339,18 @@ export const actions = {
   async deleteLane(id: number): Promise<void> {
     await optimistic(
       () => {
-        if (state.current) state.current.lanes = state.current.lanes.filter((l) => l.id !== id);
+        if (!state.current) return;
+        // Everything in the lane cascades away, so its endpoints' edges do too.
+        const lane = state.findLane(id);
+        const items = new Set<number>();
+        const milestones = new Set<number>();
+        for (const it of lane?.items ?? []) {
+          items.add(it.id);
+          for (const c of it.children) items.add(c.id);
+        }
+        for (const m of lane?.milestones ?? []) milestones.add(m.id);
+        state.current.lanes = state.current.lanes.filter((l) => l.id !== id);
+        dropDepsTouching(items, milestones);
       },
       () => api.deleteLane(id),
     );
@@ -500,18 +525,23 @@ export const actions = {
     if (ids.length === 0) return;
     await optimistic(
       () => {
+        const gone = new Set<number>();
         for (const id of ids) {
           const loc = state.findItem(id);
           if (!loc) continue;
+          gone.add(id);
           if (loc.parent) {
             loc.parent.children = loc.parent.children.filter((c) => c.id !== id);
             renumber(loc.parent.children);
           } else {
+            // The parent's children cascade away with it, edges included.
+            for (const c of (loc.item as ItemFull).children ?? []) gone.add(c.id);
             loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
             renumber(loc.lane.items);
           }
           state.deselectItem(id);
         }
+        dropDepsTouching(gone, new Set());
       },
       () => Promise.all(ids.map((id) => api.deleteItem(id))),
     );
@@ -562,9 +592,38 @@ export const actions = {
         const loc = state.findMilestone(id);
         if (!loc) return;
         loc.lane.milestones = loc.lane.milestones.filter((m) => m.id !== id);
+        dropDepsTouching(new Set(), new Set([id]));
         if (state.selectedMilestoneId === id) state.selectedMilestoneId = null;
       },
       () => api.deleteMilestone(id),
+    );
+  },
+
+  // addDependency creates the edge "to depends on from". Not optimistic, and
+  // not only because the server assigns the id: the server is the cycle judge,
+  // and its rejection carries the diagnostic that explains the contradiction
+  // ('"C" already depends on "A": …') — that must surface as a toast, not
+  // flicker in and out of the panel. Returns true on success.
+  async addDependency(from: DependencyRef, to: DependencyRef): Promise<boolean> {
+    if (state.preview || !state.current) return false;
+    try {
+      const dep = await api.createDependency(state.current.id, from, to);
+      state.current.dependencies.push(dep);
+      state.notify();
+      return true;
+    } catch (e) {
+      toast(errMsg(e), true);
+      return false;
+    }
+  },
+
+  async removeDependency(id: number): Promise<void> {
+    await optimistic(
+      () => {
+        if (!state.current) return;
+        state.current.dependencies = state.current.dependencies.filter((d) => d.id !== id);
+      },
+      () => api.deleteDependency(id),
     );
   },
 

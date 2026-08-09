@@ -207,32 +207,13 @@ function drawResults(): void {
 }
 
 // commit is the only thing here that changes the chart. A match may sit in a
-// hidden context or under a folded parent, in which case selecting it alone
-// would scroll to something that isn't rendered — so it is revealed first.
+// hidden context or under a folded parent, and may have moved or vanished
+// since the list was drawn (an SSE refresh mid-search is not deferred for this
+// popup — events.ts defers only for the edit panel); revealAndSelect resolves
+// against live state and handles both.
 function commit(m: Match): void {
   closeFind();
-  // Resolve against live state *before* changing anything. The result list can
-  // outlive the roadmap it was built from — an SSE refresh mid-search is not
-  // deferred for this popup (events.ts defers only for the edit panel) — so a
-  // row may name something since moved or deleted. Revealing first would let a
-  // stale row unhide a context on its way to finding nothing.
-  const loc = m.kind === "item" ? state.findItem(m.id) : state.findMilestone(m.id);
-  if (!loc) return;
-
-  // Reveal before selecting: selecting something unrendered scrolls nowhere.
-  // The lane comes from the live location rather than the match, in case the
-  // item moved since the list was drawn.
-  if (state.isLaneHidden(loc.lane.id)) state.setLaneHidden(loc.lane.id, false);
-  if ("parent" in loc && loc.parent && state.isCollapsed(loc.parent.id)) {
-    state.setCollapsed(loc.parent.id, false);
-  }
-
-  if (m.kind === "item") state.selectItem(m.id);
-  else state.selectMilestone(m.id);
-  // A full notify, not notifySelection: the scroll-into-view is only honoured
-  // by a full render (render.ts), and revealing a lane changed geometry anyway.
-  state.scrollToSelection = true;
-  state.notify();
+  state.revealAndSelect(m.kind, m.id);
 }
 
 export function closeFind(): void {
