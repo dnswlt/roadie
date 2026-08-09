@@ -15,7 +15,7 @@
 // mark, link, chevron) come from render.ts.
 
 import { laneColorValue } from "./colors";
-import { type DepSummary, depSummaries, refKey } from "./deps-graph";
+import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
 import { icons } from "./icons";
 import {
   barLink,
@@ -53,7 +53,7 @@ export function renderWbs(container: HTMLElement): void {
     return;
   }
 
-  depSums = depSummaries(rm);
+  depSums = analyzeDependencies(rm).summaries;
 
   const lanesEl = div("lanes");
   const visibleLanes = rm.lanes.filter((l) => !state.isLaneHidden(l.id));

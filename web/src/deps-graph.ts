@@ -60,35 +60,66 @@ export interface DepSummary {
   conflicts: number;
 }
 
-// depSummaries reduces the roadmap's flat edge list to one entry per entity
-// that actually has edges; an entity with none is absent from the map, so a
-// missing entry *is* "draw no mark". Built once per render pass, because the
-// alternative — asking per bar — rescans every edge for every item.
-export function depSummaries(rm: RoadmapFull | null): Map<string, DepSummary> {
-  const out = new Map<string, DepSummary>();
-  if (!rm) return out;
+// The dates an entity occupies. A milestone has no duration, so its single
+// date stands as both of its ends: nothing may finish after it, and it starts
+// when it lands. That rule lives here and nowhere else — it decides both
+// whether an edge is met and whether a card prints one date or a range.
+export interface EntitySpan {
+  start: string;
+  end: string;
+}
 
-  // Endpoint spans for the conflict test, indexed first so the edge walk stays
-  // one pass. A milestone has no duration, so its single date stands as both
-  // of its ends: nothing may finish after it, and it starts when it lands.
-  const span = new Map<string, { start: string; end: string }>();
+// Everything the views need to know about the dependency graph, in the two
+// shapes they ask for it: per entity (the chart's mark) and per edge (the
+// overlay's tinting).
+export interface DependencyAnalysis {
+  // Only entities that have edges appear in `summaries`, so a missing entry
+  // *is* "draw no mark".
+  summaries: Map<string, DepSummary>;
+  // Edge ids whose endpoints' dates contradict the dependency.
+  conflictingEdges: Set<number>;
+  // Every entity's span, including those with no edges — the overlay prints
+  // dates for whatever it draws.
+  spans: Map<string, EntitySpan>;
+}
+
+// analyzeDependencies is the single pass over the roadmap's edges, and the one
+// place that turns a DependencyRef into dates.
+//
+// The node-level and edge-level answers are both real projections — the chart
+// marks entities, the overlay tints edges — but deriving them separately meant
+// two endpoint-resolution paths that happened to agree, one walking lanes and
+// one going through state.findItem/findMilestone. Both encoded "a milestone's
+// date is both its ends", and both decided independently what a vanished
+// endpoint means. Sharing dateConflict was not enough: the inputs to it could
+// drift. So resolution, stale-endpoint policy and conflict semantics live here
+// once, and the callers pick the projection they need.
+//
+// Cheap enough to run per render pass: one walk of the lanes to index spans,
+// one walk of the edges.
+export function analyzeDependencies(rm: RoadmapFull | null): DependencyAnalysis {
+  const summaries = new Map<string, DepSummary>();
+  const conflictingEdges = new Set<number>();
+  const spans = new Map<string, EntitySpan>();
+  if (!rm) return { summaries, conflictingEdges, spans };
+
   for (const lane of rm.lanes) {
     for (const item of lane.items) {
-      span.set(refKey({ kind: "item", id: item.id }), { start: item.startDate, end: item.endDate });
+      spans.set(refKey({ kind: "item", id: item.id }), { start: item.startDate, end: item.endDate });
       for (const child of item.children) {
-        span.set(refKey({ kind: "item", id: child.id }), { start: child.startDate, end: child.endDate });
+        spans.set(refKey({ kind: "item", id: child.id }), { start: child.startDate, end: child.endDate });
       }
     }
     for (const ms of lane.milestones) {
-      span.set(refKey({ kind: "milestone", id: ms.id }), { start: ms.date, end: ms.date });
+      spans.set(refKey({ kind: "milestone", id: ms.id }), { start: ms.date, end: ms.date });
     }
   }
 
   const entryOf = (key: string): DepSummary => {
-    let e = out.get(key);
+    let e = summaries.get(key);
     if (!e) {
       e = { dependsOn: 0, neededBy: 0, conflicts: 0 };
-      out.set(key, e);
+      summaries.set(key, e);
     }
     return e;
   };
@@ -96,14 +127,15 @@ export function depSummaries(rm: RoadmapFull | null): Map<string, DepSummary> {
   for (const d of rm.dependencies) {
     const fromKey = refKey(d.from);
     const toKey = refKey(d.to);
-    const from = span.get(fromKey);
-    const to = span.get(toKey);
-    // An edge whose endpoint vanished under an SSE refresh marks nothing; the
-    // next refetch drops the edge itself.
+    const from = spans.get(fromKey);
+    const to = spans.get(toKey);
+    // An edge whose endpoint vanished under an SSE refresh counts for nothing,
+    // in either projection; the next refetch drops the edge itself.
     if (!from || !to) continue;
     entryOf(toKey).dependsOn++;
     entryOf(fromKey).neededBy++;
     if (dateConflict(from.end, to.start)) {
+      conflictingEdges.add(d.id);
       // The contradiction belongs to the pair, not to one end of it, so both
       // carry it: a late prerequisite is as visible from the work it blocks as
       // from itself, which is what makes the warning findable while scanning.
@@ -111,7 +143,7 @@ export function depSummaries(rm: RoadmapFull | null): Map<string, DepSummary> {
       entryOf(toKey).conflicts++;
     }
   }
-  return out;
+  return { summaries, conflictingEdges, spans };
 }
 
 // linkedRefs returns the set of refKeys already connected to `ref` in either

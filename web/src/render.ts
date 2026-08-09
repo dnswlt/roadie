@@ -2,7 +2,7 @@
 // on every state change; scroll position is preserved across rebuilds.
 
 import { laneColorValue } from "./colors";
-import { type DepSummary, depSummaries, refKey } from "./deps-graph";
+import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
 import { icons } from "./icons";
 import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
 import { extractUrls } from "./links";
@@ -51,7 +51,7 @@ export function renderChart(container: HTMLElement): void {
   const range = computeRange(rm, today);
   scale = { ...range, pxPerDay: state.pxPerDay };
 
-  depSums = depSummaries(rm);
+  depSums = analyzeDependencies(rm).summaries;
 
   const scrollLeft = container.scrollLeft;
   const scrollTop = container.scrollTop;

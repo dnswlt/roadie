@@ -18,7 +18,13 @@
 
 import { actions } from "./actions";
 import { laneColorValue } from "./colors";
-import { dateConflict, linkedRefs, refKey, splitDeps } from "./deps-graph";
+import {
+  analyzeDependencies,
+  type DependencyAnalysis,
+  linkedRefs,
+  refKey,
+  splitDeps,
+} from "./deps-graph";
 import { icons } from "./icons";
 import { createSearchList } from "./search-list";
 import { state } from "./state";
@@ -223,29 +229,18 @@ function openPicker(
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// refDates resolves an endpoint's span for the date-conflict check: an item's
-// start/end, a milestone's date standing in for both.
-function refDates(ref: DependencyRef): { start: string; end: string } | null {
-  if (ref.kind === "item") {
-    const loc = state.findItem(ref.id);
-    return loc ? { start: loc.item.startDate, end: loc.item.endDate } : null;
-  }
-  const loc = state.findMilestone(ref.id);
-  return loc ? { start: loc.milestone.date, end: loc.milestone.date } : null;
-}
-
-// edgeConflict resolves one edge's endpoints against live state and asks
-// deps-graph.ts whether their dates contradict the dependency.
-function edgeConflict(dep: Dependency): boolean {
-  const from = refDates(dep.from);
-  const to = refDates(dep.to);
-  return from !== null && to !== null && dateConflict(from.end, to.start);
-}
+// This overlay's dependency analysis, rebuilt at the top of renderGraph —
+// which every path into the overlay goes through, including a recenter click.
+// The dates and the conflict verdicts both come from it rather than being
+// resolved here: one endpoint-resolution path for the whole app (see
+// analyzeDependencies).
+let analysis: DependencyAnalysis = analyzeDependencies(null);
 
 function spanText(ref: DependencyRef): string {
-  const dates = refDates(ref);
+  const dates = analysis.spans.get(refKey(ref));
   if (!dates) return "";
   const from = formatDay(dayOf(dates.start));
+  // A milestone's span is its date twice over, so it prints as one date.
   if (dates.start === dates.end) return from;
   return `${from} – ${formatDay(dayOf(dates.end))}`;
 }
@@ -328,6 +323,7 @@ function nodeCard(
 }
 
 function renderGraph(dlg: HTMLDialogElement, ref: DependencyRef): void {
+  analysis = analyzeDependencies(state.current);
   const center = nodeCard(dlg, ref, { center: true });
   if (!center) {
     // The entity vanished (stale ref under an SSE refresh): nothing to show.
@@ -371,11 +367,11 @@ function renderGraph(dlg: HTMLDialogElement, ref: DependencyRef): void {
   };
   fill(
     left.list,
-    split.dependsOn.map((d) => nodeCard(dlg, d.from, { side: "left", conflict: edgeConflict(d) })),
+    split.dependsOn.map((d) => nodeCard(dlg, d.from, { side: "left", conflict: analysis.conflictingEdges.has(d.id) })),
   );
   fill(
     right.list,
-    split.neededBy.map((d) => nodeCard(dlg, d.to, { side: "right", conflict: edgeConflict(d) })),
+    split.neededBy.map((d) => nodeCard(dlg, d.to, { side: "right", conflict: analysis.conflictingEdges.has(d.id) })),
   );
 
   const centerCol = document.createElement("div");
