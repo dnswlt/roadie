@@ -12,7 +12,8 @@
   --danger: #c92c2c;
   --danger-soft: #fdeaea;
   /* Notice tone for "you're in a special mode" surfaces (the snapshot-preview
-     banner). A muted amber/gold from the orange lane theme. */
+     banner). A muted amber/gold; darker than the orange lane on purpose, so
+     white banner text stays readable. */
   --notice: #b07d10;
   /* The "needs attention" flag. Deliberately outside the lane themes: the
      marker has to read identically against all five lane colors, which is the
@@ -23,7 +24,7 @@
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
   --shadow-pop: 0 4px 16px rgba(16, 24, 40, 0.14), 0 1px 3px rgba(16, 24, 40, 0.08);
   /* Default lane color; each .lane overrides --c with its own theme. */
-  --c: #2456b8;
+  --c: #6e8adb;
 }
 
 * {
@@ -838,7 +839,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: #000; /* black ink on lane color, like .bar */
   padding: 0;
 }
 
@@ -927,7 +928,7 @@ kbd {
   display: flex;
   align-items: center;
   background: var(--c);
-  color: #fff;
+  color: #000; /* the soft palette is tuned for black ink on the main bars */
   cursor: grab;
   box-shadow: var(--shadow);
   user-select: none;
@@ -941,14 +942,14 @@ kbd {
   position: absolute;
   display: flex;
   align-items: center;
-  background: color-mix(in oklab, var(--c) 25%, var(--surface));
-  color: color-mix(in oklab, var(--c) 65%, black);
+  background: color-mix(in oklab, var(--c) 35%, var(--surface));
+  color: color-mix(in oklab, var(--c) 47%, black);
   cursor: grab;
   user-select: none;
 }
 
 .child-bar:hover {
-  background: color-mix(in oklab, var(--c) 35%, var(--surface));
+  background: color-mix(in oklab, var(--c) 45%, var(--surface));
 }
 
 /* Title + link icon group. flex:1 so the priority pill is pushed to the bar's
@@ -1148,7 +1149,7 @@ kbd {
 /* Active chip uses the selected item's lane color (--c is set on the
    panel in renderPanel) so the picker matches the lane and the bar pill. */
 .prio-chip.active {
-  color: #fff;
+  color: #000; /* black ink on lane color, like .bar */
   border-color: transparent;
   background: var(--c);
 }
@@ -1380,8 +1381,11 @@ kbd {
    lane color: a bar pays for its saturation with the whitespace around it,
    and a full-width fill at that saturation turns the outline into a wall of
    color. Here the color budget is spent on a 3px spine per block (which
-   doubles as the family bracket) plus whisper-light row tints — all still
-   derived from --c. The .wbs-* classes are deliberately disjoint from
+   doubles as the family bracket) plus light row tints — all still derived
+   from --c. Those tints are percentage-tuned against the palette, not fixed:
+   the soft palette sits near white, so matching the old depth takes a bigger
+   mix. Keep the strongest WBS shade below .child-bar's, or the outline starts
+   competing with the chart. The .wbs-* classes are deliberately disjoint from
    .bar/.child-bar so each pointer controller only ever sees its own view's
    elements. */
 
@@ -1414,14 +1418,14 @@ kbd {
   gap: 2px;
   height: 30px; /* PARENT_BAR_H */
   padding: 0 8px; /* where a bar's resize handles would sit */
-  background: color-mix(in oklab, var(--c) 8%, var(--surface));
+  background: color-mix(in oklab, var(--c) 18%, var(--surface));
   color: var(--ink);
   cursor: grab; /* rows drag like bars: vertically, via wbs-dnd.ts */
   user-select: none;
 }
 
 .wbs-row:hover {
-  background: color-mix(in oklab, var(--c) 16%, var(--surface));
+  background: color-mix(in oklab, var(--c) 28%, var(--surface));
 }
 
 /* Parent titles carry the hierarchy the solid fill used to. */
@@ -1433,12 +1437,12 @@ kbd {
    tints, touching rows (CHILD_GAP is 0) would otherwise blur into one. */
 .wbs-child {
   margin-left: 26px;
-  background: color-mix(in oklab, var(--c) 3%, var(--surface));
-  border-top: 1px solid color-mix(in oklab, var(--c) 12%, var(--surface));
+  background: color-mix(in oklab, var(--c) 7%, var(--surface));
+  border-top: 1px solid color-mix(in oklab, var(--c) 20%, var(--surface));
 }
 
 .wbs-child:hover {
-  background: color-mix(in oklab, var(--c) 12%, var(--surface));
+  background: color-mix(in oklab, var(--c) 20%, var(--surface));
 }
 
 .wbs-row.selected {
