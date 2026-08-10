@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Color Recommendations - Main & Child Items (Black Ink)</title>
+  <title>Child Bar OKLab Mix Comparison (25% vs 35% vs 40%)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -80,10 +80,6 @@
       border-bottom: 1px solid #E5E7EB;
     }
 
-    tbody tr.child-row {
-      border-bottom: 2px solid #D1D5DB;
-    }
-
     tbody tr:last-child {
       border-bottom: none;
     }
@@ -101,27 +97,9 @@
       color: #111827;
     }
 
-    .item-type-tag {
-      display: inline-block;
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      padding: 0.15rem 0.45rem;
-      border-radius: 0.25rem;
-    }
-
-    .tag-main {
-      background-color: #E5E7EB;
-      color: #374151;
-    }
-
-    .tag-child {
-      background-color: #FEF3C7;
-      color: #92400E;
-    }
-
-    .color-info {
+    .color-cell {
+      padding: 0.85rem 1rem;
+      border-radius: 0.5rem;
       display: flex;
       flex-direction: column;
       gap: 0.2rem;
@@ -130,17 +108,14 @@
     .hex-val {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-weight: 700;
-      font-size: 1rem;
+      font-size: 0.95rem;
     }
 
     .label-name {
-      font-size: 0.825rem;
+      font-size: 0.8rem;
       font-weight: 600;
       opacity: 0.9;
     }
-
-    .text-white { color: #FFFFFF !important; }
-    .text-black { color: #000000 !important; }
 
     .section-title {
       font-size: 1.35rem;
@@ -155,376 +130,328 @@
 
   <div class="container">
     <header>
-      <h1>Google Calendar Replacements & Child Item Tints</h1>
-      <p class="subtitle">Main items & OKLab derived child item colors with Black text for Google replacements</p>
+      <h1>Child Bar Mix Strength Comparison</h1>
+      <p class="subtitle">Evaluating 25% (Current) vs 35% vs 40% OKLab mix strength against pure white</p>
     </header>
 
-    <div class="section-title">Option A: Vibrant Light Mode Set (Black Text for Google Items)</div>
+    <div class="section-title">Option A: Vibrant Light Mode Palette (White Ink Main Bars)</div>
     <div class="table-card">
       <table>
         <thead>
           <tr>
-            <th>Role & Item</th>
-            <th>App Current Color</th>
-            <th>Google Replacement</th>
-            <th>Official Name & Notes</th>
+            <th>Role</th>
+            <th>Main Bar (100%)</th>
+            <th>25% Mix (Current)</th>
+            <th>35% Mix (Stronger Edge)</th>
+            <th>40% Mix (Max Definition)</th>
           </tr>
         </thead>
         <tbody>
           <!-- Blue -->
           <tr>
-            <td><span class="category-name">Blue</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #2456b8;">
-              <div class="color-info text-white">
-                <span class="hex-val">#2456b8</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #5384ED;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Blue</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #5384ED; color: #FFFFFF;">
                 <span class="hex-val">#5384ED</span>
-                <span class="label-name">Google Cobalt (Font: Black)</span>
+                <span class="label-name">Cobalt Main</span>
               </div>
             </td>
-            <td><strong>Cobalt</strong><br><small style="color:#6B7280;">Clean modern blue bar</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Blue</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #c6d5f0;">
-              <div class="color-info" style="color: #0f2c66;">
-                <span class="hex-val">#c6d5f0</span>
-                <span class="label-name">Font: #0f2c66</span>
-              </div>
-            </td>
-            <td style="background-color: #d2e1fd;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #d2e1fd; color: #2b4784;">
                 <span class="hex-val">#d2e1fd</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #c1d5fc; color: #2b4784;">
+                <span class="hex-val">#c1d5fc</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #b8cffb; color: #2b4784;">
+                <span class="hex-val">#b8cffb</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Green -->
           <tr>
-            <td><span class="category-name">Green</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #2e7d54;">
-              <div class="color-info text-white">
-                <span class="hex-val">#2e7d54</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #397E49;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Green</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #397E49; color: #FFFFFF;">
                 <span class="hex-val">#397E49</span>
-                <span class="label-name">Google Sage (Font: Black)</span>
+                <span class="label-name">Sage Main</span>
               </div>
             </td>
-            <td><strong>Sage</strong><br><small style="color:#6B7280;">Rich forest green bar</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Green</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #cbded2;">
-              <div class="color-info" style="color: #15432b;">
-                <span class="hex-val">#cbded2</span>
-                <span class="label-name">Font: #15432b</span>
-              </div>
-            </td>
-            <td style="background-color: #cddecf;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #cddecf; color: #102e17;">
                 <span class="hex-val">#cddecf</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #b9d1bc; color: #102e17;">
+                <span class="hex-val">#b9d1bc</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #b0cab3; color: #102e17;">
+                <span class="hex-val">#b0cab3</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Red -->
           <tr>
-            <td><span class="category-name">Red</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #c93a4e;">
-              <div class="color-info text-white">
-                <span class="hex-val">#c93a4e</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #C3291C;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Red</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #C3291C; color: #FFFFFF;">
                 <span class="hex-val">#C3291C</span>
-                <span class="label-name">Google Tomato (Font: Black)</span>
+                <span class="label-name">Tomato Main</span>
               </div>
             </td>
-            <td><strong>Tomato</strong><br><small style="color:#6B7280;">Primary red bar</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Red</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #f8d0d0;">
-              <div class="color-info" style="color: #6f1c28;">
-                <span class="hex-val">#f8d0d0</span>
-                <span class="label-name">Font: #6f1c28</span>
-              </div>
-            </td>
-            <td style="background-color: #f7cdc6;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #f7cdc6; color: #6c120b;">
                 <span class="hex-val">#f7cdc6</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #f2bab0; color: #6c120b;">
+                <span class="hex-val">#f2bab0</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #efb0a5; color: #6c120b;">
+                <span class="hex-val">#efb0a5</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Yellow -->
           <tr>
-            <td><span class="category-name">Yellow</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #b07d10;">
-              <div class="color-info text-white">
-                <span class="hex-val">#b07d10</span>
-                <span class="label-name">Original Orange Main</span>
-              </div>
-            </td>
-            <td style="background-color: #EEC14C;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Yellow</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #EEC14C; color: #FFFFFF;">
                 <span class="hex-val">#EEC14C</span>
-                <span class="label-name">Google Banana (Font: Black)</span>
+                <span class="label-name">Banana Main</span>
               </div>
             </td>
-            <td><strong>Banana</strong><br><small style="color:#6B7280;">Bright yellow bar</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Yellow</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #ecdec9;">
-              <div class="color-info" style="color: #614305;">
-                <span class="hex-val">#ecdec9</span>
-                <span class="label-name">Font: #614305</span>
-              </div>
-            </td>
-            <td style="background-color: #fbf0d7;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #fbf0d7; color: #4f3e13;">
                 <span class="hex-val">#fbf0d7</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child (Faint)</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #f9eac6; color: #4f3e13;">
+                <span class="hex-val">#f9eac6</span>
+                <span class="label-name">35% Child (Clear Edge)</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #f9e7be; color: #4f3e13;">
+                <span class="hex-val">#f9e7be</span>
+                <span class="label-name">40% Child (Solid)</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Purple -->
           <tr>
-            <td><span class="category-name">Purple</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #8f6fe3;">
-              <div class="color-info text-white">
-                <span class="hex-val">#8f6fe3</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #976CAB;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Purple</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #976CAB; color: #FFFFFF;">
                 <span class="hex-val">#976CAB</span>
-                <span class="label-name">Google Amethyst (Font: Black)</span>
+                <span class="label-name">Amethyst Main</span>
               </div>
             </td>
-            <td><strong>Amethyst</strong><br><small style="color:#6B7280;">Soft violet purple bar</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Purple</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #e1dbfa;">
-              <div class="color-info" style="color: #4e3b7f;">
-                <span class="hex-val">#e1dbfa</span>
-                <span class="label-name">Font: #4e3b7f</span>
-              </div>
-            </td>
-            <td style="background-color: #e4d9ea;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #e4d9ea; color: #52395e;">
                 <span class="hex-val">#e4d9ea</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #dacae2; color: #52395e;">
+                <span class="hex-val">#dacae2</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #d5c3de; color: #52395e;">
+                <span class="hex-val">#d5c3de</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
 
 
-    <div class="section-title">Option B: Soft Dark Mode Set on White (Black Text for Google Items)</div>
+    <div class="section-title">Option B: Soft Dark Mode Palette</div>
     <div class="table-card">
       <table>
         <thead>
           <tr>
-            <th>Role & Item</th>
-            <th>App Current Color</th>
-            <th>Google Soft Replacement</th>
-            <th>Official Name & Notes</th>
+            <th>Role</th>
+            <th>Main Bar (100%)</th>
+            <th>25% Mix (Current)</th>
+            <th>35% Mix (Stronger Edge)</th>
+            <th>40% Mix (Max Definition)</th>
           </tr>
         </thead>
         <tbody>
           <!-- Blue -->
           <tr>
-            <td><span class="category-name">Blue</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #2456b8;">
-              <div class="color-info text-white">
-                <span class="hex-val">#2456b8</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #6E8ADB;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Blue</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #6E8ADB; color: #000000;">
                 <span class="hex-val">#6E8ADB</span>
-                <span class="label-name">Google Cobalt (Soft)</span>
+                <span class="label-name">Cobalt Soft Main</span>
               </div>
             </td>
-            <td><strong>Cobalt Soft</strong><br><small style="color:#6B7280;">Cornflower blue</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Blue</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #c6d5f0;">
-              <div class="color-info" style="color: #0f2c66;">
-                <span class="hex-val">#c6d5f0</span>
-                <span class="label-name">Font: #0f2c66</span>
-              </div>
-            </td>
-            <td style="background-color: #d9e2f8;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #d9e2f8; color: #1f2e54;">
                 <span class="hex-val">#d9e2f8</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #cad6f4; color: #1f2e54;">
+                <span class="hex-val">#cad6f4</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #c3d0f3; color: #1f2e54;">
+                <span class="hex-val">#c3d0f3</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Green -->
           <tr>
-            <td><span class="category-name">Green</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #2e7d54;">
-              <div class="color-info text-white">
-                <span class="hex-val">#2e7d54</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #6DAE84;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Green</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #6DAE84; color: #000000;">
                 <span class="hex-val">#6DAE84</span>
-                <span class="label-name">Google Basil (Soft)</span>
+                <span class="label-name">Basil Soft Main</span>
               </div>
             </td>
-            <td><strong>Basil Soft</strong><br><small style="color:#6B7280;">Mint / sea green</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Green</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #cbded2;">
-              <div class="color-info" style="color: #15432b;">
-                <span class="hex-val">#cbded2</span>
-                <span class="label-name">Font: #15432b</span>
-              </div>
-            </td>
-            <td style="background-color: #dbebdf;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #dbebdf; color: #1b3a26;">
                 <span class="hex-val">#dbebdf</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #cce3d3; color: #1b3a26;">
+                <span class="hex-val">#cce3d3</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #c5decd; color: #1b3a26;">
+                <span class="hex-val">#c5decd</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Red -->
           <tr>
-            <td><span class="category-name">Red</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #c93a4e;">
-              <div class="color-info text-white">
-                <span class="hex-val">#c93a4e</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #CA5B3F;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Red</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #CA5B3F; color: #000000;">
                 <span class="hex-val">#CA5B3F</span>
-                <span class="label-name">Google Tomato (Soft)</span>
+                <span class="label-name">Tomato Soft Main</span>
               </div>
             </td>
-            <td><strong>Tomato Soft</strong><br><small style="color:#6B7280;">Warm coral-red</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Red</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #f8d0d0;">
-              <div class="color-info" style="color: #6f1c28;">
-                <span class="hex-val">#f8d0d0</span>
-                <span class="label-name">Font: #6f1c28</span>
-              </div>
-            </td>
-            <td style="background-color: #f6d6ce;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #f6d6ce; color: #46170d;">
                 <span class="hex-val">#f6d6ce</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #f1c6bb; color: #46170d;">
+                <span class="hex-val">#f1c6bb</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #efbeb1; color: #46170d;">
+                <span class="hex-val">#efbeb1</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Yellow -->
           <tr>
-            <td><span class="category-name">Yellow</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #b07d10;">
-              <div class="color-info text-white">
-                <span class="hex-val">#b07d10</span>
-                <span class="label-name">Original Orange Main</span>
-              </div>
-            </td>
-            <td style="background-color: #E0BC63;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Yellow</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #E0BC63; color: #000000;">
                 <span class="hex-val">#E0BC63</span>
-                <span class="label-name">Google Banana (Soft)</span>
+                <span class="label-name">Banana Soft Main</span>
               </div>
             </td>
-            <td><strong>Banana Soft</strong><br><small style="color:#6B7280;">Warm pastel yellow</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Yellow</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #ecdec9;">
-              <div class="color-info" style="color: #614305;">
-                <span class="hex-val">#ecdec9</span>
-                <span class="label-name">Font: #614305</span>
-              </div>
-            </td>
-            <td style="background-color: #f7efda;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #f7efda; color: #504018;">
                 <span class="hex-val">#f7efda</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child (Faint)</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #f4e8cb; color: #504018;">
+                <span class="hex-val">#f4e8cb</span>
+                <span class="label-name">35% Child (Clear Edge)</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #f3e5c3; color: #504018;">
+                <span class="hex-val">#f3e5c3</span>
+                <span class="label-name">40% Child (Solid)</span>
+              </div>
+            </td>
           </tr>
 
           <!-- Purple -->
           <tr>
-            <td><span class="category-name">Purple</span> <span class="item-type-tag tag-main">Main</span></td>
-            <td style="background-color: #8f6fe3;">
-              <div class="color-info text-white">
-                <span class="hex-val">#8f6fe3</span>
-                <span class="label-name">Original Main</span>
-              </div>
-            </td>
-            <td style="background-color: #9E7BAE;">
-              <div class="color-info text-black">
+            <td><span class="category-name">Purple</span></td>
+            <td>
+              <div class="color-cell" style="background-color: #9E7BAE; color: #000000;">
                 <span class="hex-val">#9E7BAE</span>
-                <span class="label-name">Google Amethyst (Soft)</span>
+                <span class="label-name">Amethyst Soft Main</span>
               </div>
             </td>
-            <td><strong>Amethyst Soft</strong><br><small style="color:#6B7280;">Warm lavender-purple</small></td>
-          </tr>
-          <tr class="child-row">
-            <td><span class="category-name">Purple</span> <span class="item-type-tag tag-child">Child</span></td>
-            <td style="background-color: #e1dbfa;">
-              <div class="color-info" style="color: #4e3b7f;">
-                <span class="hex-val">#e1dbfa</span>
-                <span class="label-name">Font: #4e3b7f</span>
-              </div>
-            </td>
-            <td style="background-color: #e6ddeb;">
-              <div class="color-info text-black">
+            <td>
+              <div class="color-cell" style="background-color: #e6ddeb; color: #33233c;">
                 <span class="hex-val">#e6ddeb</span>
-                <span class="label-name">Font: Black (#000000)</span>
+                <span class="label-name">25% Child</span>
               </div>
             </td>
-            <td><small style="color:#6B7280;">Derived child bar tint</small></td>
+            <td>
+              <div class="color-cell" style="background-color: #dccfe3; color: #33233c;">
+                <span class="hex-val">#dccfe3</span>
+                <span class="label-name">35% Child</span>
+              </div>
+            </td>
+            <td>
+              <div class="color-cell" style="background-color: #d8c9df; color: #33233c;">
+                <span class="hex-val">#d8c9df</span>
+                <span class="label-name">40% Child</span>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
