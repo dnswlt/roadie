@@ -1,21 +1,33 @@
-// Lane color themes: the "Soft" palette (Option B in
-// docs/color_recommendations.html), tuned for black ink on the main bars.
-// The hex values are CVD-validated as a categorical set (all-pairs check;
-// red/green sits in the legal band because lane identity is always carried
-// by the visible lane label as well). Tints and borders are derived in CSS
-// via color-mix from the single strong value.
+// Lane color themes, taken from Google Calendar's palette — Kobalt, Salbei,
+// Kirschblüte, Banane, Amethyst — and tuned for black ink on the main bars.
+// Tints and borders are derived in CSS via color-mix from this single strong
+// value.
 //
-// The red lane is deliberately rosy rather than warm: it has to stay clear of
-// the amber warning family (--flag, --notice), which is drawn *on top of* lane
-// bars. A warmer red reads as a lane-colored decoration instead of a warning —
-// under tritanopia the two became indistinguishable.
+// These are the values Google *declares*, in sRGB. Never re-derive them by
+// sampling pixels off the screen: macOS screenshots and Digital Colour Meter
+// report Display P3 coordinates, so a reading pasted back in as sRGB comes out
+// desaturated. That is not hypothetical — the previous set was exactly the P3
+// rendering of these five (blue, green and orange matched to the integer),
+// which is why the whole palette looked slightly washed out.
+//
+// Color is a signal here, not the lane's identity — the visible lane label
+// always names the lane. So these are picked to look right and to separate
+// comfortably at a glance, NOT to guarantee every pair survives every
+// color-vision deficiency: red and green are knowingly close. Judge a new hex
+// on how it looks and on what it has to sit next to, not against a distance
+// threshold.
+//
+// The one hard constraint is coexistence: stay clear of the amber warning
+// family (--flag, --notice), which is drawn *on top of* lane bars. A warm red
+// made the flag read as lane-colored decoration rather than a warning, which
+// is why red is rosy.
 
 export const LANE_COLORS: Record<string, string> = {
-  blue: "#6e8adb",
-  green: "#6dae84",
-  red: "#c95f76",
-  orange: "#e0bc63",
-  purple: "#9e7bae",
+  blue: "#668be1",
+  green: "#55b080",
+  red: "#d85675",
+  orange: "#e7ba51",
+  purple: "#a479b1",
 };
 
 export const LANE_COLOR_ORDER = ["blue", "green", "red", "orange", "purple"];

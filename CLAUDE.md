@@ -132,6 +132,10 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **Dependencies are never drawn on the timeline.** The chart projects time;
   edges across it are the spaghetti this feature avoids. The local one-hop
   overlay (`deps.ts`, recenter by clicking) is the only graph projection.
+- **Color is chosen by user preference; only the lane label carries identity.** So the palette is judged
+  by eye and by what a hex must sit next to — not against a CVD distance threshold.
+  Raise contrast/CVD only when something concrete breaks (text going illegible, a
+  warning marker lost in a lane bar), not as a gate on every color change.
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**
