@@ -4,10 +4,19 @@
 // The set is muted and mid-toned — soft rather than primary, all at roughly one
 // weight so no lane shouts over the others, and all light enough to carry dark
 // ink (--ink) on the main bars. A cornflower blue, a pistachio green, a warm
-// flamingo, a soft banana yellow and a dusty amethyst. Two of those are
-// deliberate: the green is a true leaf green rather than the sage it replaced,
-// which leaned teal and sat coldly beside the warm reds, and the red is a
-// salmon rather than a rosy cherry, which crowded --today.
+// flamingo, a soft banana yellow, a dusty amethyst, and a birch greige. Three
+// of those are deliberate: the green is a true leaf green rather than the sage
+// it replaced, which leaned teal and sat coldly beside the warm reds; the red
+// is a salmon rather than a rosy cherry, which crowded --today; and "gray" is
+// warm rather than neutral, because a true gray fights this set.
+//
+// The gray is the odd one and earns its place by *not* being a hue: it reads as
+// unassigned or supporting work, a slot no sixth color could occupy. Distance
+// metrics understate it — it lands 0.089 from flamingo, closer than any pair
+// here — but chroma 0.02 against flamingo's 0.09 is the categorical "gray vs
+// coloured" difference, which the eye resolves faster than a hue rotation.
+// Its one weak spot is derived, not direct: .child-bar mixes it to a pale
+// neutral that sits nearer --border than any other lane's tint.
 //
 // These are sRGB. Never re-derive one by sampling pixels off the screen: macOS
 // screenshots and Digital Colour Meter report Display P3 coordinates, so a
@@ -37,9 +46,10 @@ export const LANE_COLORS: Record<string, string> = {
   red: "#d6837a",
   orange: "#e7ba51",
   purple: "#a479b1",
+  gray: "#a5998c",
 };
 
-export const LANE_COLOR_ORDER = ["blue", "green", "red", "orange", "purple"];
+export const LANE_COLOR_ORDER = ["blue", "green", "red", "orange", "purple", "gray"];
 
 export function laneColorValue(name: string): string {
   return LANE_COLORS[name] ?? LANE_COLORS["blue"]!;

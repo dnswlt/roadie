@@ -748,8 +748,11 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 // Lanes
 
 // laneColors are the color themes a swimlane can use; they are also
-// auto-assigned round-robin when lanes are created.
-var laneColors = []string{"blue", "green", "red", "orange", "purple"}
+// auto-assigned round-robin when lanes are created. Must stay in step with
+// LANE_COLORS in web/src/colors.ts — the name is what is stored, and the
+// frontend owns the hex. CreateLane passes this slice to Postgres rather than
+// repeating it in SQL, so the round-robin cannot drift from the valid set.
+var laneColors = []string{"blue", "green", "red", "orange", "purple", "gray"}
 
 func validLaneColor(c string) bool {
 	for _, v := range laneColors {
@@ -778,10 +781,10 @@ func (s *Store) CreateLane(ctx context.Context, roadmapID int64, name string) (m
 	err = tx.QueryRow(ctx,
 		`WITH pos AS (SELECT COALESCE(MAX(position) + 1, 0) AS p FROM lanes WHERE roadmap_id = $1)
 		 INSERT INTO lanes (roadmap_id, name, position, color)
-		 SELECT r.id, $2, pos.p, (ARRAY['blue','green','red','orange','purple'])[(pos.p % 5) + 1]
+		 SELECT r.id, $2, pos.p, ($3::text[])[(pos.p % array_length($3::text[], 1)) + 1]
 		 FROM roadmaps r, pos WHERE r.id = $1
 		 RETURNING id, roadmap_id, name, position, color`,
-		roadmapID, name).Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color)
+		roadmapID, name, laneColors).Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color)
 	if err != nil {
 		return model.Lane{}, err
 	}
