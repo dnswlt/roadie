@@ -1,5 +1,6 @@
 # Port 5433: the machine may run its own Postgres on 5432.
 DATABASE_URL ?= postgres://roadie:roadie@localhost:5433/roadie
+DOCS_PYTHON ?= .venv/bin/python
 
 UNAME_S := $(shell uname -s)
 # macOS (Homebrew/Colima): Uses the dashed binary (even in newer versions like 5.0.x)
@@ -20,7 +21,7 @@ OIDC_CLIENT_SECRET ?= roadie-dev-secret
 OIDC_ADDR ?= localhost:8080
 
 .PHONY: dev dev-oidc kill-watch build test check db-up db-down frontend frontend-watch \
-	docker-build docker-up docker-down
+	docker-build docker-up docker-down docs docs-serve
 
 db-up:
 	$(DC_CMD) up -d --wait db
@@ -102,3 +103,12 @@ test-e2e:
 check:
 	go vet ./...
 	npm run --prefix web check
+
+# Documentation dependencies are deliberately not installed implicitly. Set up
+# a virtual environment and install requirements-docs.txt once, then use these
+# targets to build or preview the site.
+docs:
+	NO_MKDOCS_2_WARNING=1 $(DOCS_PYTHON) -m mkdocs build --strict
+
+docs-serve:
+	NO_MKDOCS_2_WARNING=1 $(DOCS_PYTHON) -m mkdocs serve

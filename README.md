@@ -45,6 +45,22 @@ The dev database listens on **5433** to avoid clashing with a locally
 installed Postgres. Override with `DATABASE_URL` (default
 `postgres://roadie:roadie@localhost:5433/roadie`).
 
+## Documentation
+
+The user guide is published at <https://dnswlt.github.io/roadie/>. Its Markdown
+source lives in [`docs`](docs) and is built with MkDocs Material.
+
+To preview it locally, install the pinned documentation dependency in a virtual
+environment and start the development server:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-docs.txt
+make docs-serve
+```
+
+`make docs` performs the same strict production build used by CI.
+
 ## Authentication
 
 By default Roadie runs **open**: no login, everyone can see and edit everything.

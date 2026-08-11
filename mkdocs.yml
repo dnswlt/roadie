@@ -1,0 +1,27 @@
+site_name: Roadie
+site_description: Roadmapping for large software and systems projects
+site_url: https://dnswlt.github.io/roadie/
+repo_url: https://github.com/dnswlt/roadie
+repo_name: dnswlt/roadie
+
+theme:
+  name: material
+  features:
+    - navigation.footer
+    - navigation.indexes
+    - navigation.sections
+
+nav:
+  - Home: index.md
+  - Philosophy: philosophy.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
