@@ -74,7 +74,11 @@ children; `rank` is kept dense 0..n-1 per container, and the frontend relies on
 **rank == array index**.
 
 **Lane color.** All bar/tint/border shades derive from `--c` via CSS `color-mix`.
-Never hard-code per-color CSS.
+Never hard-code per-color CSS. Text on a lane bar is `--ink`, never `#000`.
+
+**A warning mark on a bar is a bright fill plus a white ring** (`--flag`,
+`.bar-flag`): the fill carries the meaning, the ring the separation. Darkening
+the fill to win contrast is what loses the warning — thicken the ring instead.
 
 **Render invalidation has exactly two scopes.** `notify()` = full chart re-render,
 for anything that can change geometry. `notifySelection()` = project `.selected`
@@ -136,6 +140,9 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   by eye and by what a hex must sit next to — not against a CVD distance threshold.
   Raise contrast/CVD only when something concrete breaks (text going illegible, a
   warning marker lost in a lane bar), not as a gate on every color change.
+- **`--danger` is chrome-only** — menus, dialogs, buttons, toasts, the rail. It
+  means "destructive, or already failed", so red never renders on the timeline;
+  chart warnings are `--flag`, including dependency conflicts.
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**

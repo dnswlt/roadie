@@ -1,7 +1,7 @@
 :root {
   --bg: #f7f8f9;
   --surface: #ffffff;
-  --ink: #1a1f26;
+  --ink: #131314;
   --ink-2: #4b5563;
   --muted: #9aa3af;
   --border: #e5e8ec;
@@ -15,10 +15,13 @@
      banner). A muted amber/gold; darker than the orange lane on purpose, so
      white banner text stays readable. */
   --notice: #b07d10;
-  /* The "needs attention" flag. Deliberately outside the lane themes: the
-     marker has to read identically against all five lane colors, which is the
-     one thing a --c-derived shade cannot do. Distinct from --danger (errors)
-     and --today (the time cursor) so the three never get confused. */
+  /* The "needs attention" flag. Outside the lane themes on purpose: the marker
+     must read the same against all five, which no --c shade can do. Meaning and
+     separation are split between two mechanisms — this bright amber carries the
+     meaning, the white ring on .bar-flag carries the separation. A warning tone
+     is made of saturation, so darkening it to win contrast turns it burgundy
+     and it stops reading as a warning (tried, #a4133c). Thicken the ring
+     instead. */
   --flag: #d97706;
   --today: #e11d48;
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
@@ -839,8 +842,16 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #000; /* black ink on lane color, like .bar */
+  color: var(--ink); /* ink on lane color, like .bar */
   padding: 0;
+}
+
+/* The check marking the active swatch. lucide's stroke-width 2 over a 24
+   viewBox scales down to a ~1px hairline here, which dissolves into a
+   saturated fill. Thickened locally rather than in icons.ts, so the rest of
+   the set keeps its weight. */
+.swatch svg {
+  stroke-width: 3;
 }
 
 .swatch:hover {
@@ -928,7 +939,12 @@ kbd {
   display: flex;
   align-items: center;
   background: var(--c);
-  color: #000; /* the soft palette is tuned for black ink on the main bars */
+  /* The app's ink, never #000. Bar titles rank with list rows and panel fields;
+     pure black made the chart the heaviest text on screen on top of being its
+     most saturated area. Costs ~12% of contrast ratio against black; purple is
+     the weakest pairing at 5.3:1, so it is the one to re-check when a lane
+     color moves. */
+  color: var(--ink);
   cursor: grab;
   box-shadow: var(--shadow);
   user-select: none;
@@ -1079,14 +1095,13 @@ kbd {
 
 /* The "needs attention" flag: outermost on a bar (right of the priority pill),
    and first on an outside label, which runs leftwards from the title. Solid
-   amber with a light glyph — the same treatment as .flag-btn.active, and it
-   holds its own against a saturated lane bar without needing a white plate.
+   amber with a light glyph — the same treatment as .flag-btn.active.
    Non-interactive, like .prio-pill — see render.ts flagMark. */
 .bar-flag {
   flex: none;
   display: inline-flex;
   align-items: center;
-  margin: 0 3px 0 0;
+  margin: 0 5px 0 0;
   padding: 2px 3px;
   border-radius: 3px;
   background: var(--flag);
@@ -1109,19 +1124,31 @@ kbd {
 }
 
 /* A dependency the calendar contradicts: a prerequisite that finishes after
-   the work needing it starts. Built like the flag, and in the flag's colour,
-   for the flag's stated reason — that token exists because a marker has to
-   read against all five lane themes, which no --c shade and no --danger can
-   do (a --danger chip disappears on the red lane). The shared colour is not a
-   collision: both markers mean "look here", and the glyph says which kind.
-   It is also the more honest tone — an unmeetable date is a warning about a
-   valid state, not an error. */
+   the work needing it starts. Built like the flag and in the flag's colour —
+   not a collision: both markers mean "look here", and the glyph says which
+   kind. Deliberately not --danger, which means "destructive, or already
+   failed" and appears only in chrome (menus, dialogs, toasts, the rail). An
+   unmeetable date is a warning about a valid state, and putting red on a bar
+   would cost --danger the one property that makes it unambiguous. */
 .bar-dep.dep-conflict {
+  margin: 0 5px 0 0;
   padding: 2px 3px;
   border-radius: 3px;
   background: var(--flag);
   color: #fff;
   opacity: 1;
+}
+
+/* What lets both warning chips keep a bright fill: the ring does the
+   separating — the standard answer to a saturated mark on an unknown ground.
+   It covers exactly what the fill cannot. White clears blue and purple, the
+   two lanes the amber is actually *lighter* than; on banana, where the ring is
+   weakest, the amber already separates on its own.
+   Nothing clips these — .bar-main owns the overflow:hidden and these are its
+   siblings. */
+.bar-flag,
+.bar-dep.dep-conflict {
+  box-shadow: 0 0 0 1.5px #fff;
 }
 
 /* Priority chips in the edit panel. */
@@ -1149,7 +1176,7 @@ kbd {
 /* Active chip uses the selected item's lane color (--c is set on the
    panel in renderPanel) so the picker matches the lane and the bar pill. */
 .prio-chip.active {
-  color: #000; /* black ink on lane color, like .bar */
+  color: var(--ink); /* ink on lane color, like .bar */
   border-color: transparent;
   background: var(--c);
 }
@@ -2136,7 +2163,7 @@ dialog input:focus {
 .dialog-errors {
   margin-top: 8px;
   font-size: 12px;
-  color: var(--danger, #dc2626);
+  color: var(--danger);
   white-space: pre-wrap;
 }
 

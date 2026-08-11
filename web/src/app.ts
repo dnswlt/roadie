@@ -849,7 +849,7 @@ function toggleColorPop(anchor: HTMLElement, laneId: number): void {
     sw.className = "swatch";
     sw.title = name;
     sw.style.background = laneColorValue(name);
-    if (name === lane.color) sw.append(icons.check(12));
+    if (name === lane.color) sw.append(icons.check(14));
     sw.addEventListener("click", () => {
       closeColorPop();
       if (name !== lane.color) void actions.setLaneColor(laneId, name);
