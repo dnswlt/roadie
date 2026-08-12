@@ -13,7 +13,8 @@ theme:
 
 nav:
   - Home: index.md
-  - Philosophy: philosophy.md
+  - Key concepts: concepts.md
+  - Managing roadmaps: managing-roadmaps.md
 
 plugins:
   - search

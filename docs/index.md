@@ -10,10 +10,12 @@ that remain useful at scale.
 
 ## Start here
 
-- [Roadie's philosophy](philosophy.md) explains the principles behind the
-  deliberately small planning model.
-- Practical guides and concept references will be added as the documentation
-  grows.
+- [Key concepts](concepts.md) gives a quick tour of what Roadie provides and how
+  its parts work together.
+- [Managing roadmaps](managing-roadmaps.md) covers roadmap lifecycle, history,
+  sharing, and collaboration.
+- Practical guides and deeper planning material will be added as the
+  documentation grows.
 
 !!! note
 
