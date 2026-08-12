@@ -1,7 +1,7 @@
 // The Help modal: a small reference card for the parts of the UI that the
-// chrome cannot explain by itself. Start with snapping (the most modal, least
-// discoverable gesture); add sections here as needed. Escape / Close dismiss it
-// (native <dialog>).
+// chrome cannot explain by itself. It leads into the full guide, then moves
+// from everyday editing to more specialized gestures and shortcuts. Escape /
+// Close dismisses it (native <dialog>).
 //
 // The binding table is passed in rather than imported. keys.ts opens this dialog
 // from the "?" shortcut, so importing `bindings` back from keys.ts would make the
@@ -61,19 +61,15 @@ export function openHelpDialog(bindings: Binding[]): void {
   const body = document.createElement("div");
   body.className = "help-body";
 
-  const p = document.createElement("p");
-  p.textContent =
-    "While you drag, items snap to the grid selected in the magnet menu (Day, Week, Month, Quarter, or Schedule) and to nearby item edges, milestones, and today. Moving keeps an item's duration: its start aligns to the grid, and either edge can still catch a nearby target. Resizing snaps the edge you grabbed.";
-  body.append(
-    section(
-      "Snapping",
-      p,
-      keyList([
-        ["Shift", "*Snap to the grid only* — steadier for coarse grids like Quarter or Schedule."],
-        ["Alt", "*Turn snapping off* for free, day-by-day placement."],
-      ]),
-    ),
-  );
+  const guideP = document.createElement("p");
+  guideP.append("Read the ");
+  const guideLink = document.createElement("a");
+  guideLink.href = "https://dnswlt.github.io/roadie/";
+  guideLink.target = "_blank";
+  guideLink.rel = "noopener noreferrer";
+  guideLink.textContent = "user guide";
+  guideP.append(guideLink, " to learn how Roadie works and how to build useful roadmaps.");
+  body.append(section("User guide", guideP));
 
   // Enter is not in the binding table — it is handled on the title field itself
   // (panel.ts) — so unlike the shortcuts below it has to be listed by hand. It
@@ -84,14 +80,12 @@ export function openHelpDialog(bindings: Binding[]): void {
   // keyboard twin — the prose covers only the mouse side.
   const editP = document.createElement("p");
   editP.textContent =
-    "Double-click a bar or milestone to open the side panel with its title ready to edit. The chevron strip along the panel's outer edge collapses and reopens it. A description's http(s) URLs become link chips; write [text](url) to name one.";
+    "Double-click an item or milestone to open its editing panel. Use the chevron at the edge of the panel to collapse or reopen it. URLs in descriptions become links; use [text](url) to give a link a name.";
   body.append(
     section(
       "Editing",
       editP,
-      keyList([
-        ["Enter", "In a title, *save and step out* of the field — so `n` and `c` start the next item."],
-      ]),
+      keyList([["Enter", "*Save the title* and leave the field."]]),
     ),
   );
 
@@ -99,8 +93,27 @@ export function openHelpDialog(bindings: Binding[]): void {
   // down. It covers both of them: the gesture is the same in each.
   body.append(
     section(
-      "Contexts and labels",
-      keyList([["Alt-click", "In the context or label menu, *show only that one*."]]),
+      "View filters",
+      keyList([
+        [
+          "Alt-click",
+          "In a multi-select filter, *select only* the context or label you click.",
+        ],
+      ]),
+    ),
+  );
+
+  const snapP = document.createElement("p");
+  snapP.textContent =
+    "When you drag or resize an item, Roadie snaps it to the selected time grid and to nearby item edges, milestones, and today. Moving an item preserves its duration; resizing changes the edge you drag.";
+  body.append(
+    section(
+      "Snapping",
+      snapP,
+      keyList([
+        ["Shift", "*Snap only* to the selected time grid."],
+        ["Alt", "*Temporarily disable* snapping."],
+      ]),
     ),
   );
 

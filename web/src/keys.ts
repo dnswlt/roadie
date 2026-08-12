@@ -86,13 +86,13 @@ export const bindings: Binding[] = [
   {
     key: "n",
     label: "n",
-    description: "*New item* beside the selection.",
+    description: "*Add an item* after the selected item, or to the selected milestone's context.",
     run: () => void addItemToSelection(),
   },
   {
     key: "c",
     label: "c",
-    description: "*New child item* under the selection.",
+    description: "*Add a child item* to the selected parent.",
     run: () => void addChildToSelection(),
   },
   {
@@ -113,7 +113,7 @@ export const bindings: Binding[] = [
   {
     key: "d",
     label: "d",
-    description: "*Dependency graph* of the selected item or milestone.",
+    description: "*Open the dependency graph* for the selected item or milestone.",
     run: () => openDepsForSelection(),
   },
   {
@@ -134,13 +134,13 @@ export const bindings: Binding[] = [
   {
     key: "v",
     label: "v",
-    description: "*Switch view* between timeline and WBS.",
+    description: "*Switch between* the timeline and WBS views.",
     run: () => state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs"),
   },
   {
     key: "z",
     label: "z",
-    description: "*Zoom to fit* all items in shown contexts (timeline view).",
+    description: "*Fit all items* in the visible contexts on screen (timeline view).",
     run: () => zoomToFit(),
   },
   {
@@ -149,7 +149,7 @@ export const bindings: Binding[] = [
     // Last, so the reference card ends with the way back to itself. Reopening
     // is not a concern: the handler ignores every shortcut while a dialog is
     // open, and Escape closes it natively.
-    description: "Show this *help*.",
+    description: "*Open Help*.",
     run: () => openHelpDialog(bindings),
   },
 ];
