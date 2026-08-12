@@ -5,7 +5,7 @@ import { laneColorValue } from "./colors";
 import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
 import { icons } from "./icons";
 import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
-import { extractUrls } from "./links";
+import { extractLinks } from "./links";
 import { scheduleBounds } from "./schedule";
 import { state } from "./state";
 import {
@@ -490,7 +490,7 @@ function titleFits(item: Item, width: number, hasDisclosure = false, hasDeps = f
   if (hasDeps) reserved += DEP_RESERVE;
   if (item.priority) reserved += PILL_RESERVE;
   if (item.flagged) reserved += FLAG_RESERVE;
-  if (extractUrls(item.description)[0]) reserved += LINK_RESERVE;
+  if (extractLinks(item.description)[0]) reserved += LINK_RESERVE;
   return measureTitleWidth(item.title) <= width - reserved;
 }
 
@@ -568,19 +568,18 @@ function barMain(title: string, description: string): HTMLElement {
   return main;
 }
 
-// A small external-link icon following the bar's title, opening the first URL
-// found in the item's description in a new tab. First link only — an item can
-// reference many, but the card stays uncluttered and the rule is memorable.
+// Open the first description link from the compact bar affordance.
 // dnd.ts skips drag-start on `.bar-link` so the click navigates instead.
+// Include authored labels in the tooltip; derived labels duplicate the URL.
 export function barLink(description: string): Node {
-  const url = extractUrls(description)[0];
-  if (!url) return document.createTextNode("");
+  const link = extractLinks(description)[0];
+  if (!link) return document.createTextNode("");
   const a = document.createElement("a");
   a.className = "bar-link";
-  a.href = url;
+  a.href = link.url;
   a.target = "_blank";
   a.rel = "noopener noreferrer";
-  a.title = url;
+  a.title = link.explicit ? `${link.label}\n${link.url}` : link.url;
   a.append(icons.externalLink(13));
   return a;
 }

@@ -84,7 +84,7 @@ export function openHelpDialog(bindings: Binding[]): void {
   // keyboard twin — the prose covers only the mouse side.
   const editP = document.createElement("p");
   editP.textContent =
-    "Double-click a bar or milestone to open the side panel with its title ready to edit. The chevron strip along the panel's outer edge collapses and reopens it.";
+    "Double-click a bar or milestone to open the side panel with its title ready to edit. The chevron strip along the panel's outer edge collapses and reopens it. A description's http(s) URLs become link chips; write [text](url) to name one.";
   body.append(
     section(
       "Editing",

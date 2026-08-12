@@ -1,5 +1,13 @@
-// URL extraction for the description fields. Pure string logic (no DOM) so it
-// can be unit-tested; the panel turns the results into clickable chips.
+// Extract bare URLs and `[text](url)` links from descriptions.
+
+// A link found in a description, ready to render.
+export interface Link {
+  url: string;
+  // Explicit Markdown text or a non-empty label derived from the URL.
+  label: string;
+  // Used by compact affordances that distinguish authored text from fallback.
+  explicit: boolean;
+}
 
 function countChar(s: string, ch: string): number {
   let n = 0;
@@ -7,10 +15,7 @@ function countChar(s: string, ch: string): number {
   return n;
 }
 
-// trimUrl strips trailing punctuation the URL regex greedily swallowed, so a
-// URL written mid-sentence ("see https://x/y.") or in parens ("(https://x/y)")
-// yields a clean link. A trailing ")" is kept only when the URL's own parens
-// are balanced, so wiki links like .../Foo_(bar) survive.
+// Strip sentence punctuation while preserving balanced URL parentheses.
 export function trimUrl(url: string): string {
   let end = url.length;
   while (end > 0) {
@@ -22,11 +27,28 @@ export function trimUrl(url: string): string {
   return url.slice(0, end);
 }
 
-// extractUrls returns the distinct http(s) URLs found in text, cleaned of
-// trailing punctuation.
-export function extractUrls(text: string): string[] {
-  const matches = text.match(/https?:\/\/[^\s]+/g) ?? [];
-  return [...new Set(matches.map(trimUrl))];
+// Match Markdown first so its target is not emitted again as a bare URL.
+// Labels are single-line; targets allow one nested parenthesis pair.
+// The http(s) prefix is load-bearing: it is what keeps javascript:/data:
+// targets from ever reaching an href.
+const LINK_RE = /\[([^\]\n]*)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)|https?:\/\/[^\s]+/g;
+
+// Return distinct HTTP(S) links in first-occurrence order. An explicit label
+// replaces a derived one for the same URL without changing that order.
+export function extractLinks(text: string): Link[] {
+  const byUrl = new Map<string, Link>();
+  for (const m of text.matchAll(LINK_RE)) {
+    // Markdown targets are group 2; bare URLs need punctuation trimming.
+    const url = m[2] ?? trimUrl(m[0]);
+    const written = m[1]?.trim();
+    const link: Link = written
+      ? { url, label: written, explicit: true }
+      : { url, label: linkLabel(url), explicit: false };
+    const seen = byUrl.get(url);
+    // Updating an existing Map key preserves its insertion position.
+    if (!seen || (link.explicit && !seen.explicit)) byUrl.set(url, link);
+  }
+  return [...byUrl.values()];
 }
 
 // linkLabel gives a chip a short, human-readable name: a Jira-style issue key

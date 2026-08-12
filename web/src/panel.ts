@@ -8,7 +8,7 @@ import { laneColorValue } from "./colors";
 import { dependenciesSection, depsGraphButton } from "./deps";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
-import { extractUrls, linkLabel } from "./links";
+import { extractLinks } from "./links";
 import { itemMarkdown } from "./markdown";
 import { state, type MilestoneLocation } from "./state";
 import type { Item, ItemFull, LaneFull, Milestone } from "./types";
@@ -794,33 +794,32 @@ function crumbLine(text: string): HTMLElement {
   return crumb;
 }
 
-// createLinksSection shows the URLs found in a description as clickable chips.
-// It reads the live textarea and re-renders on input, so links track edits
-// before they are committed.
+// Render links from the live textarea so chips track uncommitted edits.
 function createLinksSection(descControl: HTMLTextAreaElement): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "links-section";
 
   const render = () => {
     wrap.replaceChildren();
-    const urls = extractUrls(descControl.value);
-    wrap.style.display = urls.length === 0 ? "none" : "block";
-    if (urls.length === 0) return;
+    const links = extractLinks(descControl.value);
+    wrap.style.display = links.length === 0 ? "none" : "block";
+    if (links.length === 0) return;
 
     const label = document.createElement("span");
     label.className = "panel-field-label";
     label.textContent = "External links";
+    label.title = "Write [text](url) in the description to name a link";
 
     const chips = document.createElement("div");
     chips.className = "links-chips";
-    for (const url of urls) {
+    for (const link of links) {
       const chip = document.createElement("a");
       chip.className = "link-chip";
-      chip.href = url;
+      chip.href = link.url;
       chip.target = "_blank";
       chip.rel = "noopener noreferrer";
-      chip.textContent = linkLabel(url);
-      chip.title = url;
+      chip.textContent = link.label;
+      chip.title = link.url;
       chips.append(chip);
     }
     wrap.append(label, chips);
