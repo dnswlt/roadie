@@ -36,25 +36,32 @@ Object.defineProperty(globalThis, "localStorage", {
   },
 });
 
-function roadmap(items: ItemFull[]): RoadmapFull {
-  const lane: LaneFull = {
-    id: 1,
+function lane(id: number, items: ItemFull[] = []): LaneFull {
+  return {
+    id,
     roadmapId: 1,
-    name: "L",
-    position: 0,
+    name: `L${id}`,
+    position: id,
     color: "blue",
     items,
     milestones: [],
   };
+}
+
+function roadmapOf(lanes: LaneFull[]): RoadmapFull {
   return {
     id: 1,
     name: "R",
     createdAt: "2026-01-01T00:00:00Z",
     visibility: "public",
-    lanes: [lane],
+    lanes,
     periods: [],
     dependencies: [],
   };
+}
+
+function roadmap(items: ItemFull[]): RoadmapFull {
+  return roadmapOf([lane(1, items)]);
 }
 
 test("no focus dims nothing", () => {
@@ -64,11 +71,47 @@ test("no focus dims nothing", () => {
 });
 
 test("label focus dims items without that label", () => {
-  state.focus = { kind: "label", label: "a" };
+  state.focus = { kind: "labels", labels: ["a"] };
   assert.equal(state.isDimmed(item(1, ["a", "b"], false)), false);
   assert.equal(state.isDimmed(item(2, ["b"], false)), true);
   // A flagged item is not exempt: the two focus kinds are independent.
   assert.equal(state.isDimmed(item(3, [], true)), true);
+});
+
+// Several focused labels match as OR: adding one widens the spotlight.
+test("multi-label focus dims items carrying none of the labels", () => {
+  state.focus = { kind: "labels", labels: ["a", "b"] };
+  assert.equal(state.isDimmed(item(1, ["a"], false)), false);
+  assert.equal(state.isDimmed(item(2, ["b", "c"], false)), false);
+  assert.equal(state.isDimmed(item(3, ["c"], false)), true);
+  assert.equal(state.isDimmed(item(4, [], false)), true);
+});
+
+test("toggling labels builds and empties the focus", () => {
+  state.focus = null;
+  state.toggleFocusLabel("a");
+  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
+  state.toggleFocusLabel("b");
+  assert.deepEqual(state.focus, { kind: "labels", labels: ["a", "b"] });
+  assert.equal(state.isFocusedLabel("b"), true);
+
+  // Alt-click narrows to one label, never back out — "Show all items" does that.
+  state.isolateFocusLabel("b");
+  assert.deepEqual(state.focus, { kind: "labels", labels: ["b"] });
+  state.isolateFocusLabel("b");
+  assert.deepEqual(state.focus, { kind: "labels", labels: ["b"] });
+
+  // Un-picking the last label is the same state as no focus at all.
+  state.toggleFocusLabel("b");
+  assert.equal(state.focus, null);
+  assert.equal(state.isFocusedLabel("b"), false);
+});
+
+// Labels and the flag are one exclusive field, so picking either drops the other.
+test("picking a label replaces a flag focus", () => {
+  state.focus = { kind: "flagged" };
+  state.toggleFocusLabel("a");
+  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
 });
 
 test("flag focus dims unflagged items regardless of labels", () => {
@@ -82,7 +125,7 @@ test("flag focus dims unflagged items regardless of labels", () => {
 test("a label named 'flagged' is not the flag", () => {
   state.focus = { kind: "flagged" };
   assert.equal(state.isDimmed(item(1, ["flagged"], false)), true);
-  state.focus = { kind: "label", label: "flagged" };
+  state.focus = { kind: "labels", labels: ["flagged"] };
   assert.equal(state.isDimmed(item(2, ["flagged"], false)), false);
   assert.equal(state.isDimmed(item(3, [], true)), true);
 });
@@ -100,6 +143,27 @@ test("flaggedCount counts children as well as top-level items", () => {
 
   state.current = null;
   assert.equal(state.flaggedCount(), 0);
+});
+
+test("isolating a lane hides the rest, and Show all brings them back", () => {
+  const saved = (): number[] =>
+    (JSON.parse(localStorage.getItem("roadie.hidden.1") ?? "null") as number[]).sort();
+  state.current = roadmapOf([lane(1), lane(2), lane(3)]);
+  state.hiddenLanes = new Set([1]);
+
+  state.isolateLane(2);
+  assert.deepEqual([...state.hiddenLanes].sort(), [1, 3]);
+  assert.deepEqual(saved(), [1, 3]);
+  // Isolating the already-isolated lane is a no-op, not a way back out.
+  state.isolateLane(2);
+  assert.deepEqual([...state.hiddenLanes].sort(), [1, 3]);
+  // Isolating a hidden lane shows it.
+  state.isolateLane(1);
+  assert.deepEqual([...state.hiddenLanes].sort(), [2, 3]);
+
+  state.showAllLanes();
+  assert.equal(state.hiddenLanes.size, 0);
+  assert.deepEqual(saved(), []);
 });
 
 test("bulk parent folding toggles every parent and deselects hidden children", () => {

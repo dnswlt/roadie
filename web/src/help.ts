@@ -95,6 +95,15 @@ export function openHelpDialog(bindings: Binding[]): void {
     ),
   );
 
+  // The menus themselves stay bare, so this line is where Alt-click is written
+  // down. It covers both of them: the gesture is the same in each.
+  body.append(
+    section(
+      "Contexts and labels",
+      keyList([["Alt-click", "In the context or label menu, *show only that one*."]]),
+    ),
+  );
+
   // Shortcuts are listed straight from the binding table (keys.ts), so adding
   // one there documents it here.
   body.append(

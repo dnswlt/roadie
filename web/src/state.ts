@@ -28,10 +28,12 @@ export interface MilestoneLocation {
   lane: LaneFull;
 }
 
-// What the focus menu is spotlighting: one label, or the flag. A tagged union
-// rather than a bare string, so "flagged" can never collide with a user's own
-// label of that name.
-export type Focus = { kind: "label"; label: string } | { kind: "flagged" };
+// What the focus menu is spotlighting: a set of labels, or the flag. A tagged
+// union rather than a bare list of strings, so "flagged" can never collide with
+// a user's own label of that name. `labels` is non-empty and duplicate-free —
+// an empty selection is `focus === null`, not a labels focus of nothing, so
+// "is anything focused" stays a single null check everywhere.
+export type Focus = { kind: "labels"; labels: string[] } | { kind: "flagged" };
 
 // Which projection of the roadmap is on screen: the timeline chart
 // (render.ts) or the WBS outline (wbs.ts). Both render from the same state;
@@ -88,8 +90,9 @@ class AppState {
   // panelWidth (read at boot in app.ts).
   panelCollapsed = false;
   // Focus mode: when set, items that don't match are dimmed. A transient
-  // "what's relevant right now" view, not persisted. The target is either one
-  // label or the flag — kept as one exclusive field rather than two, since
+  // "what's relevant right now" view, not persisted. Several labels can be
+  // focused at once (matching is OR — an item needs any one of them), but
+  // labels and the flag stay exclusive: they are one field, not two, since
   // focusing on both at once has no meaning.
   focus: Focus | null = null;
   // Set after loading a roadmap so the chart scrolls to today once.
@@ -186,9 +189,28 @@ class AppState {
   setLaneHidden(id: number, hidden: boolean): void {
     if (hidden) this.hiddenLanes.add(id);
     else this.hiddenLanes.delete(id);
+    this.persistHiddenLanes();
+    this.notify();
+  }
+
+  // isolateLane hides every lane but this one (the eye menu's Alt-click). It
+  // only ever narrows; "Show all contexts" — showAllLanes — is the way back.
+  isolateLane(id: number): void {
+    const lanes = this.current?.lanes ?? [];
+    this.hiddenLanes = new Set(lanes.filter((l) => l.id !== id).map((l) => l.id));
+    this.persistHiddenLanes();
+    this.notify();
+  }
+
+  showAllLanes(): void {
+    this.hiddenLanes = new Set();
+    this.persistHiddenLanes();
+    this.notify();
+  }
+
+  private persistHiddenLanes(): void {
     const key = this.hiddenKey();
     if (key) localStorage.setItem(key, JSON.stringify([...this.hiddenLanes]));
-    this.notify();
   }
 
   isCollapsed(id: number): boolean {
@@ -377,10 +399,36 @@ class AppState {
   }
 
   // isDimmed reports whether an item should be grayed out under the current
-  // focus (false when no focus is active).
+  // focus (false when no focus is active). Several focused labels match as OR:
+  // the menu is a "show me these" pick list, and AND would make each extra pick
+  // shrink the result, which is the opposite of what adding one reads as.
   isDimmed(item: { labels: string[]; flagged: boolean }): boolean {
     if (this.focus === null) return false;
-    return this.focus.kind === "flagged" ? !item.flagged : !item.labels.includes(this.focus.label);
+    return this.focus.kind === "flagged"
+      ? !item.flagged
+      : !this.focus.labels.some((l) => item.labels.includes(l));
+  }
+
+  isFocusedLabel(label: string): boolean {
+    return this.focus?.kind === "labels" && this.focus.labels.includes(label);
+  }
+
+  // toggleFocusLabel adds or removes one label from the focus. Picking a label
+  // while the flag is focused replaces it — labels and the flag are exclusive
+  // (see `focus`). Removing the last label clears the focus entirely.
+  toggleFocusLabel(label: string): void {
+    const current = this.focus?.kind === "labels" ? this.focus.labels : [];
+    const next = current.includes(label)
+      ? current.filter((l) => l !== label)
+      : [...current, label];
+    this.focus = next.length > 0 ? { kind: "labels", labels: next } : null;
+  }
+
+  // isolateFocusLabel drops the rest of the selection for this one label (the
+  // focus menu's Alt-click). Like isolateLane it only narrows; "Show all items"
+  // is the way back.
+  isolateFocusLabel(label: string): void {
+    this.focus = { kind: "labels", labels: [label] };
   }
 
   findMilestone(id: number): MilestoneLocation | null {

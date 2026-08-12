@@ -140,10 +140,10 @@ function renderTopbar(): void {
   $("focus-menu").classList.toggle("active", state.focus !== null);
   $("focus-menu").title =
     state.focus === null
-      ? "Focus on a label or on flagged items"
+      ? "Focus on labels or on flagged items"
       : state.focus.kind === "flagged"
         ? "Focus: flagged items"
-        : `Focus: ${state.focus.label}`;
+        : `Focus: ${state.focus.labels.join(", ")}`;
   // Highlight the snap button when a grid (not plain Day) is actually engaged.
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
@@ -604,6 +604,12 @@ function laneNameEl(laneId: number): HTMLElement | null {
 // preference held in state (persisted per roadmap), not a data mutation, so
 // toggling doesn't go through actions. The menu is rebuilt after each toggle
 // to reflect the new eye state while staying open.
+//
+// Alt-click isolates ("show only this one") — hiding the other five a row at a
+// time was the common case doing the most work. The way back out is the "Show
+// all contexts" row, not a second meaning for Alt-click: the focus menu already
+// has that row, and one entry that always widens beats a modifier whose
+// direction depends on what is hidden.
 function buildLaneVisMenu(pop: HTMLElement): void {
   pop.replaceChildren();
   const lanes = state.current?.lanes ?? [];
@@ -614,6 +620,20 @@ function buildLaneVisMenu(pop: HTMLElement): void {
     pop.append(empty);
     return;
   }
+
+  const showAll = document.createElement("button");
+  showAll.className = "menu-item";
+  showAll.append(icons.eye(16), text("Show all contexts"));
+  showAll.disabled = state.hiddenLanes.size === 0;
+  showAll.addEventListener("click", (e) => {
+    e.stopPropagation();
+    state.showAllLanes();
+    buildLaneVisMenu(pop);
+  });
+  const sep = document.createElement("div");
+  sep.className = "menu-sep";
+  pop.append(showAll, sep);
+
   for (const lane of lanes) {
     const hidden = state.isLaneHidden(lane.id);
     const row = document.createElement("button");
@@ -627,7 +647,8 @@ function buildLaneVisMenu(pop: HTMLElement): void {
     row.append(hidden ? icons.eyeOff(16) : icons.eye(16), dot, name);
     row.addEventListener("click", (e) => {
       e.stopPropagation();
-      state.setLaneHidden(lane.id, !state.isLaneHidden(lane.id));
+      if (e.altKey) state.isolateLane(lane.id);
+      else state.setLaneHidden(lane.id, !state.isLaneHidden(lane.id));
       buildLaneVisMenu(pop);
     });
     pop.append(row);
@@ -748,13 +769,19 @@ function text(s: string): HTMLElement {
   return span;
 }
 
-// Focus menu: pick a label — or the flag — to spotlight. Selecting one dims
-// every item that doesn't match (see state.isDimmed / render.ts); "Show all
-// items" clears the focus. Rebuilt after each pick so the active row stays
-// checked while open.
+// Focus menu: pick labels — or the flag — to spotlight. Anything that matches
+// none of the picks is dimmed (see state.isDimmed / render.ts); "Show all
+// items" clears the focus. Rebuilt after each pick so the checks stay current
+// while the menu is open.
+//
+// Labels are a multi-select: a click toggles one, and several focused labels
+// match as OR. Alt-click is the shortcut back to a single label (isolateClick),
+// which is what a plain click used to do — so the eye menu and this one now
+// read the same way: click toggles, Alt-click isolates.
 //
 // Flagged is pinned above the labels rather than sorted among them: it isn't
-// one tag of many, and its count is the only place the total is visible.
+// one tag of many, and its count is the only place the total is visible. It
+// stays single-pick, because focus holds either labels or the flag.
 function buildFocusMenu(pop: HTMLElement): void {
   pop.replaceChildren();
   const labels = state.allLabels();
@@ -770,7 +797,7 @@ function buildFocusMenu(pop: HTMLElement): void {
   const row = (
     labelText: string,
     active: boolean,
-    onPick: () => void,
+    onPick: (e: MouseEvent) => void,
     icon?: Node,
   ): HTMLButtonElement => {
     const b = document.createElement("button");
@@ -786,7 +813,7 @@ function buildFocusMenu(pop: HTMLElement): void {
     b.append(name);
     b.addEventListener("click", (e) => {
       e.stopPropagation();
-      onPick();
+      onPick(e);
       state.notify();
       buildFocusMenu(pop);
     });
@@ -817,10 +844,10 @@ function buildFocusMenu(pop: HTMLElement): void {
     }
   }
   for (const l of labels) {
-    const active = state.focus?.kind === "label" && state.focus.label === l;
     pop.append(
-      row(l, active, () => {
-        state.focus = active ? null : { kind: "label", label: l };
+      row(l, state.isFocusedLabel(l), (e) => {
+        if (e.altKey) state.isolateFocusLabel(l);
+        else state.toggleFocusLabel(l);
       }),
     );
   }

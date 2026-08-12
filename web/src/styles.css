@@ -462,7 +462,8 @@ kbd {
   color: var(--ink-2);
 }
 
-/* Divider in the focus menu between the pinned "Flagged" row and the labels. */
+/* Divider: in the focus menu between the pinned "Flagged" row and the labels,
+   in the eye menu below "Show all contexts". */
 .menu-sep {
   height: 1px;
   margin: 4px 6px;
