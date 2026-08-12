@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { contentRange, dayOf, isoOf, quarterStart, snapToGrid, weekStart } from "./timescale";
+import { contentRange, dayOf, isoOf, quarterStart, snapToGrid, spanFraction, weekStart } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone } from "./types";
 
 // Helper: snap an ISO date to a grid and read the result back as ISO.
@@ -65,6 +65,24 @@ test("contentRange includes children that escape their parent's span", () => {
 test("contentRange returns null when there is nothing to frame", () => {
   assert.equal(contentRange([]), null);
   assert.equal(contentRange([lane([])]), null);
+});
+
+test("spanFraction measures in the boundary domain", () => {
+  // A 10-day extent, so one day is exactly 0.1 wide.
+  const extent = { startDay: dayOf("2024-01-01"), endDay: dayOf("2024-01-10") };
+  const full = spanFraction(dayOf("2024-01-01"), dayOf("2024-01-10"), extent);
+  assert.deepEqual(full, { left: 0, width: 1 }); // the extent itself fills it
+  const first = spanFraction(dayOf("2024-01-01"), dayOf("2024-01-01"), extent);
+  assert.deepEqual(first, { left: 0, width: 0.1 }); // one day has width
+  const last = spanFraction(dayOf("2024-01-10"), dayOf("2024-01-10"), extent);
+  assert.equal(last.left + last.width, 1); // and the last one reaches the end
+  const mid = spanFraction(dayOf("2024-01-03"), dayOf("2024-01-07"), extent);
+  assert.deepEqual(mid, { left: 0.2, width: 0.5 });
+});
+
+test("spanFraction handles a single-day extent", () => {
+  const day = dayOf("2024-01-01");
+  assert.deepEqual(spanFraction(day, day, { startDay: day, endDay: day }), { left: 0, width: 1 });
 });
 
 test("weekStart returns the Monday on or before the day", () => {

@@ -135,6 +135,25 @@ export function contentRange(lanes: LaneFull[]): { startDay: number; endDay: num
   return min === Infinity ? null : { startDay: min, endDay: max };
 }
 
+// spanFraction places an inclusive [startDay, endDay] range inside an inclusive
+// extent, as fractions (0..1) of the extent's width — the axis-free equivalent
+// of xOf/chartWidth, used for the WBS date sparkline. Like every placement here
+// it works in the boundary domain (a range owns [start, end+1)), so a one-day
+// range still has width and a range ending on the extent's last day reaches 1.
+// The caller's extent must cover the range — with contentRange over the same
+// lanes it does by construction, and nothing is clamped.
+export function spanFraction(
+  startDay: number,
+  endDay: number,
+  extent: { startDay: number; endDay: number },
+): { left: number; width: number } {
+  const total = extent.endDay + 1 - extent.startDay;
+  return {
+    left: (startDay - extent.startDay) / total,
+    width: (endDay + 1 - startDay) / total,
+  };
+}
+
 // monthStart returns the day number of the first day of the month `offset`
 // months relative to the month containing `day`.
 export function monthStart(day: number, offset: number): number {

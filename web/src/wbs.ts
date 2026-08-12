@@ -28,7 +28,7 @@ import {
   prioPill,
 } from "./render";
 import { state } from "./state";
-import { dayOf, formatDay } from "./timescale";
+import { contentRange, dayOf, formatDay, spanFraction } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone } from "./types";
 
 function div(className: string): HTMLDivElement {
@@ -43,6 +43,14 @@ function div(className: string): HTMLDivElement {
 // draw from the other's pass.
 let depSums = new Map<string, DepSummary>();
 
+// The extent every date sparkline is measured against: the whole roadmap's
+// occupied span, rebuilt at the top of renderWbs like depSums. Deliberately
+// computed over ALL lanes, not the visible ones — a sparkline is only readable
+// if the track means the same thing on every row, and hiding a lane must not
+// silently rescale the rows that stayed. null when the roadmap holds nothing
+// datable yet — which is also a roadmap with no rows to draw one on.
+let extent: { startDay: number; endDay: number } | null = null;
+
 export function renderWbs(container: HTMLElement): void {
   const rm = state.current;
   const scrollTop = container.scrollTop;
@@ -54,6 +62,7 @@ export function renderWbs(container: HTMLElement): void {
   }
 
   depSums = analyzeDependencies(rm).summaries;
+  extent = contentRange(rm.lanes);
 
   const lanesEl = div("lanes");
   const visibleLanes = rm.lanes.filter((l) => !state.isLaneHidden(l.id));
@@ -203,17 +212,37 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
     }
     row.append(chips);
   }
-  const dates = div("wbs-dates");
+  const dates = div("wbs-dates has-spark");
   dates.textContent = `${formatDay(dayOf(item.startDate))} – ${formatDay(dayOf(item.endDate))}`;
-  // Dates come last, not pill/flag-outermost as on a bar: every row's range
-  // then shares the right edge, and the dates read as a column — pill and
-  // chip widths vary row to row, so anything trailing the dates would make
-  // the column ragged.
+  // The sparkline: a fixed-width track standing for the whole roadmap's span,
+  // filled where this item sits in it — the one thing the outline throws away
+  // that the dates alone can't give back, namely *where* a range lies. It is a
+  // track of its own rather than a tint behind the dates, which was tried: a
+  // fill crossing the text reads as a highlight on the words it happens to
+  // cover, and short items became a dash in the middle of a date.
+  //
+  // Both this and the dates are fixed width, and the extent is roadmap-wide, so
+  // the same pixel means the same date on every row — that is the whole reason
+  // the marks can be compared down the column. Milestones get no track: a point
+  // has no span, and a dot here would invite comparison with the bars.
+  const spark = div("wbs-spark");
+  const fill = div("wbs-spark-fill");
+  // extent! — contentRange is null only for a roadmap with nothing datable in
+  // it, which is a roadmap with no rows to reach this line from.
+  const f = spanFraction(dayOf(item.startDate), dayOf(item.endDate), extent!);
+  fill.style.left = `${f.left * 100}%`;
+  fill.style.width = `${f.width * 100}%`;
+  spark.append(fill);
+  // Dates and track come last, not pill/flag-outermost as on a bar: every row's
+  // range then shares the right edge, and both read as columns — pill and chip
+  // widths vary row to row, so anything of *variable* width trailing the dates
+  // would make the column ragged.
   row.append(
     prioPill(item.priority),
     depMark(depSums.get(refKey({ kind: "item", id: item.id }))),
     flagMark(item.flagged),
     dates,
+    spark,
   );
   return row;
 }

@@ -1521,6 +1521,44 @@ kbd {
   pointer-events: none;
 }
 
+/* The date sparkline (item rows only, see wbs.ts): a fixed-width track for the
+   roadmap's whole span with the item's slice filled in. Both widths below are
+   fixed on purpose — a column that sized itself to its text would put the same
+   date at a different x on every row, which is the one thing this must not do.
+   SPARK_W, and wide enough for the longest range ("22 Sep 2026 – 22 Sep 2026")
+   so a text-heavy row can't squeeze the track. */
+.wbs-dates.has-spark {
+  width: 152px;
+  text-align: right;
+}
+
+.wbs-spark {
+  position: relative;
+  flex: none;
+  width: 120px; /* SPARK_W */
+  height: 8px;
+  margin-left: 8px;
+  overflow: hidden;
+  /* Darker than BOTH row tints (18% parent, 7% child): the empty part of the
+     track is the roadmap's span, and it has to stay legible as such on every
+     row kind, or the fill loses the scale it is measured against. */
+  background: color-mix(in oklab, var(--c) 30%, var(--surface));
+  pointer-events: none;
+}
+
+/* Solid --c, like the block spine: at this size the mark has to be crisp to be
+   read at all, and 8px of it is nowhere near the wall of color the row tints
+   avoid. Square ends, like .bar: rounded caps are a shape the chart never
+   draws, and on a 120px track they blunt the very thing being read — where the
+   span starts and stops. A one-day item is a 3px tick, not a dot. */
+.wbs-spark-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 3px; /* a one-week item is still a mark, not a hairline */
+  background: var(--c);
+}
+
 /* The milestone group's fold header: subheader styling on purpose, NOT the
    item-row language — it has no id, no dates, and answers no item gesture, so
    it must not look like it does. Only the fold chevron is borrowed. */
@@ -1586,6 +1624,9 @@ kbd {
   font-weight: 500;
 }
 
+/* A milestone's date stays a label beside its title — no fixed column and no
+   sparkline track: a point has no span, and a dot on a track would invite
+   comparison with the item bars. */
 .wbs-milestone .wbs-dates {
   margin-left: 0;
   color: var(--muted);
