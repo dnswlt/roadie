@@ -145,10 +145,8 @@ function renderMilestoneGroup(lane: LaneFull): HTMLElement[] {
 }
 
 function renderMilestoneRow(m: Milestone): HTMLElement {
+  // Never dimmed by a focus, as in the timeline (see render.ts).
   const el = div(state.selectedMilestoneId === m.id ? "wbs-milestone selected" : "wbs-milestone");
-  // Milestones carry neither labels nor a flag, so any active focus dims them
-  // (as in the timeline).
-  if (state.focus !== null) el.classList.add("dimmed");
   el.dataset.milestoneId = String(m.id);
   const title = div("wbs-ms-title");
   title.textContent = m.title;

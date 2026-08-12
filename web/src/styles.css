@@ -2568,17 +2568,22 @@ button.deps-node:hover {
   background: color-mix(in oklab, var(--focus) 26%, transparent);
 }
 
-/* Items that don't match the focus (label or flag) recede hard into the
-   background so the matching ones pop. Grayscale drops their lane color too,
-   not just opacity. */
+/* Items that don't match the focus (label or flag) recede so the matching ones
+   pop. Grayscale drops their lane color too, not just opacity — the color is
+   what the eye sorts by, so losing it is most of the effect, which is why the
+   opacity can stay high enough to leave a readable ghost. It has to: a focus
+   dims in place rather than filtering, and that trade only pays if the items
+   still standing there can be seen. A ghost is a shape you can place in time,
+   not a name you can read — this number is where that line sits, and it was
+   found by eye between two stops that missed: 0.12 held the space and showed
+   nothing in it, 0.32 kept the titles readable enough that the eye stopped on
+   them. Below ~0.25 child bars dissolve into the lane tint and the nesting
+   goes with them, which is half of what dimming in place is for. */
 .bar.dimmed,
 .child-bar.dimmed,
 .bar-outside.dimmed,
-.milestone.dimmed,
-.milestone-line.dimmed,
-.wbs-row.dimmed,
-.wbs-milestone.dimmed {
-  opacity: 0.12;
+.wbs-row.dimmed {
+  opacity: 0.27;
   filter: grayscale(0.85);
 }
 

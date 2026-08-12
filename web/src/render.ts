@@ -293,10 +293,12 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   return laneEl;
 }
 
+// Milestones are never dimmed by a focus, here or in the WBS. They carry
+// neither labels nor a flag, so they could never match one — they are the
+// chart's landmarks, not candidates that lost. Fading them took the calendar
+// anchors away exactly when a focus is on and the eye needs them most.
 function renderMilestoneLine(m: Milestone): HTMLElement {
   const line = div("milestone-line");
-  // Milestones carry neither labels nor a flag, so any active focus dims them.
-  if (state.focus !== null) line.classList.add("dimmed");
   line.style.left = `${xOf(scale, dayOf(m.date))}px`;
   return line;
 }
@@ -319,8 +321,6 @@ const MS_LABEL_MIN = 24;
 // hover/selected rules can override it without !important.
 function renderMilestone(m: Milestone, labelPx: number): HTMLElement {
   const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
-  // Milestones carry neither labels nor a flag, so any active focus dims them.
-  if (state.focus !== null) el.classList.add("dimmed");
   // A milestone has no furniture run to hold the dependency mark — it is a
   // diamond and an absolutely-positioned label — so it carries the warning on
   // the diamond itself. Only the warning: "has edges" has nowhere to go here,
