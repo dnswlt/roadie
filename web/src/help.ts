@@ -93,12 +93,13 @@ export function openHelpDialog(bindings: Binding[]): void {
   // down. It covers both of them: the gesture is the same in each.
   body.append(
     section(
-      "View filters",
+      "View controls",
       keyList([
         [
           "Alt-click",
           "In a multi-select filter, *select only* the context or label you click.",
         ],
+        ["Shift-Scroll", "*Scroll left or right* through the timeline."],
       ]),
     ),
   );

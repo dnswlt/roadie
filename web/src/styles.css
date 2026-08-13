@@ -353,7 +353,7 @@ body {
 /* Help modal: a reference card in the shared centered dialog. Roomier than the
    input dialogs so help text reads as a page, not a prompt. */
 .help-body {
-  width: 480px;
+  width: 560px;
   max-width: 100%;
 }
 
