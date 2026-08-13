@@ -630,18 +630,23 @@ export const actions = {
   // replaceSchedule swaps the roadmap's entire schedule for `periods` (an empty
   // list clears it). Server-authoritative (it assigns ids and rejects overlaps),
   // so it is not optimistic: the returned, validated periods replace state.
-  // Returns true on success so the caller (the editor dialog) can stay open on
-  // error. No-op while previewing a snapshot.
-  async replaceSchedule(periods: NewSchedulePeriod[]): Promise<boolean> {
-    if (state.preview || !state.current) return false;
+  // No-op while previewing a snapshot.
+  //
+  // The rejection is handed back rather than toasted: this one is the only
+  // mutation whose caller is a modal, and "these two periods overlap" is a
+  // verdict on the text still on screen — the same kind of thing as the parse
+  // errors above it, and a toast behind the dialog's backdrop besides.
+  async replaceSchedule(
+    periods: NewSchedulePeriod[],
+  ): Promise<{ saved: boolean; error?: string }> {
+    if (state.preview || !state.current) return { saved: false };
     try {
       const saved = await api.replaceSchedule(state.current.id, periods);
       state.current.periods = saved;
       state.notify();
-      return true;
+      return { saved: true };
     } catch (e) {
-      toast(errMsg(e), true);
-      return false;
+      return { saved: false, error: errMsg(e) };
     }
   },
 

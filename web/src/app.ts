@@ -195,9 +195,10 @@ function buildSnapMenu(pop: HTMLElement): void {
 
 
 // openScheduleEditor shows the roadmap's schedule in a textarea (one period per
-// line, START END LABEL) and saves it as a full replace. Parse errors are shown
-// inline and keep the dialog open; a server rejection (e.g. overlap) toasts and
-// also keeps it open, so nothing typed is lost.
+// line, START END LABEL) and saves it as a full replace. Both kinds of "no" —
+// the parse errors found here and the store's own (overlaps) — land in the same
+// box under the textarea and keep the dialog open, so nothing typed is lost and
+// there is one place to look for why a save didn't take.
 async function openScheduleEditor(): Promise<void> {
   const rm = state.current;
   if (!rm) return;
@@ -241,9 +242,10 @@ async function openScheduleEditor(): Promise<void> {
     }
     errBox.textContent = "";
     ok.disabled = true;
-    const saved = await actions.replaceSchedule(periods);
+    const res = await actions.replaceSchedule(periods);
     ok.disabled = false;
-    if (saved) dlg.close();
+    if (res.saved) dlg.close();
+    else if (res.error) errBox.textContent = res.error;
   });
 
   dlg.showModal();
