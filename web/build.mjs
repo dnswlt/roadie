@@ -92,6 +92,9 @@ const options = {
   outdir: ASSETS,
   entryNames: "[name]-[hash]",
   assetNames: "[name]-[hash]",
+  // The webfont styles.css @font-faces: copied into dist/assets under a hashed
+  // name, like every other asset, so it is served immutable.
+  loader: { ".woff2": "file" },
   sourcemap: true,
   metafile: true,
   plugins: [emitIndex],
