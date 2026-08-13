@@ -138,12 +138,7 @@ function renderTopbar(): void {
   renderVisibilityItem();
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focus !== null);
-  $("focus-menu").title =
-    state.focus === null
-      ? "Focus on labels or on flagged items"
-      : state.focus.kind === "flagged"
-        ? "Focus: flagged items"
-        : `Focus: ${state.focus.labels.join(", ")}`;
+  $("focus-menu").title = focusTitle();
   // Highlight the snap button when a grid (not plain Day) is actually engaged.
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
@@ -781,17 +776,28 @@ function text(s: string): HTMLElement {
 // which is what a plain click used to do — so the eye menu and this one now
 // read the same way: click toggles, Alt-click isolates.
 //
-// Flagged is pinned above the labels rather than sorted among them: it isn't
-// one tag of many, and its count is the only place the total is visible. It
-// stays single-pick, because focus holds either labels or the flag.
+// The focus button's tooltip, which states the active focus while the menu is
+// closed.
+function focusTitle(): string {
+  if (state.focus === null) return "Focus on labels, flagged or at-risk items";
+  if (state.focus.kind === "flagged") return "Focus: flagged items";
+  if (state.focus.kind === "atRisk") return "Focus: at-risk items";
+  return `Focus: ${state.focus.labels.join(", ")}`;
+}
+
+// Flagged and At risk are pinned above the labels rather than sorted among
+// them: they aren't tags of many, and their counts are the only place the
+// totals are visible. Both stay single-pick, because focus holds labels or one
+// signal, never a mix.
 function buildFocusMenu(pop: HTMLElement): void {
   pop.replaceChildren();
   const labels = state.allLabels();
   const flagged = state.flaggedCount();
-  if (labels.length === 0 && flagged === 0) {
+  const atRisk = state.atRiskCount();
+  if (labels.length === 0 && flagged === 0 && atRisk === 0) {
     const empty = document.createElement("div");
     empty.className = "menu-empty";
-    empty.textContent = "Nothing to focus on yet — flag an item (!) or give it a label.";
+    empty.textContent = "No labels, flags or at-risk items to focus on yet.";
     pop.append(empty);
     return;
   }
@@ -827,23 +833,25 @@ function buildFocusMenu(pop: HTMLElement): void {
       state.focus = null;
     }),
   );
-  if (flagged > 0) {
-    const active = state.focus?.kind === "flagged";
-    pop.append(
-      row(
-        `Flagged (${flagged})`,
-        active,
-        () => {
-          state.focus = active ? null : { kind: "flagged" };
-        },
-        icons.flag(14),
-      ),
+  const signalRow = (text: string, kind: "flagged" | "atRisk", icon: Node): HTMLButtonElement => {
+    const active = state.focus?.kind === kind;
+    return row(
+      text,
+      active,
+      () => {
+        state.focus = active ? null : { kind };
+      },
+      icon,
     );
-    if (labels.length > 0) {
-      const sep = document.createElement("div");
-      sep.className = "menu-sep";
-      pop.append(sep);
-    }
+  };
+  if (flagged > 0) pop.append(signalRow(`Flagged (${flagged})`, "flagged", icons.flag(14)));
+  if (atRisk > 0) {
+    pop.append(signalRow(`At risk (${atRisk})`, "atRisk", icons.alertTriangle(14)));
+  }
+  if ((flagged > 0 || atRisk > 0) && labels.length > 0) {
+    const sep = document.createElement("div");
+    sep.className = "menu-sep";
+    pop.append(sep);
   }
   for (const l of labels) {
     pop.append(

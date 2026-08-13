@@ -33,7 +33,10 @@ export interface MilestoneLocation {
 // a user's own label of that name. `labels` is non-empty and duplicate-free —
 // an empty selection is `focus === null`, not a labels focus of nothing, so
 // "is anything focused" stays a single null check everywhere.
-export type Focus = { kind: "labels"; labels: string[] } | { kind: "flagged" };
+export type Focus =
+  | { kind: "labels"; labels: string[] }
+  | { kind: "flagged" }
+  | { kind: "atRisk" };
 
 // Which projection of the roadmap is on screen: the timeline chart
 // (render.ts) or the WBS outline (wbs.ts). Both render from the same state;
@@ -384,29 +387,39 @@ class AppState {
     return [...set].sort((a, b) => a.localeCompare(b));
   }
 
-  // flaggedCount returns how many items in the current roadmap carry the flag.
-  // Drives the focus menu's "Flagged (n)" row, which is both the filter and the
-  // only place the total is visible — flags nobody can see never get cleared.
-  flaggedCount(): number {
+  // countItems counts the items in the current roadmap satisfying pred,
+  // children included.
+  private countItems(pred: (item: Item) => boolean): number {
     let n = 0;
     for (const lane of this.current?.lanes ?? []) {
       for (const item of lane.items) {
-        if (item.flagged) n++;
-        for (const child of item.children) if (child.flagged) n++;
+        if (pred(item)) n++;
+        for (const child of item.children) if (pred(child)) n++;
       }
     }
     return n;
+  }
+
+  // These drive the focus menu's "Flagged (n)" and "At risk (n)" rows, each
+  // both the filter and the only place its total is visible — a mark nobody
+  // can see never gets dealt with.
+  flaggedCount(): number {
+    return this.countItems((i) => i.flagged);
+  }
+
+  atRiskCount(): number {
+    return this.countItems((i) => i.atRisk);
   }
 
   // isDimmed reports whether an item should be grayed out under the current
   // focus (false when no focus is active). Several focused labels match as OR:
   // the menu is a "show me these" pick list, and AND would make each extra pick
   // shrink the result, which is the opposite of what adding one reads as.
-  isDimmed(item: { labels: string[]; flagged: boolean }): boolean {
+  isDimmed(item: { labels: string[]; flagged: boolean; atRisk: boolean }): boolean {
     if (this.focus === null) return false;
-    return this.focus.kind === "flagged"
-      ? !item.flagged
-      : !this.focus.labels.some((l) => item.labels.includes(l));
+    if (this.focus.kind === "flagged") return !item.flagged;
+    if (this.focus.kind === "atRisk") return !item.atRisk;
+    return !this.focus.labels.some((l) => item.labels.includes(l));
   }
 
   isFocusedLabel(label: string): boolean {

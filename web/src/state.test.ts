@@ -5,7 +5,13 @@ import type { ItemFull, LaneFull, RoadmapFull } from "./types";
 
 // Minimal fixtures: the focus logic only reads labels and the flag, so every
 // other field gets a throwaway value.
-function item(id: number, labels: string[], flagged: boolean, children: ItemFull[] = []): ItemFull {
+function item(
+  id: number,
+  labels: string[],
+  flagged: boolean,
+  children: ItemFull[] = [],
+  atRisk = false,
+): ItemFull {
   return {
     id,
     laneId: 1,
@@ -19,7 +25,7 @@ function item(id: number, labels: string[], flagged: boolean, children: ItemFull
     labels,
     flagged,
     tentative: false,
-    atRisk: false,
+    atRisk,
     children,
   };
 }
@@ -130,6 +136,39 @@ test("a label named 'flagged' is not the flag", () => {
   state.focus = { kind: "labels", labels: ["flagged"] };
   assert.equal(state.isDimmed(item(2, ["flagged"], false)), false);
   assert.equal(state.isDimmed(item(3, [], true)), true);
+});
+
+test("at-risk focus dims items that are not at risk, flagged or not", () => {
+  state.focus = { kind: "atRisk" };
+  assert.equal(state.isDimmed(item(1, [], false, [], true)), false);
+  assert.equal(state.isDimmed(item(2, ["a"], false, [], false)), true);
+  // The two signals are independent: a flagged item is not spared, and an
+  // at-risk one is not dimmed for lacking the flag.
+  assert.equal(state.isDimmed(item(3, [], true, [], false)), true);
+  assert.equal(state.isDimmed(item(4, [], true, [], true)), false);
+});
+
+// The focus holds labels or one signal, never a mix, so each pick drops the other.
+test("the two signal focuses and labels replace one another", () => {
+  state.focus = { kind: "flagged" };
+  state.toggleFocusLabel("a");
+  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
+  state.focus = { kind: "atRisk" };
+  state.toggleFocusLabel("a");
+  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
+});
+
+test("atRiskCount counts children as well as top-level items", () => {
+  state.current = roadmap([
+    item(1, [], false, [item(2, [], false, [], true), item(3, [], true)], true),
+    item(4, [], true),
+  ]);
+  assert.equal(state.atRiskCount(), 2);
+  // Counted independently of the flag, which sits on different items here.
+  assert.equal(state.flaggedCount(), 2);
+
+  state.current = null;
+  assert.equal(state.atRiskCount(), 0);
 });
 
 test("flaggedCount counts children as well as top-level items", () => {
