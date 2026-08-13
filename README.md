@@ -54,8 +54,10 @@ make docs-serve
 
 ## Authentication
 
-By default Roadie runs **open**: no login, everyone can see and edit everything.
-This is the original behaviour and nothing about it changes.
+By default Roadie runs **open**: no login, everyone can see and edit everything,
+and the JSON API answers a plain `curl`. On a trusted network that is the whole
+setup — there is nothing to configure, and every roadmap is public, since a
+private one would need an owner to belong to.
 
 Passing `-auth=oidc` instead delegates login to an OIDC provider (Entra ID, say).
 Roadie keeps no password store, no user table and no session table: the
@@ -76,8 +78,8 @@ confidential client) with that exact redirect URI. Pin `OIDC_ISSUER` to your
 tenant rather than the `common` endpoint: issuer validation then restricts
 logins to it, with nothing extra to configure.
 
-The callback is served at whatever path `-oidc-redirect-url` names, so a
-registration you do not control (`.../callback`, say) works without changes.
+The callback is served at whatever path `-oidc-redirect-url` names, so Roadie can
+fit a registration whose redirect URI you do not control.
 
 `SESSION_KEY` seals the session cookie. If unset, a random one is generated at
 startup, which logs everyone out on restart and cannot work across replicas.
