@@ -45,21 +45,29 @@ func getSchedule(ctx context.Context, q querier, roadmapID int64) ([]model.Sched
 	return periods, rows.Err()
 }
 
-// validateSchedulePeriods enforces a schedule's invariants: non-empty labels,
-// present dates, end >= start, and no overlapping periods. Periods are inclusive
-// [start, end]; two are disjoint iff the later one starts after the earlier one
-// ends. Order is irrelevant (periods are positioned by date), so it sorts a copy
-// by start date to check neighbours.
+// validateSchedulePeriods enforces a schedule's invariants: labels that are
+// non-empty and distinct, present dates, end >= start, and no overlapping
+// periods. Periods are inclusive [start, end]; two are disjoint iff the later
+// one starts after the earlier one ends. Order is irrelevant (periods are
+// positioned by date), so it sorts a copy by start date to check neighbours.
+// Labels are compared trimmed (as stored) and case-sensitively; two periods
+// under one name are one entry the user cannot pick apart in the panel.
 func validateSchedulePeriods(periods []model.SchedulePeriod) error {
 	sorted := make([]model.SchedulePeriod, len(periods))
 	copy(sorted, periods)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].StartDate.Before(sorted[j].StartDate.Time)
 	})
+	seen := make(map[string]bool, len(sorted))
 	for i, p := range sorted {
-		if strings.TrimSpace(p.Label) == "" {
+		label := strings.TrimSpace(p.Label)
+		if label == "" {
 			return invalidf("schedule period label must not be empty")
 		}
+		if seen[label] {
+			return invalidf("schedule period label %q is used twice", label)
+		}
+		seen[label] = true
 		if p.StartDate.IsZero() || p.EndDate.IsZero() {
 			return invalidf("schedule period %q is missing a start or end date", p.Label)
 		}

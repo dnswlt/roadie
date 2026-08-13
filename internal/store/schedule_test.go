@@ -63,6 +63,15 @@ func TestReplaceScheduleValidation(t *testing.T) {
 			{Label: "A", StartDate: date("2026-01-05"), EndDate: date("2026-01-16")},
 			{Label: "B", StartDate: date("2026-01-16"), EndDate: date("2026-01-30")},
 		},
+		"duplicate label": {
+			// Disjoint in time, but one name for two periods.
+			{Label: "PI 1", StartDate: date("2026-01-05"), EndDate: date("2026-01-16")},
+			{Label: "PI 1", StartDate: date("2026-01-19"), EndDate: date("2026-01-30")},
+		},
+		"duplicate label after trimming": {
+			{Label: "PI 1", StartDate: date("2026-01-05"), EndDate: date("2026-01-16")},
+			{Label: "  PI 1  ", StartDate: date("2026-01-19"), EndDate: date("2026-01-30")},
+		},
 	}
 	for name, in := range cases {
 		if _, err := testStore.ReplaceSchedule(ctx, rm.ID, in); !isValidation(err) {
@@ -76,6 +85,14 @@ func TestReplaceScheduleValidation(t *testing.T) {
 		{Label: "B", StartDate: date("2026-01-17"), EndDate: date("2026-01-30")},
 	}); err != nil {
 		t.Errorf("adjacent periods should be valid: %v", err)
+	}
+
+	// Distinctness is exact: differing case is two names, not one.
+	if _, err := testStore.ReplaceSchedule(ctx, rm.ID, []SchedulePeriodInput{
+		{Label: "PI 1", StartDate: date("2026-01-05"), EndDate: date("2026-01-16")},
+		{Label: "pi 1", StartDate: date("2026-01-17"), EndDate: date("2026-01-30")},
+	}); err != nil {
+		t.Errorf("labels differing in case should be valid: %v", err)
 	}
 
 	if _, err := testStore.ReplaceSchedule(ctx, int64(0), nil); err != ErrNotFound {
