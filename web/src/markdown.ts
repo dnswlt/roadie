@@ -30,8 +30,10 @@ function days(startDate: string, endDate: string): string {
 }
 
 // metaLine is the italic line under an entry's heading: dates, duration, then
-// priority / flag / labels when set — one "·" separator throughout, so the line
-// reads as one quiet run rather than a mix of parens and dashes.
+// priority / warning marks / labels when set — one "·" separator throughout, so
+// the line reads as one quiet run rather than a mix of parens and dashes.
+// Tentative timing prefixes the date range with "≈", as in the WBS; at risk is
+// "⚠" beside the flag's "⚑".
 //
 // The heading carries the title and nothing else. Dates in a heading render as
 // giant bold noise the moment the copy is published for humans, and a title
@@ -43,10 +45,11 @@ function days(startDate: string, endDate: string): string {
 // paragraph.
 function metaLine(item: Item): string {
   const parts = [
-    `${item.startDate} → ${item.endDate}`,
+    `${item.tentative ? "≈ " : ""}${item.startDate} → ${item.endDate}`,
     days(item.startDate, item.endDate),
   ];
   if (item.priority !== null) parts.push(`P${item.priority}`);
+  if (item.atRisk) parts.push("⚠");
   if (item.flagged) parts.push("⚑");
   if (item.labels.length > 0) parts.push(item.labels.join(", "));
   return `*${parts.join(" · ")}*`;

@@ -41,6 +41,8 @@ func (s *Store) Seed(ctx context.Context) error {
 		start, end model.Date
 		labels     []string
 		flagged    bool
+		tentative  bool
+		atRisk     bool
 		children   []seedItem
 	}
 	type seedMilestone struct {
@@ -63,7 +65,7 @@ func (s *Store) Seed(ctx context.Context) error {
 					{title: "Decommission legacy", start: d(2, 1), end: d(2, 28)},
 				}},
 			{title: "Observability stack", desc: "Tracing and unified dashboards.",
-				start: d(1, 1), end: d(4, 15)},
+				start: d(1, 1), end: d(4, 15), tentative: true},
 		}, []seedMilestone{
 			{title: "Gateway cutover", desc: "All traffic on the new gateway.", date: d(2, 1)},
 		}},
@@ -72,10 +74,11 @@ func (s *Store) Seed(ctx context.Context) error {
 				desc:  "Reduce time-to-first-value to under 10 minutes. Tracking: https://issues.example.com/browse/PLAT-142",
 				start: d(0, 10), end: d(3, 20), children: []seedItem{
 					{title: "Signup flow", start: d(0, 10), end: d(1, 15)},
-					{title: "Guided setup", start: d(1, 10), end: d(3, 20)},
+					{title: "Guided setup", start: d(1, 10), end: d(3, 20), atRisk: true},
 				}},
+			// Tentative + flagged on one item: the signals coexist by design.
 			{title: "Enterprise SSO", start: d(3, 1), end: d(5, 30),
-				labels: []string{"Needs discussion"}, flagged: true},
+				labels: []string{"Needs discussion"}, flagged: true, tentative: true},
 		}, []seedMilestone{
 			{title: "Public beta", date: d(1, 15)},
 			{title: "GA launch", desc: "General availability.", date: d(4, 1)},
@@ -90,10 +93,14 @@ func (s *Store) Seed(ctx context.Context) error {
 	// CreateItem takes only the essentials, so seeded labels and flags are
 	// applied as a follow-up patch -- the same path the UI uses.
 	mark := func(id int64, si seedItem) error {
-		if len(si.labels) == 0 && !si.flagged {
+		if len(si.labels) == 0 && !si.flagged && !si.tentative && !si.atRisk {
 			return nil
 		}
-		p := ItemPatch{Flagged: model.Opt[bool]{Set: true, Value: si.flagged}}
+		p := ItemPatch{
+			Flagged:   model.Opt[bool]{Set: true, Value: si.flagged},
+			Tentative: model.Opt[bool]{Set: true, Value: si.tentative},
+			AtRisk:    model.Opt[bool]{Set: true, Value: si.atRisk},
+		}
 		if len(si.labels) > 0 {
 			p.Labels = model.Opt[[]string]{Set: true, Value: si.labels}
 		}

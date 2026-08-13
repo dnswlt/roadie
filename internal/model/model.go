@@ -122,8 +122,10 @@ type Item struct {
 	EndDate     Date      `json:"endDate"`
 	Rank        int       `json:"rank"`
 	Priority    *int      `json:"priority"` // 1..4 (1 = highest); nil = unprioritized
-	Labels      []string  `json:"labels"`   // free-form tags, shared across the roadmap
-	Flagged     bool      `json:"flagged"`  // "needs attention" marker; meaning owned by the app
+	Labels      []string  `json:"labels"`    // free-form tags, shared across the roadmap
+	Flagged     bool      `json:"flagged"`   // "needs attention" marker; meaning owned by the app
+	Tentative   bool      `json:"tentative"` // timing is not a precise commitment
+	AtRisk      bool      `json:"atRisk"`    // plan still intended, but materially in doubt
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 

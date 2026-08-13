@@ -26,6 +26,7 @@ import {
   flagMark,
   laneLabel,
   prioPill,
+  riskMark,
 } from "./render";
 import { state } from "./state";
 import { contentRange, dayOf, formatDay, spanFraction } from "./timescale";
@@ -213,7 +214,10 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
     row.append(chips);
   }
   const dates = div("wbs-dates has-spark");
-  dates.textContent = `${formatDay(dayOf(item.startDate))} – ${formatDay(dayOf(item.endDate))}`;
+  // Tentative timing: a compact "≈" ahead of the range — the timeline's
+  // sawtooth silhouette does not translate to a row, the prefix does.
+  const approx = item.tentative ? "≈ " : "";
+  dates.textContent = `${approx}${formatDay(dayOf(item.startDate))} – ${formatDay(dayOf(item.endDate))}`;
   // The sparkline gives back the one thing the outline throws away: *where* a
   // range lies. A track of its own, not a tint behind the dates — that was
   // tried, and a fill crossing the text reads as a highlight on whichever words
@@ -234,6 +238,7 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   row.append(
     prioPill(item.priority),
     depMark(depSums.get(refKey({ kind: "item", id: item.id }))),
+    riskMark(item.atRisk),
     flagMark(item.flagged),
     dates,
     spark,

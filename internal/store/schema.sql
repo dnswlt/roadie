@@ -52,6 +52,11 @@ CREATE TABLE items (
     -- One product-defined "needs attention" marker, not a user-named tag: the
     -- meaning belongs to the app, so it can be a glyph with nothing to look up.
     flagged     BOOLEAN NOT NULL DEFAULT false,
+    -- Planning signals, product-defined booleans like the flag: dates are an
+    -- estimate (tentative) and dates are threatened (at_risk). Independent of
+    -- each other and of the flag; deliberately not workflow status.
+    tentative   BOOLEAN NOT NULL DEFAULT false,
+    at_risk     BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (start_date <= end_date)

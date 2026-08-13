@@ -55,6 +55,8 @@ export interface Item {
   priority: number | null; // 1..4 (1 = highest); null = unprioritized
   labels: string[]; // free-form tags, shared across the roadmap
   flagged: boolean; // "needs attention" marker; its meaning is the app's, not the user's
+  tentative: boolean; // timing is not a precise commitment; sawtooth bar ends, "≈" in the WBS
+  atRisk: boolean; // plan still intended, but materially in doubt; a warning chip
 }
 
 export interface ItemFull extends Item {
@@ -151,6 +153,8 @@ export interface ItemPatch {
   priority?: number | null;
   labels?: string[];
   flagged?: boolean;
+  tentative?: boolean;
+  atRisk?: boolean;
 }
 
 export interface NewItem {

@@ -27,6 +27,8 @@ function item(spec: ItemSpec): ItemFull {
     priority: null,
     labels: spec.labels ?? [],
     flagged: false,
+    tentative: false,
+    atRisk: false,
     children: (spec.children ?? []).map(item),
   };
 }

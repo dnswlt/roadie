@@ -18,6 +18,8 @@ function item(id: number, labels: string[], flagged: boolean, children: ItemFull
     priority: null,
     labels,
     flagged,
+    tentative: false,
+    atRisk: false,
     children,
   };
 }

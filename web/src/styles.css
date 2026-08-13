@@ -969,6 +969,61 @@ kbd {
   background: color-mix(in oklab, var(--c) 45%, var(--surface));
 }
 
+/* Tentative timing: sawtooth ends, painted by .bar-shape — a clipped layer
+   behind the bar's content. The bar itself stays rectangular, since clip-path
+   would clip hit-testing and drag/resize must match a committed bar.
+   `isolation` keeps the layer's z-index:-1 inside the bar, whose own z-index
+   .selected and .dragging own. Background and shadow move to the shape: a
+   rectangular shadow under a torn edge gives the rectangle away. */
+.bar.tentative,
+.child-bar.tentative {
+  isolation: isolate;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Three teeth per edge, 5px deep, at any bar height (percent vertically, px
+   horizontally): the tooth tips reach the bar's true extent, so the dates it
+   spans stay honest, and the valleys bite 5px in. */
+.bar-shape {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  clip-path: polygon(
+    5px 0,
+    0 16.67%,
+    5px 33.33%,
+    0 50%,
+    5px 66.67%,
+    0 83.33%,
+    5px 100%,
+    calc(100% - 5px) 100%,
+    100% 83.33%,
+    calc(100% - 5px) 66.67%,
+    100% 50%,
+    calc(100% - 5px) 33.33%,
+    100% 16.67%,
+    calc(100% - 5px) 0
+  );
+}
+
+.bar.tentative .bar-shape {
+  background: var(--c);
+}
+
+.bar.tentative:hover .bar-shape {
+  background: color-mix(in oklab, var(--c) 88%, black);
+}
+
+.child-bar.tentative .bar-shape {
+  background: color-mix(in oklab, var(--c) 35%, var(--surface));
+}
+
+.child-bar.tentative:hover .bar-shape {
+  background: color-mix(in oklab, var(--c) 45%, var(--surface));
+}
+
 /* Title + link icon group. flex:1 so the priority pill is pushed to the bar's
    right edge; its own contents stay left-aligned. */
 .bar-main {
@@ -1097,8 +1152,12 @@ kbd {
 /* The "needs attention" flag: outermost on a bar (right of the priority pill),
    and first on an outside label, which runs leftwards from the title. Solid
    amber with a light glyph — the same treatment as .flag-btn.active.
-   Non-interactive, like .prio-pill — see render.ts flagMark. */
-.bar-flag {
+   Non-interactive, like .prio-pill — see render.ts flagMark.
+
+   .bar-risk is the "at risk" chip: deliberately the same warning box, with the
+   glyph — a triangle, not a flag — saying which signal it is. */
+.bar-flag,
+.bar-risk {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1148,6 +1207,7 @@ kbd {
    Nothing clips these — .bar-main owns the overflow:hidden and these are its
    siblings. */
 .bar-flag,
+.bar-risk,
 .bar-dep.dep-conflict {
   box-shadow: 0 0 0 1.5px #fff;
 }
@@ -1190,26 +1250,35 @@ kbd {
   gap: 6px;
 }
 
-/* The flag toggle in the edit panel: an .icon-btn given a chip's border so it
-   reads as a peer of the priority chips beside it. Its active state uses the
-   flag's own amber rather than the lane color (--c) like .prio-chip.active —
-   priority is read per lane, the flag means the same thing everywhere. */
-.flag-btn {
+/* The planning-signal toggles — tentative, at-risk, flag — at the prio row's
+   trailing edge. Each is an .icon-btn given a chip's border so the group reads
+   as a peer of the priority chips beside it. */
+.signal-btns {
   margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.flag-btn,
+.tent-btn,
+.risk-btn {
   border-color: var(--border);
 }
 
-/* Three-class selectors on purpose: `.icon-btn.active` further down this file
-   lights the *topbar* toggles in --focus gray, and at equal specificity it
-   would win on source order alone. The flag must stay amber wherever these
-   rules end up sitting relative to each other. */
-.icon-btn.flag-btn.active {
+/* Flag and at-risk go amber rather than the lane color (--c) like
+   .prio-chip.active: priority is read per lane, these mean the same everywhere.
+   Tentative keeps the generic `.icon-btn.active` gray — its chart mark is a
+   silhouette, not a chip. Three-class selectors on purpose: `.icon-btn.active`
+   below would otherwise win on source order alone. */
+.icon-btn.flag-btn.active,
+.icon-btn.risk-btn.active {
   color: #fff;
   border-color: transparent;
   background: var(--flag);
 }
 
-.icon-btn.flag-btn.active:hover {
+.icon-btn.flag-btn.active:hover,
+.icon-btn.risk-btn.active:hover {
   background: color-mix(in oklab, var(--flag) 88%, black);
 }
 
@@ -1526,10 +1595,15 @@ kbd {
    fixed on purpose — a column that sized itself to its text would put the same
    date at a different x on every row, which is the one thing this must not do.
    SPARK_W, and wide enough for the longest range ("22 Sep 2026 – 22 Sep 2026")
-   so a text-heavy row can't squeeze the track. */
+   so a text-heavy row can't squeeze the track.
+
+   Right-aligned by flex end, not text-align: the tentative "≈" prefix can push
+   a range past this width, and overflowing nowrap text ignores text-align and
+   spills right, breaking the column. Flex overflow goes left, into the margin. */
 .wbs-dates.has-spark {
   width: 152px;
-  text-align: right;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .wbs-spark {

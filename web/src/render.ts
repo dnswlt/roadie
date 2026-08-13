@@ -410,6 +410,13 @@ function fillBar(
   geom: BarGeom,
   lead: HTMLElement | null = null,
 ): void {
+  // Tentative timing: sawtooth boundaries, carried by a clipped paint layer
+  // behind the content so the bar element itself stays a plain rectangle for
+  // dragging and resizing (see .bar-shape in styles.css).
+  if (item.tentative) {
+    bar.classList.add("tentative");
+    bar.append(div("bar-shape"));
+  }
   const deps = depsOf(item);
   bar.append(handle("rh rh-l"));
   if (titleFits(item, geom.width, lead !== null, deps !== undefined)) {
@@ -418,6 +425,7 @@ function fillBar(
       barMain(item.title, item.description),
       prioPill(item.priority),
       depMark(deps),
+      riskMark(item.atRisk),
       flagMark(item.flagged),
     );
   } else {
@@ -458,6 +466,7 @@ function barOutside(item: Item, geom: BarGeom, lead: HTMLElement | null = null):
   // the title — outermost means ahead of the pill.
   lbl.append(
     flagMark(item.flagged),
+    riskMark(item.atRisk),
     depMark(depsOf(item)),
     prioPill(item.priority),
     barTitle(item.title),
@@ -475,6 +484,7 @@ const TITLE_PAD = 4;
 const FIT_SLACK = 4;
 const PILL_RESERVE = 32;
 const FLAG_RESERVE = 22;
+const RISK_RESERVE = 22; // the at-risk chip, same box as the flag
 const DEP_RESERVE = 19; // the dependency mark, when the item has edges
 const LINK_RESERVE = 18;
 const DISCLOSURE_RESERVE = 13; // a parent's fold chevron, when shown inside the bar
@@ -490,6 +500,7 @@ function titleFits(item: Item, width: number, hasDisclosure = false, hasDeps = f
   if (hasDeps) reserved += DEP_RESERVE;
   if (item.priority) reserved += PILL_RESERVE;
   if (item.flagged) reserved += FLAG_RESERVE;
+  if (item.atRisk) reserved += RISK_RESERVE;
   if (extractLinks(item.description)[0]) reserved += LINK_RESERVE;
   return measureTitleWidth(item.title) <= width - reserved;
 }
@@ -533,6 +544,18 @@ export function flagMark(flagged: boolean): Node {
   const el = document.createElement("span");
   el.className = "bar-flag";
   el.append(icons.flag(13));
+  return el;
+}
+
+// The "at risk" mark: the dates still stand, but something threatens them.
+// The flag's warning chip (--flag, never --danger on the chart) with a
+// triangle — the shape is what separates the two signals. Non-interactive,
+// like the flag.
+export function riskMark(atRisk: boolean): Node {
+  if (!atRisk) return document.createTextNode("");
+  const el = document.createElement("span");
+  el.className = "bar-risk";
+  el.append(icons.alertTriangle(13));
   return el;
 }
 

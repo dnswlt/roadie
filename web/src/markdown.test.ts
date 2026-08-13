@@ -16,6 +16,8 @@ function item(over: Partial<ItemFull> = {}): ItemFull {
     priority: null,
     labels: [],
     flagged: false,
+    tentative: false,
+    atRisk: false,
     children: [],
     ...over,
   };
@@ -84,6 +86,18 @@ test("priority, flag and labels only appear when set", () => {
     null,
   );
   assert.match(full, /· P1 · ⚑ · infra, q2\*$/m);
+});
+
+test("tentative timing prefixes the date range with ≈; committed dates carry none", () => {
+  const md = itemMarkdown(roadmap(), lane(), item({ tentative: true }), null);
+  assert.match(md, /^\*≈ 2027-04-05 → 2027-04-09 · 5 days\*$/m);
+  assert.doesNotMatch(itemMarkdown(roadmap(), lane(), item(), null), /≈/);
+});
+
+test("at risk is ⚠ beside the flag's ⚑, and both can be present at once", () => {
+  const md = itemMarkdown(roadmap(), lane(), item({ atRisk: true, flagged: true }), null);
+  assert.match(md, /· ⚠ · ⚑\*$/m);
+  assert.doesNotMatch(itemMarkdown(roadmap(), lane(), item(), null), /⚠/);
 });
 
 test("a copied item keeps the heading levels of the full export", () => {

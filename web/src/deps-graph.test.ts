@@ -29,6 +29,8 @@ const baseItem = (id: number, laneId: number, rank: number): Item => ({
   priority: null,
   labels: [],
   flagged: false,
+  tentative: false,
+  atRisk: false,
 });
 
 const lane = (id: number, position: number, itemIds: number[], milestoneIds: number[] = []): LaneFull => ({

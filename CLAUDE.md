@@ -77,8 +77,9 @@ children; `rank` is kept dense 0..n-1 per container, and the frontend relies on
 Never hard-code per-color CSS. Text on a lane bar is `--ink`, never `#000`.
 
 **A warning mark on a bar is a bright fill plus a white ring** (`--flag`,
-`.bar-flag`): the fill carries the meaning, the ring the separation. Darkening
-the fill to win contrast is what loses the warning — thicken the ring instead.
+`.bar-flag`/`.bar-risk`): the fill carries the meaning, the ring the separation.
+Darkening the fill to win contrast is what loses the warning — thicken the ring
+instead.
 
 **Render invalidation has exactly two scopes.** `notify()` = full chart re-render,
 for anything that can change geometry. `notifySelection()` = project `.selected`
@@ -140,6 +141,9 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **Dependencies are never drawn on the timeline.** The chart projects time;
   edges across it are the spaghetti this feature avoids. The local one-hop
   overlay (`deps.ts`, recenter by clicking) is the only graph projection.
+- **Tentative and at-risk are booleans, not workflow status** — no confidence
+  percentages, no off-track/blocked/done; both coexist with the flag. Tentative
+  is a sawtooth silhouette (`.bar-shape`), never opacity, which means hierarchy.
 - **Color is chosen by user preference; only the lane label carries identity.** So the palette is judged
   by eye and by what a hex must sit next to — not against a CVD distance threshold.
   Raise contrast/CVD only when something concrete breaks (text going illegible, a

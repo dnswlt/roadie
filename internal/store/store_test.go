@@ -657,6 +657,81 @@ func TestItemFlagged(t *testing.T) {
 	}
 }
 
+// TestItemPlanningSignals covers tentative and at_risk the way TestItemFlagged
+// covers the flag: invariant-free booleans, independent of each other, of the
+// flag, and of nesting, untouched by unrelated patches, and readable through
+// the full-roadmap path.
+func TestItemPlanningSignals(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
+	parent, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Parent", StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Child", StartDate: date("2026-01-05"), EndDate: date("2026-01-10"), ParentID: &parent.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// New items carry neither signal.
+	if parent.Tentative || parent.AtRisk || child.Tentative || child.AtRisk {
+		t.Errorf("new items carry signals: parent=%+v child=%+v", parent, child)
+	}
+
+	// Both signals plus the flag on one item: they coexist by design, and none
+	// propagates between parent and child.
+	upd, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		Tentative: model.Opt[bool]{Set: true, Value: true},
+		AtRisk:    model.Opt[bool]{Set: true, Value: true},
+		Flagged:   model.Opt[bool]{Set: true, Value: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !upd.Tentative || !upd.AtRisk || !upd.Flagged {
+		t.Errorf("signals not set after patch: %+v", upd)
+	}
+
+	// An unrelated patch leaves both alone.
+	upd2, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		Title: model.Opt[string]{Set: true, Value: "Child2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !upd2.Tentative || !upd2.AtRisk {
+		t.Error("signals lost across an unrelated patch")
+	}
+
+	// Full-roadmap read path; nothing leaked to the parent.
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gp := full.Lanes[0].Items[0]
+	if gp.Tentative || gp.AtRisk {
+		t.Error("signals leaked from child to parent")
+	}
+	if len(gp.Children) != 1 || !gp.Children[0].Tentative || !gp.Children[0].AtRisk {
+		t.Errorf("child signals from GetRoadmapFull: %+v", gp.Children)
+	}
+
+	// Each clears independently of the other.
+	upd3, err := testStore.UpdateItem(ctx, child.ID, ItemPatch{
+		Tentative: model.Opt[bool]{Set: true, Value: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd3.Tentative || !upd3.AtRisk {
+		t.Errorf("clearing tentative: %+v", upd3)
+	}
+}
+
 func TestMilestones(t *testing.T) {
 	ctx := context.Background()
 	rm := newRoadmap(t)
@@ -748,9 +823,11 @@ func TestImportRoadmap(t *testing.T) {
 	}
 	p3 := 3
 	if _, err := testStore.UpdateItem(ctx, parent.ID, ItemPatch{
-		Priority: model.Opt[*int]{Set: true, Value: &p3},
-		Labels:   model.Opt[[]string]{Set: true, Value: []string{"alpha", "beta"}},
-		Flagged:  model.Opt[bool]{Set: true, Value: true}}); err != nil {
+		Priority:  model.Opt[*int]{Set: true, Value: &p3},
+		Labels:    model.Opt[[]string]{Set: true, Value: []string{"alpha", "beta"}},
+		Flagged:   model.Opt[bool]{Set: true, Value: true},
+		Tentative: model.Opt[bool]{Set: true, Value: true},
+		AtRisk:    model.Opt[bool]{Set: true, Value: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := testStore.CreateMilestone(ctx, lane2.ID, NewMilestone{
@@ -809,10 +886,15 @@ func TestImportRoadmap(t *testing.T) {
 	if len(gp.Labels) != 2 || gp.Labels[0] != "alpha" || gp.Labels[1] != "beta" {
 		t.Errorf("labels not preserved: %v", gp.Labels)
 	}
-	// The flag rides in the export envelope, so it must survive import — and
-	// therefore snapshot restore, which uses the same insert path.
+	// The flag and both planning signals ride in the export envelope, so they
+	// must survive import — and therefore snapshot restore, which uses the
+	// same insert path.
 	if !gp.Flagged {
 		t.Error("flagged not preserved through import")
+	}
+	if !gp.Tentative || !gp.AtRisk {
+		t.Errorf("planning signals not preserved through import: tentative=%v atRisk=%v",
+			gp.Tentative, gp.AtRisk)
 	}
 	gc := gl1.Items[0].Children[0]
 	if gc.Title != "Child" || gc.ParentID == nil || *gc.ParentID != gp.ID {

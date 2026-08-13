@@ -30,6 +30,7 @@ the plan. It has:
 - an inclusive start and end date;
 - optional priority and labels;
 - an optional attention flag;
+- optional planning signals for tentative timing and risk;
 - optional dependencies on other items or milestones.
 
 An item may have **child items**, providing one deliberate level of
@@ -90,9 +91,20 @@ Roadie keeps item metadata deliberately limited:
   and can be used to focus the current view.
 - A **flag** means that an item needs human attention. It is intentionally a
   single, lightweight marker with no type, owner, due date, or workflow.
+- **Tentative timing** means that an item's dates are an estimate rather than a
+  commitment—typically for work that is distant or not yet well understood. The
+  timeline draws such items with ragged ends, and the WBS view prefixes their
+  dates with "≈".
+- **At risk** means that an item's dates are still the plan, but something now
+  threatens them. It is shown as a warning triangle.
+
+An item can be tentative, at risk, and flagged at the same time. Each signal is
+a yes or no with no further detail: Roadie has no confidence percentages and no
+*off track*, *blocked*, or *done* states.
 
 Roadie does not track execution progress. Percent complete and task states
-belong in work-tracking systems, not in the roadmap itself.
+belong in work-tracking systems, not in the roadmap itself. These signals say
+how much to trust the plan, not how much of the work is done.
 
 ## External references
 

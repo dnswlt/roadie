@@ -23,6 +23,8 @@ function item(startDate: string, endDate: string, children: Item[] = []): ItemFu
     priority: null,
     labels: [],
     flagged: false,
+    tentative: false,
+    atRisk: false,
     children,
   };
 }

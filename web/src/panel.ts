@@ -564,13 +564,17 @@ export function renderPanel(panel: HTMLElement): void {
     });
     chips.append(chip);
   }
-  // The flag rides at the trailing edge of the priority row: it is an item
-  // attribute like priority, and a lone toggle does not deserve its own row.
-  // Kept out of `chips` on purpose — the handler above clears `active` from
-  // every child of that container.
+  // The planning signals — tentative, at-risk, and the flag — ride at the
+  // trailing edge of the priority row: item attributes like priority, and
+  // three lone toggles do not deserve a row of their own. Kept out of `chips`
+  // on purpose — the handler above clears `active` from every child of that
+  // container.
   const prioRow = document.createElement("div");
   prioRow.className = "prio-row";
-  prioRow.append(chips, flagButton(item));
+  const signals = document.createElement("div");
+  signals.className = "signal-btns";
+  signals.append(tentativeButton(item), riskButton(item), flagButton(item));
+  prioRow.append(chips, signals);
   prio.append(prioLabel, prioRow);
 
   const labels = labelsField(item);
@@ -638,6 +642,33 @@ function flagButton(item: Item): HTMLButtonElement {
     // rebuild while a control holds focus, so the class has to move by hand.
     btn.classList.toggle("active");
     void actions.setFlagged([item.id], !item.flagged);
+  });
+  return btn;
+}
+
+// tentativeButton and riskButton follow flagButton: icon-only toggles whose
+// tooltips are the signals' only labels. They commit a plain single-item
+// patch — unlike the flag, neither has a multi-select shortcut.
+function tentativeButton(item: Item): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = item.tentative ? "icon-btn tent-btn active" : "icon-btn tent-btn";
+  btn.title = "Tentative timing: dates are not a precise commitment";
+  btn.append(icons.approx(16));
+  btn.addEventListener("click", () => {
+    btn.classList.toggle("active");
+    void actions.updateItem(item.id, { tentative: !item.tentative });
+  });
+  return btn;
+}
+
+function riskButton(item: Item): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = item.atRisk ? "icon-btn risk-btn active" : "icon-btn risk-btn";
+  btn.title = "At risk: the plan stands, but there is reason to doubt it";
+  btn.append(icons.alertTriangle(16));
+  btn.addEventListener("click", () => {
+    btn.classList.toggle("active");
+    void actions.updateItem(item.id, { atRisk: !item.atRisk });
   });
   return btn;
 }

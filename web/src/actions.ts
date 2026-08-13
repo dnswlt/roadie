@@ -86,6 +86,8 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
   if (patch.priority !== undefined) item.priority = patch.priority;
   if (patch.labels !== undefined) item.labels = patch.labels;
   if (patch.flagged !== undefined) item.flagged = patch.flagged;
+  if (patch.tentative !== undefined) item.tentative = patch.tentative;
+  if (patch.atRisk !== undefined) item.atRisk = patch.atRisk;
 
   const newParentId = patch.parentId !== undefined ? patch.parentId : item.parentId;
   let newLaneId = patch.laneId !== undefined ? patch.laneId : item.laneId;

@@ -68,6 +68,19 @@ export const icons = {
     ),
   flag: (size = 16) =>
     svg(`<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>`, size),
+  // "≈" for tentative timing: two stacked tildes, drawn rather than typed so it
+  // sizes and weighs like the rest of the set.
+  approx: (size = 16) =>
+    svg(`<path d="M3.5 9 Q 7.75 5.5 12 9 T 20.5 9"/><path d="M3.5 15 Q 7.75 11.5 12 15 T 20.5 15"/>`, size),
+  // The at-risk warning triangle. Deliberately a different shape from the flag:
+  // both are --flag-amber chips on a bar, so the glyph is what says which
+  // signal it is.
+  alertTriangle: (size = 16) =>
+    svg(
+      `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-3Z"/>` +
+        `<path d="M12 9v4"/><path d="M12 17h.01"/>`,
+      size,
+    ),
   dots: (size = 16) =>
     svg(
       `<circle cx="5" cy="12" r="0.8"/><circle cx="12" cy="12" r="0.8"/><circle cx="19" cy="12" r="0.8"/>`,
