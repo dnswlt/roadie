@@ -214,17 +214,11 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   }
   const dates = div("wbs-dates has-spark");
   dates.textContent = `${formatDay(dayOf(item.startDate))} – ${formatDay(dayOf(item.endDate))}`;
-  // The sparkline: a fixed-width track standing for the whole roadmap's span,
-  // filled where this item sits in it — the one thing the outline throws away
-  // that the dates alone can't give back, namely *where* a range lies. It is a
-  // track of its own rather than a tint behind the dates, which was tried: a
-  // fill crossing the text reads as a highlight on the words it happens to
-  // cover, and short items became a dash in the middle of a date.
-  //
-  // Both this and the dates are fixed width, and the extent is roadmap-wide, so
-  // the same pixel means the same date on every row — that is the whole reason
-  // the marks can be compared down the column. Milestones get no track: a point
-  // has no span, and a dot here would invite comparison with the bars.
+  // The sparkline gives back the one thing the outline throws away: *where* a
+  // range lies. A track of its own, not a tint behind the dates — that was
+  // tried, and a fill crossing the text reads as a highlight on whichever words
+  // it covers, with short items landing as a dash mid-date. Milestones get no
+  // track: a point has no span, and a dot would invite comparison with the bars.
   const spark = div("wbs-spark");
   const fill = div("wbs-spark-fill");
   // extent! — contentRange is null only for a roadmap with nothing datable in

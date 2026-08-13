@@ -1921,6 +1921,33 @@ kbd {
   flex: 1;
 }
 
+/* A second line of the row above rather than a field of its own: it pulls up
+   against that row and carries its bottom margin instead of adding one. */
+.panel-row-sub {
+  margin-top: -8px;
+  margin-bottom: 12px;
+}
+
+/* Boxed like .panel-field > input, because it sets the same field as the input
+   above it — a differently shaped control would read as a different kind of
+   thing. The native arrow stays: it is what says "this one is a list". */
+.panel-select {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.panel-select:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
+}
+
 .panel-actions {
   display: flex;
   align-items: center;

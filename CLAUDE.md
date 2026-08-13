@@ -129,6 +129,10 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement
   `applyItemPatch`'s invariant logic as a second source of truth.
 - **Schedule is single-track** (sprints *or* PIs, not both nested).
+- **A period picker writes a plain date, and shows "—" off a boundary.** Showing
+  the period a date merely falls inside makes re-picking it move that date.
+- **The WBS sparkline's extent is the whole roadmap**, hidden lanes and folded
+  children included: folding must never rescale the rows that stayed.
 - **A dependency is one directed edge with no attributes** — no types, lag, or
   labels (the user-colored-star argument again). Stored prerequisite → dependent;
   roadmap-scoped only; a DAG, enforced in the store with rejections that name the
@@ -146,13 +150,16 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**
-- **E2E is a gesture smoke layer, not a UI test suite** (`web/e2e`, `make test-e2e`).
-  Playwright exists only for what needs a real layout engine — pointer gestures —
-  and every test follows one pattern: **seed via API, act via pointer, assert via
-  API, purge**. The UI is the actuator, the model is the oracle: no DOM-content
-  assertions, no screenshots, and the only selectors are the class contracts the
-  controllers themselves hit-test. Tests run against the open-auth server on their
-  own port and create/purge their own roadmaps, so a live dev DB is safe.
+- **E2E is a smoke layer, not a UI test suite** (`web/e2e`, `make test-e2e`).
+  Playwright exists only for what a real browser answers and nothing else can —
+  pointer gestures, and panel flows whose bug *is* the focus behaviour — and every
+  test follows one pattern: **seed via API, act in the browser, assert via API,
+  purge**. The UI is the actuator, the model is the oracle: no screenshots, and
+  the only selectors are the class contracts the controllers themselves hit-test.
+  A DOM assertion needs client-only state the server cannot be asked about (a
+  `.selected` class, which period a dropdown displays) and a note in the spec
+  saying so. Tests run against the open-auth server on their own port and
+  create/purge their own roadmaps, so a live dev DB is safe.
 
 Deliberate exceptions and scope limits, so they don't read as bugs:
 
@@ -166,8 +173,9 @@ Deliberate exceptions and scope limits, so they don't read as bugs:
 
 ## Ask first
 
-A third render scope · multi-track schedule · e2e tests outside the gesture
-pattern (DOM-content assertions, screenshots, non-gesture flows) · a second flag ·
+A third render scope · multi-track schedule · e2e tests outside the seed/act/
+assert-via-API pattern (screenshots, DOM assertions beyond client-only state,
+anything a DOM-free module could have pinned) · a second flag ·
 changing what `-auth=off` does · dependency edge attributes or kinds · drawing
 dependencies on the timeline.
 

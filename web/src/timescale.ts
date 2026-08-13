@@ -135,13 +135,10 @@ export function contentRange(lanes: LaneFull[]): { startDay: number; endDay: num
   return min === Infinity ? null : { startDay: min, endDay: max };
 }
 
-// spanFraction places an inclusive [startDay, endDay] range inside an inclusive
-// extent, as fractions (0..1) of the extent's width — the axis-free equivalent
-// of xOf/chartWidth, used for the WBS date sparkline. Like every placement here
-// it works in the boundary domain (a range owns [start, end+1)), so a one-day
-// range still has width and a range ending on the extent's last day reaches 1.
-// The caller's extent must cover the range — with contentRange over the same
-// lanes it does by construction, and nothing is clamped.
+// spanFraction is the axis-free xOf/chartWidth: an inclusive range inside an
+// inclusive extent as 0..1 fractions, for the WBS sparkline. Boundary domain
+// like every placement here (a range owns [start, end+1)), so a one-day range
+// still has width. Nothing is clamped: a contentRange extent covers its lanes.
 export function spanFraction(
   startDay: number,
   endDay: number,

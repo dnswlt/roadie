@@ -74,6 +74,48 @@ export async function addLane(
   return lane.id;
 }
 
+// setSchedule gives a seeded roadmap a schedule. PUT replaces the whole thing,
+// which is also how the app's editor saves it.
+export async function setSchedule(
+  request: APIRequestContext,
+  roadmapId: number,
+  periods: { label: string; startDate: string; endDate: string }[],
+): Promise<void> {
+  const res = await request.put(`/api/roadmaps/${roadmapId}/schedule`, { data: { periods } });
+  expect(res.ok(), `PUT schedule -> ${res.status()}`).toBe(true);
+}
+
+// addMilestone returns only the id; its date is read back through laneMilestones.
+export async function addMilestone(
+  request: APIRequestContext,
+  laneId: number,
+  title: string,
+  date: string,
+): Promise<number> {
+  const ms = await post<{ id: number }>(request, `/api/lanes/${laneId}/milestones`, {
+    title,
+    description: "",
+    date,
+  });
+  return ms.id;
+}
+
+// laneMilestones is laneItems for the lane's milestones.
+export async function laneMilestones(
+  request: APIRequestContext,
+  roadmapId: number,
+  laneId: number,
+): Promise<{ id: number; date: string }[]> {
+  const res = await request.get(`/api/roadmaps/${roadmapId}`);
+  expect(res.ok(), `GET roadmap -> ${res.status()}`).toBe(true);
+  const rm = (await res.json()) as {
+    lanes: { id: number; milestones: { id: number; date: string }[] }[];
+  };
+  const lane = rm.lanes.find((l) => l.id === laneId);
+  expect(lane, `lane ${laneId} exists`).toBeTruthy();
+  return lane!.milestones;
+}
+
 // laneItems returns the lane's top-level items as the server sees them — the
 // oracle every test asserts against.
 export async function laneItems(

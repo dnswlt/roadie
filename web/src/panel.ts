@@ -10,8 +10,9 @@ import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { extractLinks } from "./links";
 import { itemMarkdown } from "./markdown";
+import { periodAtEdge, periodDates, periodsByStart } from "./schedule";
 import { state, type MilestoneLocation } from "./state";
-import type { Item, ItemFull, LaneFull, Milestone } from "./types";
+import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./types";
 import { selectionLink } from "./url";
 
 const PANEL_TITLE_ID = "panel-item-title";
@@ -494,6 +495,53 @@ export function renderPanel(panel: HTMLElement): void {
   });
   dates.append(start.wrap, end.wrap);
 
+  // No schedule, no dropdowns: the panel is then exactly what it was.
+  const periods = periodsByStart(state.current?.periods ?? []);
+  let schedule: HTMLElement | null = null;
+  if (periods.length > 0) {
+    const startInput = start.control as HTMLInputElement;
+    const endInput = end.control as HTMLInputElement;
+    // The inputs, not `item`, hold the current dates: the panel skips its own
+    // rebuild while one of its controls has focus, and a <select> keeps focus
+    // after a pick, so `item` goes a render stale while the inputs are kept
+    // true by `show`. Blank means nothing was committed — the model still is.
+    const current = (): { startDate: string; endDate: string } => ({
+      startDate: startInput.value || item.startDate,
+      endDate: endInput.value || item.endDate,
+    });
+    const startSel = periodSelect("Start period", periods, (p) => pick("start", p));
+    const endSel = periodSelect("End period", periods, (p) => pick("end", p));
+    const showPeriods = (d: { startDate: string; endDate: string }): void => {
+      startSel.value = periodAtEdge(periods, "start", d.startDate)?.id.toString() ?? "";
+      endSel.value = periodAtEdge(periods, "end", d.endDate)?.id.toString() ?? "";
+    };
+    // All four controls, because a collapsing pick moves the edge you didn't
+    // touch — and its select with it.
+    const show = (d: { startDate: string; endDate: string }): void => {
+      startInput.value = d.startDate;
+      endInput.value = d.endDate;
+      showPeriods(d);
+    };
+    function pick(edge: "start" | "end", p: SchedulePeriod): void {
+      const now = current();
+      const next = periodDates(edge, p, now);
+      show(next);
+      const patch: { startDate?: string; endDate?: string } = {};
+      if (next.startDate !== now.startDate) patch.startDate = next.startDate;
+      if (next.endDate !== now.endDate) patch.endDate = next.endDate;
+      if (patch.startDate || patch.endDate) void actions.updateItem(item.id, patch);
+    }
+    // A hand-edited date has to move the selects too. The panel may not rebuild
+    // (focus never left it), and a select left on the old period is a dead end
+    // rather than a cosmetic lie: picking the entry it already displays fires
+    // no change event, so that boundary becomes unreachable from the dropdown.
+    for (const input of [startInput, endInput]) {
+      input.addEventListener("change", () => showPeriods(current()));
+    }
+    show({ startDate: item.startDate, endDate: item.endDate });
+    schedule = periodRow(startSel, endSel);
+  }
+
   // Priority: four chips (P1 highest .. P4 lowest). Clicking the active chip
   // clears the priority back to unset. Chip classes are toggled directly
   // because the panel skips its own rebuild while a chip holds focus.
@@ -555,7 +603,9 @@ export function renderPanel(panel: HTMLElement): void {
   // is classification, not identity.
   const attrs = document.createElement("div");
   attrs.className = "panel-attrs";
-  attrs.append(dates, prio, labels, dependenciesSection({ kind: "item", id: item.id }));
+  attrs.append(dates);
+  if (schedule) attrs.append(schedule);
+  attrs.append(prio, labels, dependenciesSection({ kind: "item", id: item.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
@@ -707,6 +757,31 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
     if (v && v !== milestone.date) void actions.updateMilestone(milestone.id, { date: v });
   });
 
+  // "Due in PI2027-11" is a deadline, so the pick lands on the period's last
+  // day — and by the same token the select only ever shows a period whose end
+  // this date is.
+  const dateInput = dateField.control as HTMLInputElement;
+  const periods = periodsByStart(state.current?.periods ?? []);
+  let dueSel: HTMLSelectElement | null = null;
+  if (periods.length > 0) {
+    // Written by hand, as in the item panel, because the panel may not rebuild.
+    const sel = periodSelect("Due in period", periods, (p) => {
+      const was = dateInput.value || milestone.date;
+      show(p.endDate);
+      if (p.endDate !== was) void actions.updateMilestone(milestone.id, { date: p.endDate });
+    });
+    const showPeriod = (date: string): void => {
+      sel.value = periodAtEdge(periods, "end", date)?.id.toString() ?? "";
+    };
+    const show = (date: string): void => {
+      dateInput.value = date;
+      showPeriod(date);
+    };
+    dateInput.addEventListener("change", () => showPeriod(dateInput.value || milestone.date));
+    show(milestone.date);
+    dueSel = sel;
+  }
+
   const desc = field("Description", "textarea");
   (desc.control as HTMLTextAreaElement).value = milestone.description;
   desc.control.addEventListener("change", () => {
@@ -728,7 +803,9 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   // most important attribute.
   const attrs = document.createElement("div");
   attrs.className = "panel-attrs";
-  attrs.append(dateField.wrap, dependenciesSection({ kind: "milestone", id: milestone.id }));
+  attrs.append(dateField.wrap);
+  if (dueSel) attrs.append(periodRow(dueSel));
+  attrs.append(dependenciesSection({ kind: "milestone", id: milestone.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
@@ -744,6 +821,47 @@ function field(
   const control = document.createElement(tag) as HTMLInputElement | HTMLTextAreaElement;
   wrap.append(span, control);
   return { wrap, control };
+}
+
+// periodSelect is a second way to set the date field above it, for people who
+// plan in "PI2027-09" rather than in the day it starts on. The panel twin of
+// the "schedule" snap grid (dnd.ts): it writes a plain date, and the date stays
+// the model. No visible label — it sets the field it sits under, which is what
+// the aria-label carries for anyone who can't see that.
+//
+// "—" is the state of a date that isn't on any period edge. Disabled, because
+// it reports rather than offers: "no period" is not a date you can set.
+function periodSelect(
+  ariaLabel: string,
+  periods: SchedulePeriod[],
+  onPick: (p: SchedulePeriod) => void,
+): HTMLSelectElement {
+  const sel = document.createElement("select");
+  sel.className = "panel-select";
+  sel.setAttribute("aria-label", ariaLabel);
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "—";
+  none.disabled = true;
+  sel.append(none);
+  for (const p of periods) {
+    const opt = document.createElement("option");
+    opt.value = String(p.id);
+    opt.textContent = p.label;
+    sel.append(opt);
+  }
+  sel.addEventListener("change", () => {
+    const picked = periods.find((p) => String(p.id) === sel.value);
+    if (picked) onPick(picked);
+  });
+  return sel;
+}
+
+function periodRow(...selects: HTMLSelectElement[]): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "panel-row panel-row-sub";
+  row.append(...selects);
+  return row;
 }
 
 // titleField is the panel's heading rather than another labelled row: the name

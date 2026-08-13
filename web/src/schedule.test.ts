@@ -1,6 +1,14 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { nearestBoundary, parseSchedule, scheduleBounds, serializeSchedule } from "./schedule";
+import {
+  nearestBoundary,
+  parseSchedule,
+  periodAtEdge,
+  periodDates,
+  periodsByStart,
+  scheduleBounds,
+  serializeSchedule,
+} from "./schedule";
 import { dayOf } from "./timescale";
 import type { SchedulePeriod } from "./types";
 
@@ -76,4 +84,55 @@ test("nearestBoundary picks the closest, ties round down", () => {
   // Exact midpoint (2026-01-11 is 6 days from each) -> earlier boundary.
   assert.equal(nearestBoundary(dayOf("2026-01-11"), bounds), dayOf("2026-01-05"));
   assert.equal(nearestBoundary(42, []), 42); // no bounds -> unchanged
+});
+
+// Two adjacent periods, the shape a PI cadence has.
+const PIS: SchedulePeriod[] = [
+  { id: 2, startDate: "2026-03-02", endDate: "2026-04-24", label: "PI2026-03" },
+  { id: 1, startDate: "2026-01-05", endDate: "2026-02-27", label: "PI2026-01" },
+];
+
+test("periodsByStart orders by start date", () => {
+  assert.deepEqual(
+    periodsByStart(PIS).map((p) => p.label),
+    ["PI2026-01", "PI2026-03"],
+  );
+});
+
+test("periodAtEdge matches an edge exactly, never a containing period", () => {
+  assert.equal(periodAtEdge(PIS, "start", "2026-01-05")?.label, "PI2026-01");
+  assert.equal(periodAtEdge(PIS, "end", "2026-02-27")?.label, "PI2026-01");
+  assert.equal(periodAtEdge(PIS, "start", "2026-01-19"), null); // inside PI2026-01
+  assert.equal(periodAtEdge(PIS, "end", "2026-03-02"), null); // a start, not an end
+  assert.equal(periodAtEdge(PIS, "start", "2025-12-01"), null); // before the schedule
+});
+
+test("periodDates sets the chosen edge and leaves the other alone", () => {
+  const item = { startDate: "2026-01-19", endDate: "2026-04-10" };
+  assert.deepEqual(periodDates("start", PIS[1]!, item), {
+    startDate: "2026-01-05",
+    endDate: "2026-04-10",
+  });
+  assert.deepEqual(periodDates("end", PIS[0]!, item), {
+    startDate: "2026-01-19",
+    endDate: "2026-04-24",
+  });
+});
+
+test("periodDates collapses onto the period rather than inverting the range", () => {
+  // End currently sits before the newly chosen start period.
+  assert.deepEqual(
+    periodDates("start", PIS[0]!, { startDate: "2026-01-05", endDate: "2026-02-27" }),
+    { startDate: "2026-03-02", endDate: "2026-04-24" },
+  );
+  // Start currently sits after the newly chosen end period.
+  assert.deepEqual(
+    periodDates("end", PIS[1]!, { startDate: "2026-03-02", endDate: "2026-04-24" }),
+    { startDate: "2026-01-05", endDate: "2026-02-27" },
+  );
+  // Order still holds when the edges merely touch, so nothing collapses.
+  assert.deepEqual(
+    periodDates("start", PIS[0]!, { startDate: "2026-02-01", endDate: "2026-03-02" }),
+    { startDate: "2026-03-02", endDate: "2026-03-02" },
+  );
 });

@@ -66,6 +66,40 @@ export function serializeSchedule(periods: SchedulePeriod[]): string {
     .join("\n");
 }
 
+// periodsByStart is the order periods are shown in. The store returns them
+// sorted already; option order is the view's business, not a query's.
+export function periodsByStart(periods: SchedulePeriod[]): SchedulePeriod[] {
+  return [...periods].sort((a, b) => dayOf(a.startDate) - dayOf(b.startDate));
+}
+
+// periodAtEdge matches an edge exactly, never the period a date merely falls
+// inside: it lets a picker state a fact rather than a guess, so re-picking the
+// entry already shown can't silently move a hand-typed date to a boundary.
+export function periodAtEdge(
+  periods: SchedulePeriod[],
+  edge: "start" | "end",
+  date: string,
+): SchedulePeriod | null {
+  return periods.find((p) => (edge === "start" ? p.startDate : p.endDate) === date) ?? null;
+}
+
+// periodDates sets one edge to a period and leaves the other alone — unless
+// that would invert the range, in which case the item collapses onto the chosen
+// period. The alternative is answering a deliberate pick with the store's
+// rejection toast; this way every option in the list does something.
+export function periodDates(
+  edge: "start" | "end",
+  period: SchedulePeriod,
+  current: { startDate: string; endDate: string },
+): { startDate: string; endDate: string } {
+  if (edge === "start") {
+    const keepsOrder = dayOf(current.endDate) >= dayOf(period.startDate);
+    return { startDate: period.startDate, endDate: keepsOrder ? current.endDate : period.endDate };
+  }
+  const keepsOrder = dayOf(current.startDate) <= dayOf(period.endDate);
+  return { startDate: keepsOrder ? current.startDate : period.startDate, endDate: period.endDate };
+}
+
 // scheduleBounds returns the sorted, de-duplicated snap boundaries of a schedule
 // in the boundary/day-number domain: each period contributes its start and
 // end + 1 (a bar owns pixels [xOf(start), xOf(end + 1)), so edges live here).
