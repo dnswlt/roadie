@@ -20,7 +20,7 @@ OIDC_CLIENT_SECRET ?= roadie-dev-secret
 # Roadie's own listen address — the same one `make dev` uses.
 OIDC_ADDR ?= localhost:8080
 
-.PHONY: dev dev-oidc kill-watch build test check db-up db-down frontend frontend-watch \
+.PHONY: dev dev-oidc deps kill-watch build test check db-up db-down frontend frontend-watch \
 	docker-build docker-up docker-down docs docs-serve
 
 db-up:
@@ -43,6 +43,11 @@ docker-up:
 # db volume is kept.
 docker-down:
 	$(DC_CMD) --profile app down
+
+# Frontend dependencies, like the docs ones below: never installed implicitly.
+# Run this after pulling a commit that changes package-lock.json.
+deps:
+	npm install --prefix web
 
 frontend:
 	npm run --prefix web build

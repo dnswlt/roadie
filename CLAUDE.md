@@ -9,6 +9,7 @@ those comments are good, so read the file rather than expecting a summary here.
 ## Commands
 
 ```sh
+make deps                 # npm install for the frontend; run it after package-lock.json changes
 make db-up                # start dev Postgres (container, port 5433 — see below)
 make dev                  # esbuild watch + Go server (-dev -seed) on http://localhost:8080
 make -C dev/oidc up       # start the throwaway OIDC provider (dev/oidc)

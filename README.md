@@ -25,6 +25,7 @@ Roadie's concepts and features.
 Prerequisites: Go ≥ 1.25, Node.js, Docker (Compose).
 
 ```sh
+make deps       # npm install for the frontend; run it after package-lock.json changes
 make db-up      # start Postgres 17 in a container on port 5433
 make dev        # esbuild watch + Go server on http://localhost:8080 (seeds a demo roadmap)
 make test       # Go tests (store tests run against the compose Postgres)
