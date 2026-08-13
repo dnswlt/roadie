@@ -842,6 +842,10 @@ function periodSelect(
   const none = document.createElement("option");
   none.value = "";
   none.textContent = "—";
+  // A dash announces as "dash". Every other option says what it is out loud, so
+  // this one gets a label that does too — the dash is a compact way of drawing
+  // "no period", not the meaning itself.
+  none.setAttribute("aria-label", "No period");
   none.disabled = true;
   sel.append(none);
   for (const p of periods) {
