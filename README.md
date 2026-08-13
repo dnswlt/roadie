@@ -1,26 +1,17 @@
 # Roadie
 
-A single-page webapp for viewing and editing roadmaps, built for agile
-leadership (product managers, system architects) who need an overview of
-what's going on in the next couple of months and years.
+Roadie is a focused roadmap editor for people planning large software and
+systems projects. It helps communicate significant outcomes, when they are
+expected, how they decompose, and what depends on what—without becoming another
+task tracker.
 
-## Concepts
+Roadmaps can be organized into contexts, parent and child items, and milestones.
+Roadie provides timeline and Work Breakdown Structure views, user-defined
+planning schedules, dependencies, priorities, labels, version history, and
+collaboration.
 
-The data model is deliberately simple; all views are derived from it.
-
-- **Roadmap** — a top-level plan; the app supports several (e.g. one per team
-  or portfolio).
-- **Context** — a swimlane holding work items: projects, undertakings,
-  continuous work. Reorderable via drag & drop.
-- **Item** — anything that is being done, with a title, description, and a
-  planned start/end date. Items can have child items (one level deep, no
-  further nesting). A child always lives in its parent's lane.
-- **Milestone** — a fixed point in time in a lane (a single date, title, and
-  description): no duration, not ordered, not nested.
-
-Items have an explicit order within their lane (and children within their
-parent); every item gets its own row in that order. Only the order is
-stored — pixel positions never are.
+See the [user guide](https://dnswlt.github.io/roadie/) for an introduction to
+Roadie's concepts and features.
 
 ## Stack
 
