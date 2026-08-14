@@ -231,20 +231,6 @@ body {
   border-color: #4338ca;
 }
 
-/* The same soft indigo as the Home chip, for actions that live *inside* Home
-   (currently just Open): it echoes the chip that got you here rather than
-   competing with it, milder than .btn-primary's solid fill. */
-.btn-home {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #4338ca;
-}
-
-.btn-home:hover {
-  background: #e0e7ff;
-  border-color: #a5b4fc;
-}
-
 .btn-danger {
   background: var(--danger);
   border-color: var(--danger);
@@ -2263,9 +2249,8 @@ dialog input:focus {
   font-size: 13px;
 }
 
-/* Scroll the author list on its own, keeping the facts and the Open button in
-   place however many authors there are; capped so the sidebar stays within the
-   height of the roadmap list beside it. */
+/* Scroll the author list on its own, keeping the facts above it in place
+   however many authors there are. */
 .info-authors-scroll {
   max-height: 26vh;
   overflow-y: auto;
@@ -2312,9 +2297,34 @@ dialog input:focus {
   line-height: 1.5;
 }
 
-/* Home dialog: tabs over a two-pane body (roadmap list left, preview right),
+/* Home: tabs over a two-pane body (roadmap list left, preview right),
    New/Import/Close in the footer. Rows reuse the .menu-item family so the list
-   looks like the dropdown it replaced. */
+   looks like the dropdown it replaced.
+
+   The frame is fixed and the panes scroll inside it: Home's content has no one
+   size, so a box that fitted it moved on every click. It stays a <dialog> —
+   that is what Esc, focus trapping and the nested prompts are built on. */
+#home-dialog {
+  width: min(920px, 94vw);
+  height: min(720px, 86vh);
+  max-width: none;
+  max-height: none;
+}
+
+/* Tabs, body, footer; the middle row takes the slack. Scoped to [open]: the UA
+   stylesheet hides a closed dialog with display:none, which an unconditional
+   display here would override. */
+#home-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* Darker than the shared backdrop: at this size Home covers the chart rather
+   than floating over it. */
+#home-dialog::backdrop {
+  background: rgba(16, 24, 40, 0.5);
+}
+
 .home-tabs {
   display: flex;
   gap: 2px;
@@ -2340,19 +2350,17 @@ dialog input:focus {
   border-bottom-color: var(--ink);
 }
 
+/* Fixed list, preview takes the rest; both panes fill the row's height. */
 .home-body {
-  display: flex;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
   gap: 20px;
-  align-items: flex-start;
 }
 
-/* Scroll the list, not the dialog, so tabs and footer stay put. */
+/* Scroll the list, not the panel, so tabs and footer stay put. */
 .home-list {
   display: flex;
   flex-direction: column;
-  width: 280px;
-  flex: none;
-  max-height: 55vh;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2380,10 +2388,11 @@ dialog input:focus {
   color: var(--ink-2);
 }
 
+/* The author list has its own cap, so this only overflows on a short viewport;
+   scroll it rather than clip the facts. */
 .home-side {
-  width: 400px;
-  min-height: 320px; /* keep the dialog from resizing as previews swap */
   min-width: 0;
+  overflow-y: auto;
 }
 
 .home-side-title {
@@ -2391,12 +2400,6 @@ dialog input:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.home-side-actions {
-  display: flex;
-  gap: 8px;
-  margin: 10px 0 16px;
 }
 
 .home-meta {

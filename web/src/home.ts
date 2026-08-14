@@ -6,9 +6,11 @@
 // The core interaction is select-then-act, not open-on-click: a single click
 // previews a roadmap in the sidebar (the added value over the old dropdown —
 // you can identify a roadmap by its contents *before* committing to it), a
-// double click or the Open button opens it. The trash needs those semantics
-// anyway, since a trashed roadmap cannot be opened at all (the server 404s it
-// by design), only restored or purged.
+// double click or the footer's Open button opens it. The trash needs those
+// semantics anyway, since a trashed roadmap cannot be opened at all (the server
+// 404s it by design), only restored or purged.
+//
+// Each pane has one job: the list picks, the sidebar informs, the footer acts.
 //
 // It owns its own <dialog id="home-dialog"> rather than the shared #dialog so
 // the prompt/confirm primitives (dialogs.ts) can stack on top as nested modals:
@@ -83,9 +85,9 @@ function revealSelection(): void {
   if (sel) for (const key of ancestorKeys(sel.name)) expanded.add(key);
 }
 
-// openRoadmap is the single exit into a roadmap: double click, Enter on a row,
-// or the sidebar's Open button. selectRoadmap brings the URL, localStorage and
-// SSE subscription along.
+// openRoadmap is the single exit into a roadmap: a double click on a row, or
+// the footer's Open button. selectRoadmap brings the URL, localStorage and SSE
+// subscription along.
 function openRoadmap(id: number): void {
   dialogEl().close();
   if (state.current?.id !== id) void actions.selectRoadmap(id);
@@ -262,24 +264,16 @@ function sidePane(): HTMLElement {
   return side;
 }
 
-// renderRoadmapSide fills the sidebar for a live roadmap: an Open button and
-// the facts that used to be the "Roadmap info" dialog. Both fetches happen on
-// selection — a roadmap payload is a few KB, and always fetching keeps one code
-// path whether or not the selection is the currently open roadmap.
+// renderRoadmapSide fills the sidebar for a live roadmap with the facts that
+// used to be the "Roadmap info" dialog; acting on them is the footer's job.
+// Both fetches happen on selection — a roadmap payload is a few KB, and always
+// fetching keeps one code path whether or not the selection is the currently
+// open roadmap.
 function renderRoadmapSide(side: HTMLElement, id: number): void {
   const rm = state.roadmaps.find((r) => r.id === id);
   if (!rm) return;
 
   side.append(sideTitle(rm.name));
-
-  const actionsRow = document.createElement("div");
-  actionsRow.className = "home-side-actions";
-  const open = document.createElement("button");
-  open.className = "btn btn-home";
-  open.textContent = "Open";
-  open.addEventListener("click", () => openRoadmap(id));
-  actionsRow.append(open);
-  side.append(actionsRow);
 
   const details = document.createElement("div");
   const loading = document.createElement("p");
@@ -307,8 +301,7 @@ function renderRoadmapSide(side: HTMLElement, id: number): void {
 
 // renderTrashSide fills the sidebar for a trashed roadmap. No facts here: a
 // trashed roadmap reads as absent from the API by design, so all there is to
-// show is what the trash listing itself carries — and all there is to do is
-// restore or purge.
+// show is what the trash listing itself carries.
 function renderTrashSide(side: HTMLElement, id: number): void {
   const rm = trashEntries.find((r) => r.id === id);
   if (!rm) return;
@@ -319,65 +312,36 @@ function renderTrashSide(side: HTMLElement, id: number): void {
   meta.className = "home-meta";
   meta.textContent = `Deleted ${stamp(rm.deletedAt)} · ${countdown(rm.purgeAt)}`;
   side.append(meta);
-
-  const row = document.createElement("div");
-  row.className = "home-side-actions";
-
-  const restore = document.createElement("button");
-  restore.className = "btn";
-  restore.textContent = "Restore";
-  restore.addEventListener("click", () => {
-    void (async () => {
-      try {
-        // Close first: restoring opens the roadmap, and a modal left standing
-        // in front of it would hide the result of the click.
-        dialogEl().close();
-        await actions.restoreRoadmap(id);
-      } catch (e) {
-        toast(errMsg(e), true);
-        void openHome(); // put Home back so the entry can be retried
-      }
-    })();
-  });
-
-  const purge = document.createElement("button");
-  purge.className = "btn btn-danger";
-  purge.textContent = "Delete permanently";
-  purge.addEventListener("click", () => {
-    void (async () => {
-      // The confirm stacks on top of Home as a nested modal; Home stays open
-      // throughout and just refreshes its list afterwards.
-      const ok = await confirmDialog(
-        `Permanently delete "${rm.name}"? This cannot be undone.`,
-        "Delete permanently",
-      );
-      if (ok) {
-        try {
-          await api.purgeRoadmap(id);
-          toast(`Permanently deleted "${rm.name}"`);
-        } catch (e) {
-          toast(errMsg(e), true);
-        }
-      }
-      await refreshTrash();
-    })();
-  });
-
-  row.append(restore, purge);
-  side.append(row);
 }
 
+// The footer holds every action that commits: creating on the left, and on the
+// right the one that acts on the selection — Open, or Restore in the trash.
+// Purging stays in the left group, away from the primary button.
 function footer(): HTMLElement {
   const row = document.createElement("div");
   row.className = "dialog-actions home-footer";
 
-  const create = document.createElement("button");
-  create.className = "btn";
-  create.append(icons.plus(14), document.createTextNode("New"));
+  const spacer = document.createElement("span");
+  spacer.className = "spacer";
+
+  const close = document.createElement("button");
+  close.className = "btn";
+  close.textContent = "Close";
+  close.addEventListener("click", () => dialogEl().close());
+
+  if (tab === "roadmaps") row.append(newButton(), importButton(), spacer, close, openButton());
+  else row.append(purgeButton(), spacer, close, restoreButton());
+  return row;
+}
+
+function newButton(): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "btn";
+  b.append(icons.plus(14), document.createTextNode("New"));
   // On an empty install the only sensible next step is creating a roadmap, so
   // showModal's initial focus lands there.
-  if (state.roadmaps.length === 0) create.autofocus = true;
-  create.addEventListener("click", () => {
+  if (state.roadmaps.length === 0) b.autofocus = true;
+  b.addEventListener("click", () => {
     void (async () => {
       // The prompt stacks over Home; only an actual create closes it, since
       // createRoadmap opens the new roadmap. The visibility choice appears only
@@ -390,24 +354,83 @@ function footer(): HTMLElement {
       }
     })();
   });
+  return b;
+}
 
-  const imp = document.createElement("button");
-  imp.className = "btn";
-  imp.append(icons.upload(14), document.createTextNode("Import"));
-  imp.addEventListener("click", () => {
+function importButton(): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "btn";
+  b.append(icons.upload(14), document.createTextNode("Import"));
+  b.addEventListener("click", () => {
     (document.getElementById("rm-import-file") as HTMLInputElement).click();
   });
+  return b;
+}
 
-  const spacer = document.createElement("span");
-  spacer.className = "spacer";
+// The selection-dependent buttons capture `selectedId` at build time, which
+// holds because render() rebuilds the footer on every selection change.
+function openButton(): HTMLButtonElement {
+  const id = selectedId;
+  const b = document.createElement("button");
+  b.className = "btn btn-primary";
+  b.textContent = "Open";
+  b.disabled = id === null;
+  if (id !== null) b.addEventListener("click", () => openRoadmap(id));
+  return b;
+}
 
-  const close = document.createElement("button");
-  close.className = "btn";
-  close.textContent = "Close";
-  close.addEventListener("click", () => dialogEl().close());
+function restoreButton(): HTMLButtonElement {
+  const id = selectedId;
+  const b = document.createElement("button");
+  b.className = "btn btn-primary";
+  b.textContent = "Restore";
+  b.disabled = id === null;
+  if (id !== null) {
+    b.addEventListener("click", () => {
+      void (async () => {
+        try {
+          // Close first: restoring opens the roadmap, and a modal left standing
+          // in front of it would hide the result of the click.
+          dialogEl().close();
+          await actions.restoreRoadmap(id);
+        } catch (e) {
+          toast(errMsg(e), true);
+          void openHome(); // put Home back so the entry can be retried
+        }
+      })();
+    });
+  }
+  return b;
+}
 
-  row.append(create, imp, spacer, close);
-  return row;
+function purgeButton(): HTMLButtonElement {
+  const rm = trashEntries.find((r) => r.id === selectedId);
+  const b = document.createElement("button");
+  b.className = "btn btn-danger";
+  b.textContent = "Delete permanently";
+  b.disabled = rm === undefined;
+  if (rm) {
+    b.addEventListener("click", () => {
+      void (async () => {
+        // The confirm stacks on top of Home as a nested modal; Home stays open
+        // throughout and just refreshes its list afterwards.
+        const ok = await confirmDialog(
+          `Permanently delete "${rm.name}"? This cannot be undone.`,
+          "Delete permanently",
+        );
+        if (ok) {
+          try {
+            await api.purgeRoadmap(rm.id);
+            toast(`Permanently deleted "${rm.name}"`);
+          } catch (e) {
+            toast(errMsg(e), true);
+          }
+        }
+        await refreshTrash();
+      })();
+    });
+  }
+  return b;
 }
 
 // initHome wires the pieces that exist outside the dialog's own DOM: the file
