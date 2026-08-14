@@ -282,6 +282,29 @@ function wirePanelResize(): void {
   });
 }
 
+// wireDescriptionResize remembers the height the description is dragged to.
+// Native resizing fires no event and its pointerup lands outside the textarea,
+// so the gesture is bracketed here like the one above. Delegated: the
+// description is the panel's only textarea. The height reaches the rendered
+// fields as --desc-h (styles.css), so nothing per-render is involved.
+function wireDescriptionResize(): void {
+  panel.addEventListener("pointerdown", (e) => {
+    const ta = e.target;
+    if (!(ta instanceof HTMLTextAreaElement)) return;
+    const before = ta.offsetHeight;
+    window.addEventListener(
+      "pointerup",
+      () => {
+        const h = ta.offsetHeight;
+        if (h === before) return;
+        panel.style.setProperty("--desc-h", `${h}px`);
+        localStorage.setItem("roadie.descriptionHeight", String(h));
+      },
+      { once: true },
+    );
+  });
+}
+
 // renderAccount fills in the account menu, and reveals it at all, only on an
 // authenticated deployment. Called once from boot rather than from render():
 // who we are cannot change without a page load.
@@ -933,6 +956,7 @@ async function boot(): Promise<void> {
   initFind();
   wireChart();
   wirePanelResize();
+  wireDescriptionResize();
   initDnd(chart);
   initWbsDnd(chart);
   initEvents(panel);
@@ -956,6 +980,10 @@ async function boot(): Promise<void> {
     state.panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, storedWidth));
   }
   state.panelCollapsed = localStorage.getItem("roadie.panelCollapsed") === "1";
+  // No clamp: the CSS floor (min-height) outranks --desc-h, and a junk value
+  // reads as 0 here, which falls through to the stylesheet's own default.
+  const storedDescHeight = Number(localStorage.getItem("roadie.descriptionHeight"));
+  if (storedDescHeight) panel.style.setProperty("--desc-h", `${storedDescHeight}px`);
 
   // Capture the deep link before anything can rewrite the address bar.
   const target = readUrl();

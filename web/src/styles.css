@@ -1969,9 +1969,13 @@ kbd {
 /* The description is the panel's only textarea. It rests on the page tint
    rather than on white: a white box on a white panel has no shape, so the body
    text was disappearing into the surface. Focus lifts it to white, which reads
-   as "now you're editing" for free. */
+   as "now you're editing" for free.
+   --desc-h is the height last dragged to (app.ts), which is how the preference
+   reaches every description rendered without the render path knowing about it.
+   min-height outranks it, and is the floor a stored value cannot undercut. */
 .panel-field > textarea {
   min-height: 160px;
+  height: var(--desc-h, auto);
   resize: vertical;
   background: var(--bg);
   border-color: transparent;
