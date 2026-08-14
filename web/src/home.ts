@@ -22,6 +22,7 @@ import { icons } from "./icons";
 import { state } from "./state";
 import { contentRange, formatDay } from "./timescale";
 import { toast } from "./toast";
+import { ancestorKeys, buildTree, type FolderNode, type TreeNode } from "./tree";
 import type { Contributor, Roadmap, RoadmapFull, TrashedRoadmap } from "./types";
 
 function errMsg(e: unknown): string {
@@ -41,6 +42,10 @@ type Tab = "roadmaps" | "trash";
 let tab: Tab = "roadmaps";
 let selectedId: number | null = null;
 let trashEntries: TrashedRoadmap[] = [];
+// Which name-path folders are open (tree.ts keys). Folders start shut — an
+// unfolded tree shows the same wall of rows the folding is there to break up —
+// so the only ones open are those revealSelection puts in.
+let expanded = new Set<string>();
 // previewToken invalidates in-flight preview fetches: clicking A then B fast
 // must never let A's slower response overwrite B's sidebar.
 let previewToken = 0;
@@ -58,8 +63,24 @@ export async function openHome(): Promise<void> {
   }
   tab = "roadmaps";
   selectedId = state.current?.id ?? state.roadmaps[0]?.id ?? null;
+  revealSelection();
   render();
   dialogEl().showModal();
+}
+
+function currentEntries(): Roadmap[] {
+  return tab === "roadmaps" ? state.roadmaps : trashEntries;
+}
+
+// revealSelection opens the folders on the path down to the selected roadmap,
+// and shuts everything else. Home previews the selection in its sidebar, so a
+// selection buried in a shut folder would describe a row nobody can see. Like
+// the tab and the selection itself, the set is ephemeral — every visit starts
+// shut except for where you are.
+function revealSelection(): void {
+  expanded = new Set();
+  const sel = currentEntries().find((r) => r.id === selectedId);
+  if (sel) for (const key of ancestorKeys(sel.name)) expanded.add(key);
 }
 
 // openRoadmap is the single exit into a roadmap: double click, Enter on a row,
@@ -74,6 +95,7 @@ function setTab(t: Tab): void {
   if (tab === t) return;
   tab = t;
   selectedId = t === "roadmaps" ? (state.roadmaps[0]?.id ?? null) : (trashEntries[0]?.id ?? null);
+  revealSelection();
   render();
 }
 
@@ -88,6 +110,7 @@ async function refreshTrash(): Promise<void> {
   if (!trashEntries.some((r) => r.id === selectedId)) {
     selectedId = trashEntries[0]?.id ?? null;
   }
+  revealSelection();
   render();
 }
 
@@ -97,6 +120,13 @@ async function refreshTrash(): Promise<void> {
 function render(): void {
   const dlg = dialogEl();
   dlg.replaceChildren(tabsRow(), body(), footer());
+}
+
+// renderList redraws only the list pane. Folding a folder must not go through
+// render(): renderRoadmapSide re-fetches the preview every time it runs, and
+// folding has nothing to do with which roadmap is selected.
+function renderList(): void {
+  dialogEl().querySelector(".home-list")?.replaceWith(listPane());
 }
 
 function tabsRow(): HTMLElement {
@@ -129,7 +159,7 @@ function listPane(): HTMLElement {
   const list = document.createElement("div");
   list.className = "home-list";
 
-  const entries: Roadmap[] = tab === "roadmaps" ? state.roadmaps : trashEntries;
+  const entries = currentEntries();
   if (entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "menu-empty";
@@ -138,43 +168,80 @@ function listPane(): HTMLElement {
     return list;
   }
 
-  for (const rm of entries) {
-    const b = document.createElement("button");
-    b.className = "menu-item home-row";
-    if (rm.id === selectedId) b.classList.add("is-selected");
-    // Bold + check for the roadmap open in the chart, as in the old dropdown.
-    if (tab === "roadmaps" && state.current?.id === rm.id) b.classList.add("is-active");
-    // The check marks the roadmap that is open in the chart behind the dialog,
-    // not the row selected inside it — same glyph as the old dropdown.
-    const mark = document.createElement("span");
-    mark.className = "menu-check";
-    if (tab === "roadmaps" && state.current?.id === rm.id) mark.append(icons.check(14));
-    const name = document.createElement("span");
-    name.className = "rm-item-name";
-    name.textContent = rm.name;
-    name.title = rm.name;
-    b.append(mark, name);
-    // A padlock marks the private ones. Only private is marked: public is the
-    // default and by far the common case, so a globe on every other row would
-    // be noise rather than information.
-    if (rm.visibility === "private") {
-      const lock = document.createElement("span");
-      lock.className = "rm-item-lock";
-      lock.title = "Private";
-      lock.append(icons.lock(13));
-      b.append(lock);
-    }
-    b.addEventListener("click", () => {
-      if (selectedId === rm.id) return;
-      selectedId = rm.id;
-      render();
-    });
-    if (tab === "roadmaps") {
-      b.addEventListener("dblclick", () => openRoadmap(rm.id));
-    }
-    list.append(b);
-  }
+  for (const node of buildTree(entries)) list.append(...rowsFor(node, 0));
   return list;
+}
+
+// rowsFor flattens a tree node into the rows it contributes. The list stays a
+// flat run of buttons with depth shown as indentation, so folding changes only
+// which rows exist — not tab order, scrolling, or how a row is clicked.
+function rowsFor(node: TreeNode<Roadmap>, depth: number): HTMLElement[] {
+  if (node.kind === "leaf") return [roadmapRow(node.roadmap, node.name, depth)];
+  const open = expanded.has(node.key);
+  const rows = [folderRow(node, open, depth)];
+  if (open) {
+    for (const child of node.children) rows.push(...rowsFor(child, depth + 1));
+  }
+  return rows;
+}
+
+// folderRow renders a synthetic folder: a disclosure row, never a selection.
+// Clicking one folds it and nothing else — no roadmap is behind it to open.
+function folderRow(node: FolderNode<Roadmap>, open: boolean, depth: number): HTMLElement {
+  const b = document.createElement("button");
+  b.className = "menu-item home-folder";
+  b.style.setProperty("--depth", String(depth));
+  const name = document.createElement("span");
+  name.className = "rm-item-name";
+  name.textContent = node.name;
+  b.append(open ? icons.chevronDown(14) : icons.chevronRight(14), icons.folder(14), name);
+  b.addEventListener("click", () => {
+    if (open) expanded.delete(node.key);
+    else expanded.add(node.key);
+    renderList();
+  });
+  return b;
+}
+
+// roadmapRow renders one roadmap. `label` is the last segment of its name; the
+// full name stays in the tooltip, so a row nested two folders deep can still
+// be read in full without folding back up.
+function roadmapRow(rm: Roadmap, label: string, depth: number): HTMLElement {
+  const b = document.createElement("button");
+  b.className = "menu-item home-row";
+  b.style.setProperty("--depth", String(depth));
+  if (rm.id === selectedId) b.classList.add("is-selected");
+  // Bold + check for the roadmap open in the chart, as in the old dropdown.
+  if (tab === "roadmaps" && state.current?.id === rm.id) b.classList.add("is-active");
+  // The check marks the roadmap that is open in the chart behind the dialog,
+  // not the row selected inside it — same glyph as the old dropdown.
+  const mark = document.createElement("span");
+  mark.className = "menu-check";
+  if (tab === "roadmaps" && state.current?.id === rm.id) mark.append(icons.check(14));
+  const name = document.createElement("span");
+  name.className = "rm-item-name";
+  name.textContent = label;
+  name.title = rm.name;
+  b.append(mark, name);
+  // A padlock marks the private ones. Only private is marked: public is the
+  // default and by far the common case, so a globe on every other row would
+  // be noise rather than information.
+  if (rm.visibility === "private") {
+    const lock = document.createElement("span");
+    lock.className = "rm-item-lock";
+    lock.title = "Private";
+    lock.append(icons.lock(13));
+    b.append(lock);
+  }
+  b.addEventListener("click", () => {
+    if (selectedId === rm.id) return;
+    selectedId = rm.id;
+    render();
+  });
+  if (tab === "roadmaps") {
+    b.addEventListener("dblclick", () => openRoadmap(rm.id));
+  }
+  return b;
 }
 
 function sidePane(): HTMLElement {

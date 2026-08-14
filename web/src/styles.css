@@ -2366,6 +2366,20 @@ dialog input:focus {
   background: var(--grid-strong);
 }
 
+/* Rows indent by their depth in the folded name tree (tree.ts), which the row
+   carries as --depth. One step is the width of a chevron plus its gap, so a
+   nested row's name starts under its parent's. */
+.home-row,
+.home-folder {
+  padding-left: calc(10px + var(--depth, 0) * 16px);
+}
+
+/* A folder is a disclosure row, not a roadmap: muted, so a list of folders
+   reads as scaffolding and the roadmap names stay the foreground. */
+.home-folder {
+  color: var(--ink-2);
+}
+
 .home-side {
   width: 400px;
   min-height: 320px; /* keep the dialog from resizing as previews swap */

@@ -107,6 +107,11 @@ export const icons = {
   chevronDown: (size = 14) => svg(`<path d="m6 9 6 6 6-6"/>`, size),
   chevronLeft: (size = 14) => svg(`<path d="m15 6-6 6 6 6"/>`, size),
   chevronRight: (size = 14) => svg(`<path d="m9 6 6 6-6 6"/>`, size),
+  folder: (size = 16) =>
+    svg(
+      `<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`,
+      size,
+    ),
   // Paired arrows moving away/together: expand all and collapse all.
   expandAll: (size = 16) =>
     svg(`<path d="m7 9 5-5 5 5"/><path d="m7 15 5 5 5-5"/>`, size),

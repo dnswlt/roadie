@@ -58,7 +58,8 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`trash.go`) · visibility (`store/access.go`, `s.guard`) · contributors
 (`contributors.go`) · schedule (`schedule.go`, `schedule.ts`) · SSE
 (`server/events.go`, `events.ts`) · auth (`internal/auth`) · find
-(`search.ts` + `search-list.ts` + `find.ts`) · Home dialog (`home.ts`) · shortcuts (`keys.ts`) ·
+(`search.ts` + `search-list.ts` + `find.ts`) · Home dialog (`home.ts`, name-path
+folding in `tree.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`).
 
@@ -154,6 +155,11 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **`--danger` is chrome-only** — menus, dialogs, buttons, toasts, the rail. It
   means "destructive, or already failed", so red never renders on the timeline;
   chart warnings are `--flag`, including dependency conflicts.
+- **Roadmap names stay flat; Home folds `>` into a tree** (`tree.ts`) — a rendered
+  convention, nothing stored, no round-trip. A row sits at its path minus its own
+  last segment, so `Platform` stays top level beside a `Platform` folder. Folders
+  are synthetic and never selectable, and start shut except on the path to the
+  selection.
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**
