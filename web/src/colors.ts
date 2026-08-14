@@ -2,21 +2,18 @@
 // tint, border and hover shade via color-mix.
 //
 // The set is muted and mid-toned — soft rather than primary, all at roughly one
-// weight so no lane shouts over the others, and all light enough to carry dark
-// ink (--ink) on the main bars. A cornflower blue, a pistachio green, a warm
-// flamingo, a soft banana yellow, a dusty amethyst, and a birch greige. Three
-// of those are deliberate: the green is a true leaf green rather than the sage
-// it replaced, which leaned teal and sat coldly beside the warm reds; the red
-// is a salmon rather than a rosy cherry, which crowded --today; and "gray" is
-// warm rather than neutral, because a true gray fights this set.
+// weight so no lane shouts over the others. A cornflower blue, a pistachio
+// green, a warm flamingo, a soft banana yellow, a light amethyst, and a birch
+// greige. Keep the red off --today, the one thing it sits near.
 //
-// The gray is the odd one and earns its place by *not* being a hue: it reads as
-// unassigned or supporting work, a slot no sixth color could occupy. Distance
-// metrics understate it — it lands 0.089 from flamingo, closer than any pair
-// here — but chroma 0.02 against flamingo's 0.09 is the categorical "gray vs
-// coloured" difference, which the eye resolves faster than a hue rotation.
-// Its one weak spot is derived, not direct: .child-bar mixes it to a pale
-// neutral that sits nearer --border than any other lane's tint.
+// Every lane clears 7.0 against --ink: bar titles are read as dark ink on these
+// fills all day. Retune by lifting OKLCH lightness alone — hue and chroma held —
+// to the least that clears it, which is why five sit within 0.02 L of each other.
+//
+// The gray earns its slot by *not* being a hue — it reads as unassigned or
+// supporting work — and is warm rather than neutral, because a true gray fights
+// this set. Its weak spot is derived, not direct: .child-bar mixes it to a pale
+// neutral sitting nearer --border than any other lane's tint.
 //
 // These are sRGB. Never re-derive one by sampling pixels off the screen: macOS
 // screenshots and Digital Colour Meter report Display P3 coordinates, so a
@@ -35,18 +32,19 @@
 // is a bright amber fill plus a white ring (see styles.css), and the ring is
 // what lets it survive a lane of any hue — so a new lane does not have to dodge
 // amber. What would break it is a near-white lane, leaving the ring nothing to
-// separate against. These sit at oklab L 0.64..0.81.
+// separate against. These sit at oklab L 0.70..0.81: the ring has 2.6:1 against
+// them, and 1.8:1 against orange, the closest case.
 //
 // The map keys are persisted on lanes — "red" is a stored value, not a
 // description of the hex. Retheme by changing the hex, never the key.
 
 export const LANE_COLORS: Record<string, string> = {
-  blue: "#668be1",
+  blue: "#779df5",
   green: "#85ad59",
-  red: "#d6837a",
+  red: "#dc897f",
   orange: "#e7ba51",
-  purple: "#a479b1",
-  gray: "#a5998c",
+  purple: "#bc90c9",
+  gray: "#aa9d90",
 };
 
 export const LANE_COLOR_ORDER = ["blue", "green", "red", "orange", "purple", "gray"];

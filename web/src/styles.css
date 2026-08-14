@@ -27,7 +27,7 @@
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
   --shadow-pop: 0 4px 16px rgba(16, 24, 40, 0.14), 0 1px 3px rgba(16, 24, 40, 0.08);
   /* Default lane color; each .lane overrides --c with its own theme. */
-  --c: #668be1;
+  --c: #779df5;
 }
 
 * {
@@ -957,9 +957,9 @@ kbd {
   background: var(--c);
   /* The app's ink, never #000. Bar titles rank with list rows and panel fields;
      pure black made the chart the heaviest text on screen on top of being its
-     most saturated area. Costs ~12% of contrast ratio against black; purple is
-     the weakest pairing at 5.3:1, so it is the one to re-check when a lane
-     color moves. */
+     most saturated area. Costs ~12% of contrast ratio against black, which the
+     lane colors absorb: every one clears 7.0 here (colors.ts), four of them
+     only just, so a lane color that moves gets re-checked against this. */
   color: var(--ink);
   cursor: grab;
   box-shadow: var(--shadow);
@@ -1530,14 +1530,14 @@ kbd {
   gap: 2px;
   height: 30px; /* PARENT_BAR_H */
   padding: 0 8px; /* where a bar's resize handles would sit */
-  background: color-mix(in oklab, var(--c) 18%, var(--surface));
+  background: color-mix(in oklab, var(--c) 22%, var(--surface));
   color: var(--ink);
   cursor: grab; /* rows drag like bars: vertically, via wbs-dnd.ts */
   user-select: none;
 }
 
 .wbs-row:hover {
-  background: color-mix(in oklab, var(--c) 28%, var(--surface));
+  background: color-mix(in oklab, var(--c) 32%, var(--surface));
 }
 
 /* Parent titles carry the hierarchy the solid fill used to. */
@@ -1546,15 +1546,19 @@ kbd {
 }
 
 /* Child rows: fainter still, indented, and separated by a hairline — at these
-   tints, touching rows (CHILD_GAP is 0) would otherwise blur into one. */
+   tints, touching rows (CHILD_GAP is 0) would otherwise blur into one. The ink
+   is .child-bar's, so a child reads the same in both views, and at these tints
+   it carries the parent/child split the fill no longer can on its own.
+   .bar-title and .wbs-dates both inherit it. */
 .wbs-child {
   margin-left: 26px;
-  background: color-mix(in oklab, var(--c) 7%, var(--surface));
-  border-top: 1px solid color-mix(in oklab, var(--c) 20%, var(--surface));
+  background: color-mix(in oklab, var(--c) 10%, var(--surface));
+  color: color-mix(in oklab, var(--c) 47%, black);
+  border-top: 1px solid color-mix(in oklab, var(--c) 24%, var(--surface));
 }
 
 .wbs-child:hover {
-  background: color-mix(in oklab, var(--c) 20%, var(--surface));
+  background: color-mix(in oklab, var(--c) 24%, var(--surface));
 }
 
 .wbs-row.selected {
@@ -1628,10 +1632,10 @@ kbd {
   height: 8px;
   margin-left: 8px;
   overflow: hidden;
-  /* Darker than BOTH row tints (18% parent, 7% child): the empty part of the
+  /* Darker than BOTH row tints (22% parent, 10% child): the empty part of the
      track is the roadmap's span, and it has to stay legible as such on every
      row kind, or the fill loses the scale it is measured against. */
-  background: color-mix(in oklab, var(--c) 30%, var(--surface));
+  background: color-mix(in oklab, var(--c) 34%, var(--surface));
   pointer-events: none;
 }
 

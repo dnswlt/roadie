@@ -148,7 +148,9 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **Color is chosen by user preference; only the lane label carries identity.** So the palette is judged
   by eye and by what a hex must sit next to — not against a CVD distance threshold.
   Raise contrast/CVD only when something concrete breaks (text going illegible, a
-  warning marker lost in a lane bar), not as a gate on every color change.
+  warning marker lost in a lane bar), not as a gate on every color change. The one
+  hard number, from exactly such a break: **a lane fill clears 7.0 against `--ink`**
+  (colors.ts). Separation and CVD stay by eye.
 - **`--danger` is chrome-only** — menus, dialogs, buttons, toasts, the rail. It
   means "destructive, or already failed", so red never renders on the timeline;
   chart warnings are `--flag`, including dependency conflicts.
