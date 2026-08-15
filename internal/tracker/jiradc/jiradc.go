@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -112,7 +114,7 @@ func (c *Client) Search(ctx context.Context, query, continuation string, pageSiz
 
 	var result jiraPage
 	if err := c.do(ctx, http.MethodPost, c.endpoint("rest", "api", "2", "search").String(), bytes.NewReader(body), &result); err != nil {
-		return tracker.Page{}, fmt.Errorf("search Jira: %w", err)
+		return tracker.Page{}, searchError(err)
 	}
 
 	page := tracker.Page{Issues: make([]tracker.Issue, len(result.Issues))}
@@ -184,10 +186,31 @@ func (c *Client) normalize(issue jiraIssue) tracker.Issue {
 	}
 }
 
+// searchError promotes a rejection Jira explained into tracker.QueryError, so
+// the server can pass Jira's own wording to the user — a JQL syntax error is
+// only actionable in Jira's words.
+//
+// Exactly 400, not 4xx. The request body a user controls is the query, so only
+// "your request was malformed" can be attributed to them. 401/403 means the
+// deployment's token is wrong or unprivileged and 404 that the base URL is:
+// operator faults that must stay a logged 502, because blaming them on
+// whoever typed the query sends every user hunting a JQL bug that isn't there.
+func searchError(err error) error {
+	var resp *responseError
+	if errors.As(err, &resp) && resp.statusCode == http.StatusBadRequest {
+		if msg := resp.userMessage(); msg != "" {
+			return &tracker.QueryError{Message: msg}
+		}
+	}
+	return fmt.Errorf("search Jira: %w", err)
+}
+
 type responseError struct {
 	statusCode int
 	status     string
-	detail     string
+	// The raw bounded response body. Kept verbatim for the log; userMessage
+	// derives the part fit to show a user.
+	detail string
 }
 
 func (e *responseError) Error() string {
@@ -195,6 +218,26 @@ func (e *responseError) Error() string {
 		return fmt.Sprintf("Jira returned %s: %s", e.status, e.detail)
 	}
 	return fmt.Sprintf("Jira returned %s", e.status)
+}
+
+// userMessage unwraps Jira's error envelope — {"errorMessages": [...],
+// "errors": {field: msg}} — into one line. Anything else (an HTML error page
+// from a proxy, an empty body) yields "", so only text Jira composed as an
+// explanation can reach a user. Field errors are sorted so one rejection
+// always reads the same way.
+func (e *responseError) userMessage() string {
+	var env struct {
+		ErrorMessages []string          `json:"errorMessages"`
+		Errors        map[string]string `json:"errors"`
+	}
+	if json.Unmarshal([]byte(e.detail), &env) != nil {
+		return ""
+	}
+	parts := slices.Clone(env.ErrorMessages)
+	for _, field := range slices.Sorted(maps.Keys(env.Errors)) {
+		parts = append(parts, fmt.Sprintf("%s: %s", field, env.Errors[field]))
+	}
+	return strings.TrimSpace(strings.Join(parts, "; "))
 }
 
 // do owns the shared wire policy: JSON headers, bearer authentication, bounded

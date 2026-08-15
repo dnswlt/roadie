@@ -110,6 +110,62 @@ func TestSearchNotFoundIsNotAnIssueNotFound(t *testing.T) {
 	}
 }
 
+// A rejected query is only actionable in Jira's own words, so a 400 carrying
+// Jira's error envelope becomes a tracker.QueryError the server will show. The
+// other cases must NOT: a body that isn't Jira's envelope may be a proxy's
+// HTML, and 401/403/404/5xx are deployment faults — surfacing those as a query
+// error would send every user hunting a JQL bug that isn't there.
+func TestSearchQueryErrorCarriesJiraMessage(t *testing.T) {
+	const jql = `{"errorMessages":["Error in the JQL Query: Expecting operator but got 'AN'."],"errors":{}}`
+
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		message string // "" = expect a plain error, not a QueryError
+	}{
+		{"jql syntax", http.StatusBadRequest, jql, "Error in the JQL Query: Expecting operator but got 'AN'."},
+		{"field errors sorted", http.StatusBadRequest, `{"errors":{"jql":"is malformed","project":"unknown"}}`, "jql: is malformed; project: unknown"},
+		{"both parts joined", http.StatusBadRequest, `{"errorMessages":["Bad request"],"errors":{"jql":"is malformed"}}`, "Bad request; jql: is malformed"},
+		{"html body", http.StatusBadRequest, `<html><body>Gateway rejected</body></html>`, ""},
+		{"empty envelope", http.StatusBadRequest, `{"errorMessages":[],"errors":{}}`, ""},
+		// Deployment faults, never the query's: an expired token must not
+		// reach the user as a complaint about their JQL.
+		{"expired token", http.StatusUnauthorized, `{"errorMessages":["Client must be authenticated."],"errors":{}}`, ""},
+		{"permission denied", http.StatusForbidden, `{"errorMessages":["You do not have permission."],"errors":{}}`, ""},
+		{"wrong base URL", http.StatusNotFound, `{"errorMessages":["Not found."],"errors":{}}`, ""},
+		{"server error", http.StatusInternalServerError, jql, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				w.Write([]byte(tc.body))
+			}))
+			defer ts.Close()
+			c, _ := New(Config{BaseURL: ts.URL})
+			_, err := c.Search(context.Background(), "project = PAY AN x", "", 10)
+
+			var qErr *tracker.QueryError
+			if !errors.As(err, &qErr) {
+				if tc.message != "" {
+					t.Fatalf("error = %v, want QueryError %q", err, tc.message)
+				}
+				if err == nil {
+					t.Fatal("error = nil, want a failure")
+				}
+				return
+			}
+			if tc.message == "" {
+				t.Fatalf("error = QueryError %q, want a plain error", qErr.Message)
+			}
+			if qErr.Message != tc.message {
+				t.Fatalf("message = %q, want %q", qErr.Message, tc.message)
+			}
+		})
+	}
+}
+
 func TestGetIssue(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/jira/rest/api/2/issue/PAY-1" || r.URL.Query().Get("fields") != "summary,issuetype,status" {

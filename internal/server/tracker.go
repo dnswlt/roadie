@@ -1,9 +1,12 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+
+	"github.com/dnswlt/roadie/internal/tracker"
 )
 
 const (
@@ -41,6 +44,15 @@ func (s *Server) searchTracker(w http.ResponseWriter, r *http.Request) {
 
 	page, err := s.tracker.Search(r.Context(), req.Query, req.Continuation, req.PageSize)
 	if err != nil {
+		// A query the tracker rejected and explained is the user's to fix, so
+		// its wording reaches the browser like a store.ValidationError does.
+		// Anything else is the deployment's problem: it stays a 502 whose
+		// detail is for the log, not for whoever typed the query.
+		var qErr *tracker.QueryError
+		if errors.As(err, &qErr) {
+			writeClientErr(w, qErr)
+			return
+		}
 		log.Printf("tracker search: %v", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "issue tracker query failed"})
 		return

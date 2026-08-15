@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -79,6 +80,25 @@ func TestTrackerSearchDefaultsAndErrors(t *testing.T) {
 		w := doWithServer(t, srv, http.MethodPost, path, trackerSearchRequest{Query: "x"})
 		if w.Code != http.StatusBadGateway {
 			t.Fatalf("status = %d, body %s", w.Code, w.Body)
+		}
+		// The upstream's own words stay in the log: a deployment failure is
+		// not something the person who typed the query can act on.
+		if strings.Contains(w.Body.String(), "offline") {
+			t.Fatalf("body leaks upstream detail: %s", w.Body)
+		}
+	})
+
+	// A rejected query is the user's to fix, so the tracker's explanation has
+	// to survive all the way into the response body.
+	t.Run("rejected query", func(t *testing.T) {
+		const msg = "Error in the JQL Query: Expecting operator but got 'AN'."
+		srv := New(testStore, fstest.MapFS{}, WithTracker(&stubTracker{err: &tracker.QueryError{Message: msg}}))
+		w := doWithServer(t, srv, http.MethodPost, path, trackerSearchRequest{Query: "project = PAY AN x"})
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, body %s", w.Code, w.Body)
+		}
+		if got := decode[map[string]string](t, w)["error"]; got != msg {
+			t.Fatalf("error = %q, want %q", got, msg)
 		}
 	})
 }

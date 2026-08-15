@@ -12,6 +12,17 @@ import (
 // configured tracker identity.
 var ErrNotFound = errors.New("tracker issue not found")
 
+// QueryError is a request the tracker itself rejected and explained — an
+// invalid query being the usual case. Message is the provider's own wording,
+// the only text that can say which part of a query was wrong, so it is meant
+// to reach the user and not just the log. Adapters must only wrap provider
+// text they can attribute to the request; see jiradc.searchError.
+type QueryError struct {
+	Message string
+}
+
+func (e *QueryError) Error() string { return e.Message }
+
 // Issue is the small provider-neutral projection reconciliation needs.
 type Issue struct {
 	ID     string `json:"id"`
