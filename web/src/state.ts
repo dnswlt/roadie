@@ -38,10 +38,12 @@ export type Focus =
   | { kind: "flagged" }
   | { kind: "atRisk" };
 
-// Which projection of the roadmap is on screen: the timeline chart
-// (render.ts) or the WBS outline (wbs.ts). Both render from the same state;
-// only app.ts branches on this.
-export type ViewMode = "timeline" | "wbs";
+// Which projection is on screen: the timeline chart (render.ts), the WBS
+// outline (wbs.ts), or the Jira Recon view (recon.ts). The chart modes render
+// the roadmap from this state; only app.ts branches on viewMode. Recon holds
+// its tracker data in its own module — none of it is roadmap content.
+export type ChartMode = "timeline" | "wbs";
+export type ViewMode = ChartMode | "recon";
 
 // AppState is the single source of truth on the client. All views render
 // from it; mutations go through actions.ts, which keeps it in sync with
@@ -79,10 +81,14 @@ class AppState {
   // Calendar grid a dragged/resized edge snaps to (in addition to always-on
   // item-edge snapping). A global view preference, persisted in localStorage.
   snapMode: SnapMode = "week";
-  // Timeline or WBS outline. A global view preference like snapMode — a way
-  // of working, not a property of any one roadmap — persisted in localStorage
-  // (read at boot in app.ts), toggled by "v" and the topbar button.
+  // Timeline, WBS outline, or Jira Recon. The chart modes are a global view
+  // preference like snapMode — a way of working, not a property of any one
+  // roadmap — persisted in localStorage (read at boot in app.ts) and toggled
+  // by "v" and the topbar button. Recon is a task you visit, not a way of
+  // working, so it is never persisted: a reload lands on the chart.
   viewMode: ViewMode = "timeline";
+  // The chart view to return to when leaving Recon.
+  private lastChartMode: ChartMode = "timeline";
   panelWidth = DEFAULT_PANEL_WIDTH;
   // The edit rail is a fixture, not a popup: it keeps its width whatever is
   // selected, so the chart never resizes under the pointer mid-task. Collapsing
@@ -296,19 +302,39 @@ class AppState {
     this.notify();
   }
 
-  // setViewMode switches between the timeline chart and the WBS outline. Any
-  // current selection is scrolled into view after the switch, so toggling
-  // reads as re-projecting the same spot of the model, not as jumping to an
+  // The chart view "on deck": viewMode itself while a chart is on screen,
+  // otherwise the one Recon was entered from.
+  get chartMode(): ChartMode {
+    return this.viewMode === "recon" ? this.lastChartMode : this.viewMode;
+  }
+
+  // setViewMode switches what the main area shows. Any current selection is
+  // scrolled into view after the switch, so toggling between chart views reads
+  // as re-projecting the same spot of the model, not as jumping to an
   // unrelated page. A selected milestone is always renderable in the WBS:
-  // selecting one unfolds its group (see selectMilestone).
+  // selecting one unfolds its group (see selectMilestone). Recon is not
+  // persisted (see viewMode), so localStorage only ever holds a chart mode.
   setViewMode(mode: ViewMode): void {
     if (mode === this.viewMode) return;
     this.viewMode = mode;
-    localStorage.setItem("roadie.view", mode);
+    if (mode !== "recon") {
+      this.lastChartMode = mode;
+      localStorage.setItem("roadie.view", mode);
+    }
     if (this.selectedItemIds.size > 0 || this.selectedMilestoneId !== null) {
       this.scrollToSelection = true;
     }
     this.notify();
+  }
+
+  // toggleChartView backs the "v" shortcut and the topbar view button: it
+  // alternates between the two chart views, and from Recon returns to the one
+  // last shown — Recon is never a stop in the cycle; only its own button
+  // enters it.
+  toggleChartView(): void {
+    this.setViewMode(
+      this.viewMode === "recon" ? this.chartMode : this.viewMode === "wbs" ? "timeline" : "wbs",
+    );
   }
 
   isMilestonesCollapsed(laneId: number): boolean {

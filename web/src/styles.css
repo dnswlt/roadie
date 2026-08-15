@@ -280,6 +280,32 @@ body {
   cursor: default;
 }
 
+/* Bare topbar buttons hidden per view (fold-all and view-recon,
+   renderTopbar). Wrapped buttons hide via .menu-wrap.hidden instead. */
+.icon-btn.hidden {
+  display: none;
+}
+
+/* The view group: timeline / WBS / Jira Recon as one segmented control, the
+   current view lit (.icon-btn.active). Same furniture as .zoom below. The
+   separator rides on the following sibling, so a hidden Recon button leaves
+   no stray line at the group's edge. */
+.view-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.view-group .icon-btn {
+  border-radius: 0;
+  width: 32px;
+}
+
+.view-group .icon-btn + .icon-btn {
+  border-left: 1px solid var(--border);
+}
+
 .zoom {
   display: flex;
   border: 1px solid var(--border);
@@ -3064,4 +3090,127 @@ button.deps-node:hover {
 .snapshot-banner-actions {
   display: flex;
   gap: 8px;
+}
+
+/* ---------- Jira Recon view (recon.ts) ---------- */
+
+/* A reading-width column inside the chart's scroll container: Recon is a list
+   to review, not a canvas, so it doesn't stretch to the viewport. */
+.recon {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 20px 28px 48px;
+}
+
+.recon h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.recon-query {
+  display: flex;
+  gap: 8px;
+}
+
+/* JQL is code; monospace keeps operators and quoting scannable. */
+.recon-input {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.recon-input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.recon-error {
+  margin-top: 10px;
+  color: var(--danger);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+.recon-hint {
+  margin-top: 28px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Four true columns — key, summary, type, status — each sized by its widest
+   cell: every row is a subgrid of these tracks, so the columns line up across
+   rows instead of leaving type and status ragged. */
+.recon-list {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  column-gap: 14px;
+}
+
+.recon-issue {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.recon-issue-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
+.recon-issue-key:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.recon-issue-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recon-issue-type {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* A neutral chip: Jira's own status colors carry workflow semantics Roadie
+   deliberately does not import. Stretched to the column and centered, so the
+   chips read as one column, not a ragged stack of pills. */
+.recon-issue-status {
+  justify-self: stretch;
+  text-align: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--grid);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.recon-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.recon-count {
+  color: var(--muted);
+  font-size: 12px;
 }

@@ -13,6 +13,7 @@ import { openHelpDialog } from "./help";
 import { copyText } from "./clipboard";
 import { bindings, initKeys } from "./keys";
 import { projectSelection, renderChart } from "./render";
+import { renderRecon } from "./recon";
 import { projectWbsSelection, renderWbs } from "./wbs";
 import { initWbsDnd } from "./wbs-dnd";
 import { laneMarkdown, roadmapMarkdown } from "./markdown";
@@ -63,7 +64,8 @@ function snapActive(): boolean {
 
 function render(): void {
   renderTopbar();
-  if (state.viewMode === "wbs") renderWbs(chart);
+  if (state.viewMode === "recon") renderRecon(chart);
+  else if (state.viewMode === "wbs") renderWbs(chart);
   else renderChart(chart);
   renderPanel(panel);
   renderHistory(historyEl, snapshotBanner);
@@ -143,15 +145,29 @@ function renderTopbar(): void {
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
   $("snap-menu").title = `Snap to ${snapLabel} — see Help (?) for modifier keys`;
-  // The view toggle shows the view it switches TO (like rm-visibility: the
-  // label states the action). Snap and zoom act on the time axis, which the
-  // WBS projects away, so they hide rather than sit around disabled.
-  const wbs = state.viewMode === "wbs";
-  const viewBtn = $("view-toggle");
-  viewBtn.replaceChildren(wbs ? icons.ganttChart(18) : icons.listTree(18));
-  viewBtn.title = wbs ? "Switch to timeline view (v)" : "Switch to WBS view (v)";
-  $("snap-wrap").classList.toggle("hidden", wbs);
-  $("zoom-controls").classList.toggle("hidden", wbs);
+  // The view group is a segmented control: three destinations, the current
+  // one lit. With two views, one toggle showing its target was enough; a
+  // third destination made "where am I, where can I go" worth showing
+  // outright. The Recon button is absent unless the deployment has a tracker
+  // connection. Snap and zoom act on the time axis, which the other views
+  // project away, so they hide rather than sit around disabled.
+  const recon = state.viewMode === "recon";
+  $("view-timeline").classList.toggle("active", state.viewMode === "timeline");
+  $("view-wbs").classList.toggle("active", state.viewMode === "wbs");
+  const reconBtn = $("view-recon") as HTMLButtonElement;
+  reconBtn.classList.toggle("hidden", !state.me.trackerAvailable);
+  reconBtn.classList.toggle("active", recon);
+  reconBtn.disabled = !state.current;
+  $("snap-wrap").classList.toggle("hidden", state.viewMode !== "timeline");
+  $("zoom-controls").classList.toggle("hidden", state.viewMode !== "timeline");
+  // Recon shows tracker results, not the chart: find, lane visibility, focus
+  // and folding all act on chart content, so they hide too (the snap/zoom
+  // rule). All sit left of the spacer, so nothing in the right-hand button
+  // cluster moves when they go.
+  $("find-wrap").classList.toggle("hidden", recon);
+  $("lane-vis-wrap").classList.toggle("hidden", recon);
+  $("focus-wrap").classList.toggle("hidden", recon);
+  $("fold-all").classList.toggle("hidden", recon);
 }
 
 // buildSnapMenu (re)populates the snap-grid popover: one row per mode, the
@@ -333,6 +349,9 @@ function injectIcons(): void {
   $("rm-copy-md").prepend(icons.copy(14));
   $("rm-delete").prepend(icons.trash(14));
   $("snap-menu").append(icons.magnet(18));
+  $("view-timeline").append(icons.ganttChart(18));
+  $("view-wbs").append(icons.listTree(18));
+  $("view-recon").append(icons.listChecks(18));
   $("zoom-fit").append(icons.zoomFit());
   $("zoom-in").append(icons.zoomIn());
   $("zoom-out").append(icons.zoomOut());
@@ -463,9 +482,9 @@ function wireTopbar(): void {
     );
     if (ok) void actions.deleteRoadmap();
   });
-  $("view-toggle").addEventListener("click", () => {
-    state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs");
-  });
+  $("view-timeline").addEventListener("click", () => state.setViewMode("timeline"));
+  $("view-wbs").addEventListener("click", () => state.setViewMode("wbs"));
+  $("view-recon").addEventListener("click", () => state.setViewMode("recon"));
   $("fold-all").addEventListener("click", () => {
     state.setAllParentsCollapsed(!state.allParentsCollapsed());
   });
@@ -557,9 +576,11 @@ function wireChart(): void {
     }
     // Click on empty chart space clears the selection. (.wbs-row is listed
     // for its link-icon clicks — the only row clicks that reach here, since
-    // wbs-dnd.ts lets the anchor's pointerdown through.)
+    // wbs-dnd.ts lets the anchor's pointerdown through. .recon exempts the
+    // whole Recon view: its furniture — query box, Load more — must not drop
+    // a selection the panel is showing.)
     if (
-      !t.closest(".bar, .child-bar, .milestone, .lane-label, .wbs-row, .wbs-milestone") &&
+      !t.closest(".bar, .child-bar, .milestone, .lane-label, .wbs-row, .wbs-milestone, .recon") &&
       state.clearSelection()
     ) {
       state.notifySelection();
@@ -947,7 +968,8 @@ async function boot(): Promise<void> {
   // guards itself against rebuilding under a focused field).
   state.subscribeSelection(() => {
     if (state.viewMode === "wbs") projectWbsSelection(chart);
-    else projectSelection(chart);
+    else if (state.viewMode === "timeline") projectSelection(chart);
+    // Recon draws no selection; the panel alone reflects it there.
     renderPanel(panel);
   });
   injectIcons();

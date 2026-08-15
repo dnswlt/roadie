@@ -39,15 +39,15 @@
       <!-- Find searches the loaded roadmap, not the rendered chart: hidden
            contexts, folded children, labels and descriptions are all reachable
            here and none of them are reachable by the browser's own Ctrl+F. -->
-      <div class="menu-wrap">
+      <div class="menu-wrap" id="find-wrap">
         <button id="find-menu" class="icon-btn" title="Find items (/)"></button>
         <div id="find-pop" class="menu find-pop hidden"></div>
       </div>
-      <div class="menu-wrap">
+      <div class="menu-wrap" id="lane-vis-wrap">
         <button id="lane-vis-menu" class="icon-btn" title="Show/hide contexts"></button>
         <div id="lane-vis-pop" class="menu hidden"></div>
       </div>
-      <div class="menu-wrap">
+      <div class="menu-wrap" id="focus-wrap">
         <button id="focus-menu" class="icon-btn" title="Focus on labels"></button>
         <div id="focus-pop" class="menu hidden"></div>
       </div>
@@ -64,11 +64,19 @@
         <button id="zoom-out" class="icon-btn" title="Zoom out (Ctrl+scroll)"></button>
         <button id="zoom-in" class="icon-btn" title="Zoom in (Ctrl+scroll)"></button>
       </div>
-      <!-- Icon and title are set in renderTopbar: both show the view the button
-           switches TO, and flip with each toggle. It must stay after the wraps
-           above, which hide in the WBS view: before them, toggling moved the
-           button out from under the pointer that had just pressed it. -->
-      <button id="view-toggle" class="icon-btn"></button>
+      <!-- The view group: timeline, WBS, and Jira Recon as one segmented
+           control, the current view lit (renderTopbar). "v" cycles the chart
+           pair only — Recon is a task you visit, not a way of working, and is
+           hidden unless the deployment has a tracker connection. The group
+           must stay after the wraps above, which hide outside the timeline:
+           before them, switching views moved these buttons out from under the
+           pointer that had just pressed them. -->
+      <div class="view-group">
+        <button id="view-timeline" class="icon-btn" title="Timeline view (v)"></button>
+        <button id="view-wbs" class="icon-btn" title="WBS view (v)"></button>
+        <button id="view-recon" class="icon-btn hidden"
+          title="Jira Recon — check this roadmap against Jira"></button>
+      </div>
       <button id="help-menu" class="icon-btn" title="Help"></button>
       <!-- Shown only when the server runs with authentication; on an open
            deployment there is no account concept to expose. -->

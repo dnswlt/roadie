@@ -134,8 +134,10 @@ export const bindings: Binding[] = [
   {
     key: "v",
     label: "v",
+    // From Jira Recon, "v" returns to the chart view last shown — Recon is
+    // never a stop in the cycle (it has its own topbar button).
     description: "*Switch between* the timeline and WBS views.",
-    run: () => state.setViewMode(state.viewMode === "wbs" ? "timeline" : "wbs"),
+    run: () => state.toggleChartView(),
   },
   {
     key: "z",

@@ -63,7 +63,8 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`search.ts` + `search-list.ts` + `find.ts`) · Home dialog (`home.ts`, name-path
 folding in `tree.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
-dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`).
+dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`) ·
+Jira Recon view (`recon.ts`, server `tracker.go`).
 
 ## Rules
 

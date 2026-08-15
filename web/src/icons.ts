@@ -216,6 +216,14 @@ export const icons = {
       size,
     );
   },
+  // Jira Recon: a list being checked off — reconciliation is ticking a result
+  // list against the plan.
+  listChecks: (size = 16) =>
+    svg(
+      `<path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/>` +
+        `<path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>`,
+      size,
+    ),
   // The two faces of the view toggle: offset horizontal bars for the
   // timeline, a nested outline for the WBS.
   ganttChart: (size = 16) =>
