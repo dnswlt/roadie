@@ -1,0 +1,26 @@
+[
+  {
+    "key": "PAY-101",
+    "summary": "Introduce the new payment authorization flow",
+    "issueType": "Epic",
+    "status": "In Progress"
+  },
+  {
+    "key": "PAY-117",
+    "summary": "Add retry handling for payment providers",
+    "issueType": "Story",
+    "status": "To Do"
+  },
+  {
+    "key": "PLAT-42",
+    "summary": "Move audit events to the shared event stream",
+    "issueType": "Feature",
+    "status": "In Review"
+  },
+  {
+    "key": "MOB-88",
+    "summary": "Refresh account recovery on mobile",
+    "issueType": "Epic",
+    "status": "Done"
+  }
+]
