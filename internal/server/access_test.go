@@ -313,6 +313,7 @@ func TestEveryAPIRouteIsClassified(t *testing.T) {
 	// Each filters or decides internally instead.
 	exempt := map[string]string{
 		"GET /api/me":               "reports the caller's own identity",
+		"POST /api/tracker/search":  "deployment-wide external search; contains no roadmap data",
 		"GET /api/roadmaps":         "a listing has no id; filtered in SQL by ListRoadmaps",
 		"GET /api/roadmaps/trash":   "same, via ListTrashedRoadmaps",
 		"POST /api/roadmaps":        "nothing exists yet to authorize",

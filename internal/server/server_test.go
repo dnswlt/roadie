@@ -42,6 +42,10 @@ func TestMain(m *testing.M) {
 
 // do runs a request through the server and returns the recorder.
 func do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
+	return doWithServer(t, testSrv, method, path, body)
+}
+
+func doWithServer(t *testing.T, srv *Server, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var r *http.Request
 	if body != nil {
@@ -55,7 +59,7 @@ func do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder 
 		r = httptest.NewRequest(method, path, nil)
 	}
 	w := httptest.NewRecorder()
-	testSrv.ServeHTTP(w, r)
+	srv.ServeHTTP(w, r)
 	return w
 }
 

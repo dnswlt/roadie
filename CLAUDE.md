@@ -14,6 +14,8 @@ make db-up                # start dev Postgres (container, port 5433 — see bel
 make dev                  # esbuild watch + Go server (-dev -seed) on http://localhost:8080
 make -C dev/oidc up       # start the throwaway OIDC provider (dev/oidc)
 make dev-oidc             # like `make dev` but with -auth=oidc against that provider
+make -C dev/jira run      # start the fixture-backed Jira Data Center mock
+make dev-jira             # like `make dev` but with Jira Recon pointed at that mock
 make test                 # Go tests (store tests skip if DATABASE_URL unset) + frontend tests
 make test-e2e             # browser gesture tests (web/e2e); needs db-up + `npx --prefix web playwright install chromium` once
 make check                # go vet + tsc --noEmit

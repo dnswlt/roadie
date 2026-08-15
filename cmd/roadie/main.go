@@ -19,6 +19,7 @@ import (
 	"github.com/dnswlt/roadie/internal/auth"
 	"github.com/dnswlt/roadie/internal/server"
 	"github.com/dnswlt/roadie/internal/store"
+	"github.com/dnswlt/roadie/internal/tracker/jiradc"
 	"github.com/dnswlt/roadie/web"
 )
 
@@ -42,6 +43,8 @@ func run() error {
 	insecureTLS := flag.Bool("oidc-insecure-tls", false, "skip TLS verification when talking to the OIDC provider (local mocks only, never in production; relaxes Roadie's own client, so it cannot help a browser reach a self-signed provider)")
 	authDebug := flag.Bool("auth-debug", envBool("AUTH_DEBUG"),
 		"log every claim the OIDC provider sends (personal data: for diagnosing a provider, not for normal running); also settable as AUTH_DEBUG")
+	jiraURL := flag.String("jira-url", strings.TrimSpace(os.Getenv("JIRA_URL")),
+		"Jira Data Center base URL (empty disables Jira Recon; also settable as JIRA_URL; token comes only from JIRA_TOKEN)")
 	flag.Parse()
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -83,6 +86,19 @@ func run() error {
 	opts, err := authOptions(ctx, *authMode, *redirectURL, *sessionTTL, *insecureTLS, *authDebug)
 	if err != nil {
 		return err
+	}
+	if *jiraURL != "" {
+		jira, err := jiradc.New(jiradc.Config{
+			BaseURL: *jiraURL,
+			// Secrets never have flag equivalents: flags are visible in ps and in
+			// OpenShift workload definitions, while env values can come from a Secret.
+			Token: os.Getenv("JIRA_TOKEN"),
+		})
+		if err != nil {
+			return fmt.Errorf("jira: %w", err)
+		}
+		opts = append(opts, server.WithTracker(jira))
+		log.Printf("jira: reconciliation enabled for %s", *jiraURL)
 	}
 
 	app := server.New(st, static, opts...)

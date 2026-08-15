@@ -18,6 +18,7 @@ import (
 	"github.com/dnswlt/roadie/internal/auth"
 	"github.com/dnswlt/roadie/internal/model"
 	"github.com/dnswlt/roadie/internal/store"
+	"github.com/dnswlt/roadie/internal/tracker"
 )
 
 type Server struct {
@@ -30,6 +31,11 @@ type Server struct {
 	// consult this field — they read the identity from the request context,
 	// which is populated either way.
 	auth *auth.Authenticator
+
+	// tracker is optional deployment configuration. The route remains present
+	// without one and reports 503, so a disabled feature is an API response rather
+	// than an accidental fallthrough to the SPA.
+	tracker tracker.Client
 
 	// handler is mux wrapped in the middleware chain built by New; ServeHTTP
 	// delegates to it.
@@ -48,7 +54,7 @@ type Server struct {
 }
 
 // Option configures a Server. Options keep New's signature stable as optional
-// subsystems (so far: authentication) are added.
+// subsystems such as authentication and issue tracking are added.
 type Option func(*Server)
 
 // WithAuth turns on authentication: every request outside the login flow and
@@ -56,6 +62,11 @@ type Option func(*Server)
 // request context. Without it the server stays fully open, as before.
 func WithAuth(a *auth.Authenticator) Option {
 	return func(s *Server) { s.auth = a }
+}
+
+// WithTracker enables the read-only external issue search used by Jira Recon.
+func WithTracker(t tracker.Client) Option {
+	return func(s *Server) { s.tracker = t }
 }
 
 func New(st *store.Store, static fs.FS, opts ...Option) *Server {
@@ -85,13 +96,15 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	// Who am I / is auth even on. The frontend asks once at startup so the UI
 	// learns the mode at runtime instead of at build time.
 	s.mux.HandleFunc("GET /api/me", s.getMe)
+	// Tracker search is deployment-wide: it contains no roadmap data. Saved
+	// queries and ignore decisions will be roadmap-scoped when they arrive.
+	s.mux.HandleFunc("POST /api/tracker/search", s.searchTracker)
 
 	// Routes that name a roadmap — directly, or via a lane, item, milestone or
 	// snapshot id — are wrapped in guard or snap, which is where the caller is
-	// checked against that roadmap's visibility. The three that name no roadmap
-	// (this listing, create, import) are the exceptions, and they are exceptions
-	// by nature: a listing has no id to check and filters in SQL instead, and
-	// nothing exists yet to authorize when a roadmap is being created.
+	// checked against that roadmap's visibility. Routes that name no roadmap are
+	// exceptions by nature: listings filter in SQL, nothing exists yet to guard
+	// during creation/import, and tracker search contains no Roadie data.
 	s.mux.HandleFunc("GET /api/roadmaps", s.listRoadmaps)
 	s.mux.HandleFunc("POST /api/roadmaps", s.createRoadmap)
 	s.mux.HandleFunc("POST /api/roadmaps/import", s.importRoadmap)

@@ -104,6 +104,18 @@ exchange), while the browser connects to the provider itself and applies its own
 trust store. That flag is therefore only useful for a headless/scripted flow,
 and never in production.
 
+## Jira reconciliation
+
+Set `JIRA_URL` and `JIRA_TOKEN` to enable the read-only Jira Data Center client.
+The token has no flag equivalent.
+
+For local development:
+
+```sh
+make -C dev/jira run
+make dev-jira
+```
+
 ## Docker
 
 The `Dockerfile` builds a small (~20 MB) distroless image with the frontend

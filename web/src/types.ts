@@ -130,6 +130,20 @@ export interface Contributor {
   lastSeen: string; // ISO 8601 timestamp
 }
 
+export interface TrackerIssue {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+  status: string;
+  url: string;
+}
+
+export interface TrackerPage {
+  issues: TrackerIssue[];
+  next?: string;
+}
+
 // Snapshot metadata (no payload) for the version-history list. `name` is set
 // only for manual/named snapshots; auto snapshots have a null name.
 export interface Snapshot {

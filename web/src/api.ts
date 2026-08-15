@@ -16,6 +16,7 @@ import type {
   RoadmapFull,
   SchedulePeriod,
   Snapshot,
+  TrackerPage,
   TrashedRoadmap,
   Visibility,
 } from "./types";
@@ -95,6 +96,13 @@ export const api = {
   importRoadmap: (data: unknown) => req<Roadmap>("POST", "/api/roadmaps/import", data),
   duplicateRoadmap: (id: number, name: string) =>
     req<Roadmap>("POST", `/api/roadmaps/${id}/duplicate`, { name }),
+
+  searchTracker: (query: string, continuation?: string, pageSize?: number) =>
+    req<TrackerPage>("POST", "/api/tracker/search", {
+      query,
+      continuation,
+      pageSize,
+    }),
 
   listContributors: (roadmapId: number) =>
     req<Contributor[]>("GET", `/api/roadmaps/${roadmapId}/contributors`),

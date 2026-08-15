@@ -19,8 +19,9 @@ OIDC_CLIENT_ID ?= roadie-dev
 OIDC_CLIENT_SECRET ?= roadie-dev-secret
 # Roadie's own listen address — the same one `make dev` uses.
 OIDC_ADDR ?= localhost:8080
+JIRA_URL ?= http://localhost:4012
 
-.PHONY: dev dev-oidc deps kill-watch build test check db-up db-down frontend frontend-watch \
+.PHONY: dev dev-oidc dev-jira deps kill-watch build test check db-up db-down frontend frontend-watch \
 	docker-build docker-up docker-down docs docs-serve
 
 db-up:
@@ -67,6 +68,13 @@ dev:
 	@trap 'kill 0' EXIT; \
 	npm run --prefix web watch & \
 	DATABASE_URL=$(DATABASE_URL) go run ./cmd/roadie -dev -seed
+
+# Run Roadie against the throwaway Jira Data Center server in dev/jira. Start
+# that server separately with `make -C dev/jira run`.
+dev-jira:
+	@curl -s --max-time 3 -o /dev/null $(JIRA_URL)/healthz \
+		|| { echo "no Jira mock at $(JIRA_URL) — run 'make -C dev/jira run'"; exit 1; }
+	JIRA_URL=$(JIRA_URL) $(MAKE) dev
 
 # Like `dev`, but with authentication on. Serves on the same address as `make
 # dev`, so bookmarks and per-origin localStorage carry over.
