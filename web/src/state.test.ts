@@ -232,3 +232,27 @@ test("bulk parent folding toggles every parent and deselects hidden children", (
   state.current = roadmap([item(6, [], false)]);
   assert.equal(state.hasParentItems(), false);
 });
+
+// "v" from the reconciliation view returns to the chart view last shown. The
+// case that catches a stale lastChartMode is the one boot produces: app.ts
+// restores a persisted WBS by assigning viewMode directly, so nothing but
+// setViewMode can have recorded which chart view is behind Recon.
+test("v returns to the chart view boot restored, not the default", () => {
+  state.viewMode = "wbs"; // exactly what boot does for a persisted WBS
+  state.setViewMode("recon");
+  state.toggleChartView();
+  assert.equal(state.viewMode, "wbs");
+});
+
+test("v alternates the chart views, and never lands on recon", () => {
+  state.setViewMode("timeline");
+  state.toggleChartView();
+  assert.equal(state.viewMode, "wbs");
+  state.toggleChartView();
+  assert.equal(state.viewMode, "timeline");
+
+  // Entered from the timeline, "v" comes back to it.
+  state.setViewMode("recon");
+  state.toggleChartView();
+  assert.equal(state.viewMode, "timeline");
+});

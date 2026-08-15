@@ -55,6 +55,12 @@ export function closeFind(): void {
 
 export function openFind(): void {
   if (!state.current) return;
+  // Find lists chart content, so it is unavailable in the reconciliation view
+  // — where renderTopbar hides its button. The "/" shortcut has no such
+  // affordance to hide: without this it would clear #find-pop's `hidden` while
+  // the wrap is display:none, leaving the popup already open on the next chart
+  // view (a click would have closed it, a keystroke does not).
+  if (state.viewMode === "recon") return;
   // Owning the topbar: every other popover closes, the same way opening any
   // of them closes this one (see wireTopbar).
   for (const p of document.querySelectorAll<HTMLElement>(".topbar .menu")) {

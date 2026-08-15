@@ -316,8 +316,14 @@ class AppState {
   // persisted (see viewMode), so localStorage only ever holds a chart mode.
   setViewMode(mode: ViewMode): void {
     if (mode === this.viewMode) return;
+    const from = this.viewMode;
     this.viewMode = mode;
-    if (mode !== "recon") {
+    if (mode === "recon") {
+      // Captured on the way in rather than assumed to have been recorded
+      // earlier: boot restores a persisted WBS by assigning viewMode directly.
+      // `from` cannot be "recon" — mode is, and the two differ.
+      this.lastChartMode = from as ChartMode;
+    } else {
       this.lastChartMode = mode;
       localStorage.setItem("roadie.view", mode);
     }
