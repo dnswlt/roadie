@@ -70,6 +70,20 @@ func TestGetMeOpenMode(t *testing.T) {
 	}
 }
 
+func TestGetMeReportsTrackerAvailability(t *testing.T) {
+	s := &Server{tracker: &stubTracker{}}
+	w := httptest.NewRecorder()
+	s.getMe(w, httptest.NewRequest("GET", "/api/me", nil))
+
+	var got meResponse
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.TrackerAvailable {
+		t.Errorf("getMe = %+v, want tracker available", got)
+	}
+}
+
 func TestGetMeReportsIdentity(t *testing.T) {
 	// A non-nil Authenticator is all getMe checks; the middleware that would
 	// have populated the context is stubbed by setting the identity here.

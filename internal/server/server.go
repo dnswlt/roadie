@@ -228,29 +228,31 @@ func requireClientHeader(next http.Handler) http.Handler {
 	})
 }
 
-// meResponse tells the frontend whether authentication is on and, if so, who
-// the user is. Mode is what the UI keys off: with "open" it renders exactly as
-// Roadie always has, with no account affordances at all.
+// meResponse gives the frontend its runtime capabilities alongside identity.
+// Mode is what the UI keys off for account affordances; TrackerAvailable tells
+// it whether to offer Recon without probing the search endpoint for a 503.
 type meResponse struct {
-	Mode          string `json:"mode"` // "open" or "oidc"
-	Authenticated bool   `json:"authenticated"`
-	Name          string `json:"name,omitempty"`
-	Email         string `json:"email,omitempty"`
+	Mode             string `json:"mode"` // "open" or "oidc"
+	Authenticated    bool   `json:"authenticated"`
+	Name             string `json:"name,omitempty"`
+	Email            string `json:"email,omitempty"`
+	TrackerAvailable bool   `json:"trackerAvailable"`
 }
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
 	if s.auth == nil {
-		writeJSON(w, http.StatusOK, meResponse{Mode: "open"})
+		writeJSON(w, http.StatusOK, meResponse{Mode: "open", TrackerAvailable: s.tracker != nil})
 		return
 	}
 	// Reaching here with auth on means the middleware admitted the request, so
 	// there is always an identity.
 	id := auth.From(r.Context())
 	writeJSON(w, http.StatusOK, meResponse{
-		Mode:          "oidc",
-		Authenticated: true,
-		Name:          id.Name,
-		Email:         id.Email,
+		Mode:             "oidc",
+		Authenticated:    true,
+		Name:             id.Name,
+		Email:            id.Email,
+		TrackerAvailable: s.tracker != nil,
 	})
 }
 

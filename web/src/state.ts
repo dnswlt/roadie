@@ -49,13 +49,11 @@ export type ViewMode = "timeline" | "wbs";
 class AppState {
   roadmaps: Roadmap[] = [];
   current: RoadmapFull | null = null;
-  // Who we are, from /api/me, fetched once at boot — it cannot change without a
-  // page load. Only one thing reads it: whether to offer "private" when
-  // creating a roadmap, since a private roadmap needs an owner and an anonymous
-  // caller cannot be one. Everything else about visibility is decided by the
-  // server and arrives as `visibility`/`owned` on the roadmap itself, so the UI
-  // never branches on the deployment's auth mode.
-  me: Me = { mode: "open", authenticated: false };
+  // Identity and runtime capabilities from /api/me, fetched once at boot —
+  // neither can change without a page load. Visibility decisions still arrive
+  // on each roadmap as `visibility`/`owned`; auth mode is not a permission
+  // system in the frontend.
+  me: Me = { mode: "open", authenticated: false, trackerAvailable: false };
   // The set of selected items. Usually empty or a single item; shift-click
   // builds a multi-selection that drags together (time-shift only). The item
   // and milestone selections are mutually exclusive (item vs. milestone

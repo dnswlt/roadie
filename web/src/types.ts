@@ -201,4 +201,5 @@ export interface Me {
   authenticated: boolean;
   name?: string;
   email?: string;
+  trackerAvailable: boolean;
 }
