@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/dnswlt/roadie/internal/model"
+	"github.com/dnswlt/roadie/internal/store"
 	"github.com/dnswlt/roadie/internal/tracker"
 )
 
@@ -101,4 +103,53 @@ func TestTrackerSearchDefaultsAndErrors(t *testing.T) {
 			t.Fatalf("error = %q, want %q", got, msg)
 		}
 	})
+}
+
+// The saved-query routes are guarded CRUD over the store; this exercises the
+// HTTP shape end to end — statuses, JSON, and the 404 for a vanished id.
+func TestTrackerQueryRoutes(t *testing.T) {
+	ctx := context.Background()
+	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name(), store.Ownership{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), rm.ID) })
+	base := "/api/roadmaps/" + itoa(rm.ID) + "/tracker-queries"
+
+	w := do(t, http.MethodPost, base, trackerQueryRequest{Name: "Epics", Query: "type = Epic"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body %s", w.Code, w.Body)
+	}
+	q := decode[model.TrackerQuery](t, w)
+	if q.Name != "Epics" || q.Query != "type = Epic" || q.RoadmapID != rm.ID {
+		t.Fatalf("created = %+v", q)
+	}
+
+	if w := do(t, http.MethodPost, base, trackerQueryRequest{Name: "Epics", Query: "other"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("duplicate status = %d, body %s", w.Code, w.Body)
+	}
+
+	w = do(t, http.MethodPatch, "/api/tracker-queries/"+itoa(q.ID), map[string]string{"query": "type = Story"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, body %s", w.Code, w.Body)
+	}
+	if got := decode[model.TrackerQuery](t, w); got.Query != "type = Story" || got.Name != "Epics" {
+		t.Fatalf("patched = %+v", got)
+	}
+
+	w = do(t, http.MethodGet, base, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body %s", w.Code, w.Body)
+	}
+	if list := decode[[]model.TrackerQuery](t, w); len(list) != 1 || list[0].Query != "type = Story" {
+		t.Fatalf("list = %+v", list)
+	}
+
+	if w := do(t, http.MethodDelete, "/api/tracker-queries/"+itoa(q.ID), nil); w.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body %s", w.Code, w.Body)
+	}
+	// The guard resolves the vanished id to its roadmap and finds none: 404.
+	if w := do(t, http.MethodPatch, "/api/tracker-queries/"+itoa(q.ID), map[string]string{"name": "x"}); w.Code != http.StatusNotFound {
+		t.Fatalf("patch after delete = %d, body %s", w.Code, w.Body)
+	}
 }

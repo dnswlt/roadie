@@ -15,8 +15,11 @@
 // query.
 
 import { api } from "./api";
+import { confirmDialog, promptDialog } from "./dialogs";
+import { icons } from "./icons";
 import { state } from "./state";
-import type { TrackerIssue } from "./types";
+import { toast } from "./toast";
+import type { TrackerIssue, TrackerQuery } from "./types";
 
 let query = "";
 // The query the loaded results and cursor belong to — Load more must send
@@ -31,6 +34,22 @@ let error: string | null = null;
 // Stamps each fetch so a slow response cannot apply over a newer run's
 // results: bumped at every start, checked before applying.
 let seq = 0;
+
+// Saved queries ("favourites") for the roadmap `favsFor`, fetched from the
+// backend when Recon renders for a roadmap it hasn't seen. Unlike the results
+// above they ARE roadmap-scoped, so a roadmap switch reloads them.
+let favourites: TrackerQuery[] = [];
+let favsFor: number | null = null;
+let favsLoading = false;
+// The favourite the editor's content came from — set by picking one, moved by
+// saving under a new name. Save… prefills its name and may only ever write
+// THIS favourite: giving it another favourite's name is rejected by the
+// store's uniqueness check, so no overwrite confirm exists and taking over a
+// name stays the pencil's (rename's) job. Stale ids self-heal: the lookup
+// finding nothing simply means no active favourite.
+let activeFavId: number | null = null;
+let pickerOpen = false;
+let pickerCloseWired = false;
 
 let mount: HTMLElement | null = null;
 
@@ -78,6 +97,136 @@ function loadMore(): void {
   void search(ranQuery, next);
 }
 
+// ensureFavourites loads the current roadmap's saved queries once per roadmap.
+// The roadmap is re-checked when the response lands: the user may have
+// switched roadmaps (or closed the last one) while the request was in flight,
+// and a stale list must not be presented as the new roadmap's favourites.
+function ensureFavourites(): void {
+  const rm = state.current;
+  if (!rm) {
+    favourites = [];
+    favsFor = null;
+    activeFavId = null;
+    return;
+  }
+  if (favsFor === rm.id) return;
+  // The loaded list belongs to a different roadmap. Drop it before anything
+  // can render or act on it: its rows carry that roadmap's ids, so a rename
+  // or delete clicked here would be authorized against it and silently edit
+  // the roadmap the user just left.
+  favourites = [];
+  activeFavId = null;
+  if (favsLoading) return;
+  favsLoading = true;
+  void api.listTrackerQueries(rm.id).then(
+    (list) => {
+      favsLoading = false;
+      if (state.current?.id === rm.id) {
+        favourites = list;
+        favsFor = rm.id;
+      }
+      // Repaint either way: after a switch mid-flight this re-enters
+      // ensureFavourites, which starts the fetch for the roadmap now open.
+      rerender();
+    },
+    (e: unknown) => {
+      favsLoading = false;
+      if (state.current?.id === rm.id) {
+        // Recorded as loaded-empty rather than retried per render: without
+        // this, a failing backend would refetch on every repaint.
+        favsFor = rm.id;
+        toast(e instanceof Error ? e.message : String(e), true);
+      }
+      rerender();
+    },
+  );
+}
+
+// reloadFavourites refetches after a mutation, which needs no once-per-roadmap
+// bookkeeping — it already knows the list changed.
+async function reloadFavourites(roadmapId: number): Promise<void> {
+  try {
+    const list = await api.listTrackerQueries(roadmapId);
+    if (state.current?.id !== roadmapId) return;
+    favourites = list;
+    favsFor = roadmapId;
+  } catch {
+    // The mutation's own toast already reported anything worth saying; the
+    // stale list corrects itself on the next reload.
+  }
+  rerender();
+}
+
+// saveCurrent stores the editor's query, prefilled with the name of the
+// favourite being worked on (see activeFavId). Keeping that name updates it —
+// the pick, refine, save-back flow; a fresh name saves a new favourite and
+// makes it the one being worked on. A name some OTHER favourite holds falls
+// into the create branch and is rejected by the store, whose message the toast
+// relays — the same answer a colliding rename gets.
+async function saveCurrent(): Promise<void> {
+  const rm = state.current;
+  const q = query.trim();
+  if (!rm || !q) return;
+  const active = favourites.find((f) => f.id === activeFavId);
+  const name = (await promptDialog("Save query as", active?.name ?? "", "Save"))?.trim();
+  if (!name) return;
+  try {
+    if (active && active.name === name) {
+      await api.updateTrackerQuery(active.id, { query: q });
+      toast(`Updated "${name}"`);
+    } else {
+      const created = await api.createTrackerQuery(rm.id, name, q);
+      activeFavId = created.id;
+      toast(`Saved "${name}"`);
+    }
+  } catch (e) {
+    toast(e instanceof Error ? e.message : String(e), true);
+  }
+  await reloadFavourites(rm.id);
+}
+
+// pickFavourite is the row click: load the query into the editor and rerun it
+// — one action, since a favourite exists to be rerun.
+// closePicker shuts the menu and repaints. The repaint is the point: pickerOpen
+// alone only describes the next render, and the document closer ignores an
+// already-false flag — so a path that closes the menu without rendering (a
+// cancelled rename or delete) would leave it on screen and unclickable-away.
+function closePicker(): void {
+  pickerOpen = false;
+  rerender();
+}
+
+function pickFavourite(fav: TrackerQuery): void {
+  pickerOpen = false;
+  activeFavId = fav.id;
+  query = fav.query;
+  run();
+  rerender(); // run() no-ops on a query already in flight; repaint regardless
+}
+
+async function renameFavourite(fav: TrackerQuery): Promise<void> {
+  const rm = state.current;
+  const name = (await promptDialog("Rename saved query", fav.name, "Rename"))?.trim();
+  if (!rm || !name || name === fav.name) return;
+  try {
+    await api.updateTrackerQuery(fav.id, { name });
+  } catch (e) {
+    toast(e instanceof Error ? e.message : String(e), true);
+  }
+  await reloadFavourites(rm.id);
+}
+
+async function deleteFavourite(fav: TrackerQuery): Promise<void> {
+  const rm = state.current;
+  if (!rm || !(await confirmDialog(`Delete saved query "${fav.name}"?`))) return;
+  try {
+    await api.deleteTrackerQuery(fav.id);
+  } catch (e) {
+    toast(e instanceof Error ? e.message : String(e), true);
+  }
+  await reloadFavourites(rm.id);
+}
+
 function div(className: string): HTMLDivElement {
   const el = document.createElement("div");
   el.className = className;
@@ -86,6 +235,19 @@ function div(className: string): HTMLDivElement {
 
 export function renderRecon(container: HTMLElement): void {
   mount = container;
+  ensureFavourites();
+  // Close the picker from anywhere outside its wrap. Wired once, on the
+  // document like app.ts's popover closer — the menu rebuilds with every
+  // render, so a listener on the menu itself would not survive to see the
+  // click.
+  if (!pickerCloseWired) {
+    pickerCloseWired = true;
+    document.addEventListener("click", (e) => {
+      if (!pickerOpen || (e.target as HTMLElement).closest(".recon-fav-wrap")) return;
+      pickerOpen = false;
+      rerender();
+    });
+  }
   const scrollTop = container.scrollTop;
   const prev = container.querySelector<HTMLInputElement>(".recon-input");
   const caret =
@@ -121,15 +283,32 @@ function buildQueryForm(): HTMLElement {
   input.spellcheck = false;
   input.placeholder = "JQL — e.g. project = ROAD AND issuetype = Epic";
   input.value = query;
-  input.addEventListener("input", () => {
-    query = input.value;
-  });
   const runBtn = document.createElement("button");
   runBtn.type = "submit";
   runBtn.className = "btn btn-primary";
   runBtn.textContent = loading ? "Running…" : "Run";
   runBtn.disabled = loading;
-  form.append(input, runBtn);
+  // "Save…" keeps a hard-won query; "Saved queries" brings one back. The
+  // lightweight picker JIRA.md asks for: a small menu beside the editor, rows
+  // that rerun on click, rename/delete on each row — no management page.
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "btn";
+  saveBtn.textContent = "Save…";
+  saveBtn.title = "Save this query under a name";
+  // Typing changes exactly one thing on screen — whether Save is available —
+  // so the input syncs that button itself instead of rendering. A rebuild per
+  // keystroke would throw away and recreate the whole result list.
+  const syncSave = (): void => {
+    saveBtn.disabled = query.trim() === "" || !state.current;
+  };
+  input.addEventListener("input", () => {
+    query = input.value;
+    syncSave();
+  });
+  syncSave();
+  saveBtn.addEventListener("click", () => void saveCurrent());
+  form.append(buildFavPicker(), input, runBtn, saveBtn);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     run();
@@ -142,6 +321,66 @@ function buildQueryForm(): HTMLElement {
     head.append(err);
   }
   return head;
+}
+
+// buildFavPicker builds the "Saved" dropdown: a .menu-wrap so the shared menu
+// styling positions the popover, open state held in pickerOpen so it survives
+// the full rebuilds this view renders by.
+function buildFavPicker(): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "menu-wrap recon-fav-wrap";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn recon-fav-btn";
+  btn.append(document.createTextNode("Saved"), icons.chevronDown(14));
+  if (favourites.length === 0) {
+    pickerOpen = false;
+    btn.disabled = true;
+    btn.title = "No saved queries yet — run one and press Save";
+  } else {
+    btn.title = "Saved queries";
+    btn.addEventListener("click", () => {
+      pickerOpen = !pickerOpen;
+      rerender();
+    });
+  }
+  wrap.append(btn);
+  if (!pickerOpen) return wrap;
+
+  const menu = document.createElement("div");
+  menu.className = "menu recon-fav-menu";
+  for (const fav of favourites) {
+    const row = document.createElement("div");
+    row.className = "recon-fav-row";
+    const name = document.createElement("button");
+    name.type = "button";
+    name.className = "recon-fav-name";
+    name.textContent = fav.name;
+    name.title = fav.query; // hover answers "which query was that again?"
+    name.addEventListener("click", () => pickFavourite(fav));
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "icon-btn";
+    rename.title = "Rename";
+    rename.append(icons.pencil(14));
+    rename.addEventListener("click", () => {
+      closePicker();
+      void renameFavourite(fav);
+    });
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "icon-btn";
+    del.title = "Delete";
+    del.append(icons.trash(14));
+    del.addEventListener("click", () => {
+      closePicker();
+      void deleteFavourite(fav);
+    });
+    row.append(name, rename, del);
+    menu.append(row);
+  }
+  wrap.append(menu);
+  return wrap;
 }
 
 function buildResults(): HTMLElement[] {

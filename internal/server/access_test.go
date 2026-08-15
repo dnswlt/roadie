@@ -26,7 +26,7 @@ var (
 // each. Every route that names a roadmap does so through one of these six ids,
 // which is what lets the sweep below cover all of them.
 type privateFixture struct {
-	roadmap, lane, item, milestone, dependency, snapshot int64
+	roadmap, lane, item, milestone, dependency, snapshot, trackerQuery int64
 }
 
 func newPrivateFixture(t *testing.T) privateFixture {
@@ -67,7 +67,11 @@ func newPrivateFixture(t *testing.T) privateFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return privateFixture{rm.ID, lane.ID, item.ID, ms.ID, dep.ID, snap.ID}
+	tq, err := testStore.CreateTrackerQuery(ctx, rm.ID, "Epics", "type = Epic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return privateFixture{rm.ID, lane.ID, item.ID, ms.ID, dep.ID, snap.ID, tq.ID}
 }
 
 // apiCall is one route exercised by the sweep: the mux pattern it is registered
@@ -118,6 +122,12 @@ func (f privateFixture) calls() []apiCall {
 		{"GET /api/snapshots/{id}", "GET", fmt.Sprintf("/api/snapshots/%d", f.snapshot), ""},
 		{"POST /api/snapshots/{id}/restore", "POST", fmt.Sprintf("/api/snapshots/%d/restore", f.snapshot), ""},
 		{"DELETE /api/snapshots/{id}", "DELETE", fmt.Sprintf("/api/snapshots/%d", f.snapshot), ""},
+
+		{"GET /api/roadmaps/{id}/tracker-queries", "GET", rm("/tracker-queries"), ""},
+		{"POST /api/roadmaps/{id}/tracker-queries", "POST", rm("/tracker-queries"),
+			`{"name":"Stolen","query":"type = Epic"}`},
+		{"PATCH /api/tracker-queries/{id}", "PATCH", fmt.Sprintf("/api/tracker-queries/%d", f.trackerQuery), `{"name":"Stolen"}`},
+		{"DELETE /api/tracker-queries/{id}", "DELETE", fmt.Sprintf("/api/tracker-queries/%d", f.trackerQuery), ""},
 	}
 }
 

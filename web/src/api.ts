@@ -17,6 +17,7 @@ import type {
   SchedulePeriod,
   Snapshot,
   TrackerPage,
+  TrackerQuery,
   TrashedRoadmap,
   Visibility,
 } from "./types";
@@ -103,6 +104,15 @@ export const api = {
       continuation,
       pageSize,
     }),
+  // Saved tracker queries: roadmap-scoped like lanes, but operational recon
+  // data — separate routes, never part of the roadmap payload.
+  listTrackerQueries: (roadmapId: number) =>
+    req<TrackerQuery[]>("GET", `/api/roadmaps/${roadmapId}/tracker-queries`),
+  createTrackerQuery: (roadmapId: number, name: string, query: string) =>
+    req<TrackerQuery>("POST", `/api/roadmaps/${roadmapId}/tracker-queries`, { name, query }),
+  updateTrackerQuery: (id: number, patch: { name?: string; query?: string }) =>
+    req<TrackerQuery>("PATCH", `/api/tracker-queries/${id}`, patch),
+  deleteTrackerQuery: (id: number) => req<void>("DELETE", `/api/tracker-queries/${id}`),
 
   listContributors: (roadmapId: number) =>
     req<Contributor[]>("GET", `/api/roadmaps/${roadmapId}/contributors`),

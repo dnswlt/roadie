@@ -3113,6 +3113,54 @@ button.deps-node:hover {
   gap: 8px;
 }
 
+.recon-fav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Wider than the base .menu: a row holds a name plus two icon buttons, and
+   names are the only thing the picker shows, so they get the room. */
+.recon-fav-menu {
+  min-width: 260px;
+  max-width: 380px;
+}
+
+.recon-fav-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The name is the row's action (rerun); styled like a .menu-item but its own
+   class — it shares a row with icon buttons, which a real menu-item never
+   does. */
+.recon-fav-name {
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.recon-fav-name:hover {
+  background: var(--grid);
+}
+
+.recon-fav-row .icon-btn {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
 /* JQL is code; monospace keeps operators and quoting scannable. */
 .recon-input {
   flex: 1;

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/dnswlt/roadie/internal/store"
 	"github.com/dnswlt/roadie/internal/tracker"
 )
 
@@ -58,4 +59,89 @@ func (s *Server) searchTracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// Saved tracker queries ("favourites", notes/JIRA.md). Roadmap-scoped
+// operational data with visibility's route shape: guard rather than snap —
+// not roadmap content, so no pre-mutation snapshot, no SSE broadcast, no
+// contributor attribution. Deliberately independent of s.tracker: favourites
+// outlive a temporarily unconfigured connection.
+
+type trackerQueryRequest struct {
+	Name  string `json:"name"`
+	Query string `json:"query"`
+}
+
+// byTrackerQueryID resolves a saved query to its roadmap for the access guard.
+func byTrackerQueryID(s *Server, r *http.Request) (int64, error) {
+	id, err := pathID(r)
+	if err != nil {
+		return 0, err
+	}
+	return s.store.RoadmapIDByTrackerQuery(r.Context(), id)
+}
+
+func (s *Server) listTrackerQueries(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	queries, err := s.store.ListTrackerQueries(r.Context(), id)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, queries)
+}
+
+func (s *Server) createTrackerQuery(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var req trackerQueryRequest
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	q, err := s.store.CreateTrackerQuery(r.Context(), id, req.Name, req.Query)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, q)
+}
+
+func (s *Server) patchTrackerQuery(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var patch store.TrackerQueryPatch
+	if err := readJSON(w, r, &patch); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	q, err := s.store.UpdateTrackerQuery(r.Context(), id, patch)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, q)
+}
+
+func (s *Server) deleteTrackerQuery(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	if err := s.store.DeleteTrackerQuery(r.Context(), id); err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

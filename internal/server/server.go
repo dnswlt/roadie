@@ -96,9 +96,15 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	// Who am I / is auth even on. The frontend asks once at startup so the UI
 	// learns the mode at runtime instead of at build time.
 	s.mux.HandleFunc("GET /api/me", s.getMe)
-	// Tracker search is deployment-wide: it contains no roadmap data. Saved
-	// queries and ignore decisions will be roadmap-scoped when they arrive.
+	// Tracker search is deployment-wide: it contains no roadmap data. Ignore
+	// decisions will be roadmap-scoped when they arrive, like saved queries.
 	s.mux.HandleFunc("POST /api/tracker/search", s.searchTracker)
+	// Saved tracker queries: roadmap-scoped operational data with visibility's
+	// route shape — guard rather than snap (see tracker.go).
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/tracker-queries", s.guard(byRoadmapID, s.listTrackerQueries))
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/tracker-queries", s.guard(byRoadmapID, s.createTrackerQuery))
+	s.mux.HandleFunc("PATCH /api/tracker-queries/{id}", s.guard(byTrackerQueryID, s.patchTrackerQuery))
+	s.mux.HandleFunc("DELETE /api/tracker-queries/{id}", s.guard(byTrackerQueryID, s.deleteTrackerQuery))
 
 	// Routes that name a roadmap — directly, or via a lane, item, milestone or
 	// snapshot id — are wrapped in guard or snap, which is where the caller is

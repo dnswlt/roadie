@@ -94,8 +94,8 @@ A third scope means designing a real invalidation model — ask first.
 
 **The restore test**, for any new roadmap-scoped data: *if I restore a snapshot,
 should this revert too?* Yes ⇒ it belongs in the `RoadmapExport` envelope. No ⇒ it
-gets its own endpoint. Contributors and visibility are "no"; flags, schedule and
-dependencies are "yes".
+gets its own endpoint. Contributors, visibility and saved tracker queries are
+"no"; flags, schedule and dependencies are "yes".
 
 **Mutating routes go through the `s.snap` wrapper**, which does three jobs at once:
 pre-mutation snapshot, SSE broadcast, contributor attribution, plus `s.guard` for

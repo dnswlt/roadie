@@ -232,6 +232,17 @@ type Contributor struct {
 	LastSeen  time.Time `json:"lastSeen"`
 }
 
+// TrackerQuery is one saved tracker query (a reconciliation "favourite",
+// notes/JIRA.md): a name plus the query text it stands for. Roadmap-scoped
+// operational data, not roadmap content — never part of RoadmapFull, snapshots
+// or exports. The query is provider syntax (JQL today) passed through opaquely.
+type TrackerQuery struct {
+	ID        int64  `json:"id"`
+	RoadmapID int64  `json:"roadmapId"`
+	Name      string `json:"name"`
+	Query     string `json:"query"`
+}
+
 // Snapshot kinds. Auto snapshots are captured on a throttle and pruned; manual
 // (named) snapshots are user-created and kept indefinitely.
 const (

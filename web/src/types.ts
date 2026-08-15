@@ -144,6 +144,16 @@ export interface TrackerPage {
   next?: string;
 }
 
+// One saved tracker query (a reconciliation "favourite"): a name plus the
+// query text it stands for. Roadmap-scoped operational data, not roadmap
+// content — never in RoadmapFull, snapshots or exports.
+export interface TrackerQuery {
+  id: number;
+  roadmapId: number;
+  name: string;
+  query: string;
+}
+
 // Snapshot metadata (no payload) for the version-history list. `name` is set
 // only for manual/named snapshots; auto snapshots have a null name.
 export interface Snapshot {
