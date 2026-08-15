@@ -110,7 +110,7 @@ export function renderRecon(container: HTMLElement): void {
 function buildQueryForm(): HTMLElement {
   const head = div("recon-head");
   const h = document.createElement("h2");
-  h.textContent = "Jira Recon";
+  h.textContent = "Jira Reconciliation";
   head.append(h);
 
   const form = document.createElement("form");
