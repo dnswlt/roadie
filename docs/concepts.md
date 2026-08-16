@@ -74,11 +74,16 @@ A **dependency** is a directed relationship between two items or milestones:
 the dependent needs the prerequisite. Roadie keeps one dependency kind—there
 are no edge types, lag values, or labels—and prevents dependency cycles.
 
+Because an item typically describes an outcome, a dependency reads as "B is not
+achieved until A is", rather than "B may only start once A is finished":
+dependent work routinely overlaps its prerequisite.
+
+Roadie therefore warns only when a prerequisite is scheduled to finish after the
+work depending on it, not when the two merely overlap. It never reschedules the
+plan automatically.
+
 Roadie shows an entity's immediate prerequisites and dependents in a local
 graph, avoiding a spaghetti of dependency lines across the timeline.
-
-Roadie warns about dependency date conflicts but never reschedules the plan
-automatically.
 
 ## Item metadata
 

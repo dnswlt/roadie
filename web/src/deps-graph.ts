@@ -134,7 +134,7 @@ export function analyzeDependencies(rm: RoadmapFull | null): DependencyAnalysis 
     if (!from || !to) continue;
     entryOf(toKey).dependsOn++;
     entryOf(fromKey).neededBy++;
-    if (dateConflict(from.end, to.start)) {
+    if (dateConflict(from.end, to.end)) {
       conflictingEdges.add(d.id);
       // The contradiction belongs to the pair, not to one end of it, so both
       // carry it: a late prerequisite is as visible from the work it blocks as
@@ -159,12 +159,13 @@ export function linkedRefs(deps: Dependency[], ref: DependencyRef): Set<string> 
 }
 
 // dateConflict reports whether an edge contradicts the calendar: the
-// prerequisite is scheduled to end after the dependent begins (an item's
-// start, a milestone's date). With no done/completed state in the model, this
-// is the one dependency health signal derivable from dates alone. Strictly
-// after: finishing on the very day the dependent starts (or the milestone
-// falls) is a handover, not a conflict. ISO date strings compare
+// prerequisite is scheduled to finish after the dependent does (an item's end,
+// a milestone's date). Finish-to-finish, not finish-to-start — work that needs
+// something else routinely overlaps it, so only a dependent that lands first is
+// impossible. With no done/completed state in the model, this is the one
+// dependency health signal derivable from dates alone. Strictly after: finishing
+// on the same day is a handover, not a conflict. ISO date strings compare
 // lexicographically.
-export function dateConflict(fromEnd: string, toStart: string): boolean {
-  return fromEnd > toStart;
+export function dateConflict(fromEnd: string, toEnd: string): boolean {
+  return fromEnd > toEnd;
 }

@@ -282,7 +282,7 @@ function nodeCard(
   if (opts.side) (card as HTMLElement).dataset.side = opts.side;
   if (opts.conflict) {
     card.classList.add("dep-conflict");
-    card.title = "Dates conflict: the prerequisite is scheduled to end after this dependency needs it.";
+    card.title = "Dates conflict: the prerequisite is scheduled to finish after the work that depends on it.";
   }
   card.style.setProperty("--c", laneColorValue(disp.laneColor));
 

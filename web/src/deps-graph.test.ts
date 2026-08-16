@@ -106,9 +106,9 @@ test("linkedRefs collects both directions", () => {
   assert.deepEqual([...linkedRefs(deps, item(2))].sort(), ["item:1", "milestone:1"]);
 });
 
-test("dateConflict flags only a strict overlap", () => {
-  assert.ok(dateConflict("2026-02-01", "2026-01-15")); // prerequisite ends after start
-  assert.ok(!dateConflict("2026-01-15", "2026-01-15")); // same-day handover is fine
+test("dateConflict compares finishes, strictly", () => {
+  assert.ok(dateConflict("2026-02-01", "2026-01-15")); // prerequisite finishes last
+  assert.ok(!dateConflict("2026-01-15", "2026-01-15")); // same-day finish is fine
   assert.ok(!dateConflict("2026-01-10", "2026-01-15"));
 });
 
@@ -156,7 +156,7 @@ test("analyzeDependencies counts each direction and omits entities with no edges
 });
 
 test("analyzeDependencies marks a date conflict on both ends of the edge", () => {
-  // Item 1 runs into March but item 2, which needs it, starts in February.
+  // Item 1 runs into March but item 2, which needs it, is done in February.
   const rm = roadmap(
     [datedItem(1, "2026-01-01", "2026-03-31"), datedItem(2, "2026-02-01", "2026-02-28")],
     [],
@@ -165,6 +165,19 @@ test("analyzeDependencies marks a date conflict on both ends of the edge", () =>
   const s = analyzeDependencies(rm).summaries;
   assert.equal(s.get("item:1")?.conflicts, 1);
   assert.equal(s.get("item:2")?.conflicts, 1);
+});
+
+test("analyzeDependencies tolerates a dependent that starts before its prerequisite ends", () => {
+  // Overlapping work is normal: item 2 starts mid-January, while item 1 runs to
+  // the end of the month, but item 2 still finishes last.
+  const rm = roadmap(
+    [datedItem(1, "2026-01-01", "2026-01-31"), datedItem(2, "2026-01-15", "2026-02-28")],
+    [],
+    [edge(item(1), item(2))],
+  );
+  const s = analyzeDependencies(rm).summaries;
+  assert.equal(s.get("item:1")?.conflicts, 0);
+  assert.equal(s.get("item:2")?.conflicts, 0);
 });
 
 test("analyzeDependencies treats a milestone's date as both of its ends", () => {
@@ -200,17 +213,19 @@ test("analyzeDependencies covers child items, which carry their own dates", () =
     endDate: "2026-06-30",
     children: [{ ...baseItem(2, 1, 0), startDate: "2026-01-01", endDate: "2026-01-15" }],
   };
-  const rm = roadmap([parent, datedItem(3, "2026-01-10", "2026-02-01")], [], [
+  const rm = roadmap([parent, datedItem(3, "2026-01-05", "2026-01-10")], [], [
     edge(item(2), item(3)),
   ]);
   const s = analyzeDependencies(rm).summaries;
   assert.equal(s.get("item:2")?.neededBy, 1);
-  assert.equal(s.get("item:2")?.conflicts, 1); // child ends Jan 15, item 3 started Jan 10
+  // The child's own dates decide it, not the parent's: the child ends Jan 15,
+  // after the item 3 that needs it is already done on Jan 10.
+  assert.equal(s.get("item:2")?.conflicts, 1);
 });
 
 test("analyzeDependencies reports the conflicting edge by id, for the overlay", () => {
-  const bad = edge(item(1), item(2)); // 1 ends in March, 2 starts in February
-  const good = edge(item(2), item(3)); // 2 ends in February, 3 starts in March
+  const bad = edge(item(1), item(2)); // 1 ends in March, 2 is done in February
+  const good = edge(item(2), item(3)); // 2 ends in February, 3 in March
   const rm = roadmap(
     [
       datedItem(1, "2026-01-01", "2026-03-31"),
