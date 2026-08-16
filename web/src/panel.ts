@@ -452,6 +452,116 @@ function renderSelectionPanel(body: HTMLElement): void {
   body.append(railHead("Selection", closeButton()), note, attrs, actionsRow);
 }
 
+interface DateEditorRows {
+  dateRow: HTMLElement;
+  periodRow: HTMLElement | null;
+}
+
+type ItemDates = Pick<Item, "startDate" | "endDate">;
+
+// itemDateEditor owns the four controls that edit one date range: two native
+// date inputs and, when the roadmap has a schedule, the two period selects
+// beneath them. `value` is their one shared state. Every edit passes through
+// show (synchronize all four controls) and commit (send one minimal patch), so
+// neither the DOM nor the item captured by render has to masquerade as the
+// latest value while the focused panel deliberately skips rebuilds.
+function itemDateEditor(item: Item): DateEditorRows {
+  const dates = document.createElement("div");
+  dates.className = "panel-row";
+  const start = field("Start", "input");
+  const startInput = start.control as HTMLInputElement;
+  startInput.type = "date";
+  const end = field("End", "input");
+  const endInput = end.control as HTMLInputElement;
+  endInput.type = "date";
+  dates.append(start.wrap, end.wrap);
+
+  const periods = periodsByStart(state.current?.periods ?? []);
+  let value: ItemDates = { startDate: item.startDate, endDate: item.endDate };
+  let startPeriod: HTMLSelectElement | null = null;
+  let endPeriod: HTMLSelectElement | null = null;
+
+  const show = (next: ItemDates): void => {
+    value = next;
+    startInput.value = next.startDate;
+    endInput.value = next.endDate;
+    if (startPeriod) {
+      startPeriod.value = periodAtEdge(periods, "start", next.startDate)?.id.toString() ?? "";
+    }
+    if (endPeriod) {
+      endPeriod.value = periodAtEdge(periods, "end", next.endDate)?.id.toString() ?? "";
+    }
+  };
+  const commit = (next: ItemDates): void => {
+    const previous = value;
+    show(next);
+    const patch: { startDate?: string; endDate?: string } = {};
+    if (next.startDate !== previous.startDate) patch.startDate = next.startDate;
+    if (next.endDate !== previous.endDate) patch.endDate = next.endDate;
+    if (patch.startDate || patch.endDate) void actions.updateItem(item.id, patch);
+  };
+  const edit = (edge: "start" | "end", input: HTMLInputElement): void => {
+    if (!input.value) return;
+    commit(
+      edge === "start"
+        ? { startDate: input.value, endDate: value.endDate }
+        : { startDate: value.startDate, endDate: input.value },
+    );
+  };
+
+  startInput.addEventListener("change", () => edit("start", startInput));
+  endInput.addEventListener("change", () => edit("end", endInput));
+
+  let periodRowElement: HTMLElement | null = null;
+  if (periods.length > 0) {
+    startPeriod = periodSelect("Start period", periods, (p) =>
+      commit(periodDates("start", p, value)),
+    );
+    endPeriod = periodSelect("End period", periods, (p) => commit(periodDates("end", p, value)));
+    periodRowElement = periodRow(startPeriod, endPeriod);
+  }
+  show(value);
+  return { dateRow: dates, periodRow: periodRowElement };
+}
+
+// milestoneDateEditor is the point-date twin of itemDateEditor. The same local
+// value drives both the native input and its optional "Due in" period select.
+function milestoneDateEditor(milestone: Milestone): DateEditorRows {
+  const fieldRow = field("Date", "input");
+  const input = fieldRow.control as HTMLInputElement;
+  input.type = "date";
+  const periods = periodsByStart(state.current?.periods ?? []);
+  let value = milestone.date;
+  let duePeriod: HTMLSelectElement | null = null;
+
+  const show = (next: string): void => {
+    value = next;
+    input.value = next;
+    if (duePeriod) {
+      duePeriod.value = periodAtEdge(periods, "end", next)?.id.toString() ?? "";
+    }
+  };
+  const commit = (next: string): void => {
+    const previous = value;
+    show(next);
+    if (next !== previous) void actions.updateMilestone(milestone.id, { date: next });
+  };
+
+  input.addEventListener("change", () => {
+    if (input.value) commit(input.value);
+  });
+
+  let periodRowElement: HTMLElement | null = null;
+  if (periods.length > 0) {
+    // A milestone due in a period lands on its last day: it is a deadline, not
+    // work spanning that period.
+    duePeriod = periodSelect("Due in period", periods, (p) => commit(p.endDate));
+    periodRowElement = periodRow(duePeriod);
+  }
+  show(value);
+  return { dateRow: fieldRow.wrap, periodRow: periodRowElement };
+}
+
 // renderPanel routes the rail to one of four views. The rail itself is a
 // fixture — it holds its width whatever is selected, so selecting and
 // deselecting never resizes the chart out from under you. Only two things ever
@@ -545,70 +655,7 @@ export function renderPanel(panel: HTMLElement): void {
 
   const linksSection = createLinksSection(desc.control as HTMLTextAreaElement);
 
-  const dates = document.createElement("div");
-  dates.className = "panel-row";
-  const start = field("Start", "input");
-  (start.control as HTMLInputElement).type = "date";
-  (start.control as HTMLInputElement).value = item.startDate;
-  const end = field("End", "input");
-  (end.control as HTMLInputElement).type = "date";
-  (end.control as HTMLInputElement).value = item.endDate;
-  start.control.addEventListener("change", () => {
-    const v = (start.control as HTMLInputElement).value;
-    if (v && v !== item.startDate) void actions.updateItem(item.id, { startDate: v });
-  });
-  end.control.addEventListener("change", () => {
-    const v = (end.control as HTMLInputElement).value;
-    if (v && v !== item.endDate) void actions.updateItem(item.id, { endDate: v });
-  });
-  dates.append(start.wrap, end.wrap);
-
-  // No schedule, no dropdowns: the panel is then exactly what it was.
-  const periods = periodsByStart(state.current?.periods ?? []);
-  let schedule: HTMLElement | null = null;
-  if (periods.length > 0) {
-    const startInput = start.control as HTMLInputElement;
-    const endInput = end.control as HTMLInputElement;
-    // The inputs, not `item`, hold the current dates: the panel skips its own
-    // rebuild while one of its controls has focus, and a <select> keeps focus
-    // after a pick, so `item` goes a render stale while the inputs are kept
-    // true by `show`. Blank means nothing was committed — the model still is.
-    const current = (): { startDate: string; endDate: string } => ({
-      startDate: startInput.value || item.startDate,
-      endDate: endInput.value || item.endDate,
-    });
-    const startSel = periodSelect("Start period", periods, (p) => pick("start", p));
-    const endSel = periodSelect("End period", periods, (p) => pick("end", p));
-    const showPeriods = (d: { startDate: string; endDate: string }): void => {
-      startSel.value = periodAtEdge(periods, "start", d.startDate)?.id.toString() ?? "";
-      endSel.value = periodAtEdge(periods, "end", d.endDate)?.id.toString() ?? "";
-    };
-    // All four controls, because a collapsing pick moves the edge you didn't
-    // touch — and its select with it.
-    const show = (d: { startDate: string; endDate: string }): void => {
-      startInput.value = d.startDate;
-      endInput.value = d.endDate;
-      showPeriods(d);
-    };
-    function pick(edge: "start" | "end", p: SchedulePeriod): void {
-      const now = current();
-      const next = periodDates(edge, p, now);
-      show(next);
-      const patch: { startDate?: string; endDate?: string } = {};
-      if (next.startDate !== now.startDate) patch.startDate = next.startDate;
-      if (next.endDate !== now.endDate) patch.endDate = next.endDate;
-      if (patch.startDate || patch.endDate) void actions.updateItem(item.id, patch);
-    }
-    // A hand-edited date has to move the selects too. The panel may not rebuild
-    // (focus never left it), and a select left on the old period is a dead end
-    // rather than a cosmetic lie: picking the entry it already displays fires
-    // no change event, so that boundary becomes unreachable from the dropdown.
-    for (const input of [startInput, endInput]) {
-      input.addEventListener("change", () => showPeriods(current()));
-    }
-    show({ startDate: item.startDate, endDate: item.endDate });
-    schedule = periodRow(startSel, endSel);
-  }
+  const dates = itemDateEditor(item);
 
   // Priority: four chips (P1 highest .. P4 lowest). Clicking the active chip
   // clears the priority back to unset. Chip classes are toggled directly
@@ -675,8 +722,8 @@ export function renderPanel(panel: HTMLElement): void {
   // is classification, not identity.
   const attrs = document.createElement("div");
   attrs.className = "panel-attrs";
-  attrs.append(dates);
-  if (schedule) attrs.append(schedule);
+  attrs.append(dates.dateRow);
+  if (dates.periodRow) attrs.append(dates.periodRow);
   attrs.append(prio, labels, dependenciesSection({ kind: "item", id: item.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
@@ -872,38 +919,7 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
     if (v && v !== milestone.title) void actions.updateMilestone(milestone.id, { title: v });
   });
 
-  const dateField = field("Date", "input");
-  (dateField.control as HTMLInputElement).type = "date";
-  (dateField.control as HTMLInputElement).value = milestone.date;
-  dateField.control.addEventListener("change", () => {
-    const v = (dateField.control as HTMLInputElement).value;
-    if (v && v !== milestone.date) void actions.updateMilestone(milestone.id, { date: v });
-  });
-
-  // "Due in PI2027-11" is a deadline, so the pick lands on the period's last
-  // day — and by the same token the select only ever shows a period whose end
-  // this date is.
-  const dateInput = dateField.control as HTMLInputElement;
-  const periods = periodsByStart(state.current?.periods ?? []);
-  let dueSel: HTMLSelectElement | null = null;
-  if (periods.length > 0) {
-    // Written by hand, as in the item panel, because the panel may not rebuild.
-    const sel = periodSelect("Due in period", periods, (p) => {
-      const was = dateInput.value || milestone.date;
-      show(p.endDate);
-      if (p.endDate !== was) void actions.updateMilestone(milestone.id, { date: p.endDate });
-    });
-    const showPeriod = (date: string): void => {
-      sel.value = periodAtEdge(periods, "end", date)?.id.toString() ?? "";
-    };
-    const show = (date: string): void => {
-      dateInput.value = date;
-      showPeriod(date);
-    };
-    dateInput.addEventListener("change", () => showPeriod(dateInput.value || milestone.date));
-    show(milestone.date);
-    dueSel = sel;
-  }
+  const dates = milestoneDateEditor(milestone);
 
   const desc = field("Description", "textarea");
   (desc.control as HTMLTextAreaElement).value = milestone.description;
@@ -926,8 +942,8 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   // most important attribute.
   const attrs = document.createElement("div");
   attrs.className = "panel-attrs";
-  attrs.append(dateField.wrap);
-  if (dueSel) attrs.append(periodRow(dueSel));
+  attrs.append(dates.dateRow);
+  if (dates.periodRow) attrs.append(dates.periodRow);
   attrs.append(dependenciesSection({ kind: "milestone", id: milestone.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
