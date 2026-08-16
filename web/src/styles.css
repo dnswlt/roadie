@@ -3192,11 +3192,62 @@ button.deps-node:hover {
   text-align: center;
 }
 
+.recon-filters {
+  display: flex;
+  align-items: center;
+  margin-top: 18px;
+}
+
+/* This is a result projection rather than a query: toggling it only narrows
+   issues already loaded. The neutral active fill avoids borrowing any lane's
+   color for a list-wide state. */
+.recon-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.recon-filter-chip:hover {
+  background: var(--grid);
+}
+
+.recon-filter-chip.active {
+  color: var(--ink);
+  background: var(--grid-strong);
+  border-color: var(--border-strong);
+}
+
+.recon-filter-chip-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  background: var(--grid);
+}
+
+.recon-filter-chip.active .recon-filter-chip-count {
+  background: var(--surface);
+}
+
+.recon-filter-empty {
+  margin-top: 22px;
+}
+
 /* Four true columns — key, summary, type, status — each sized by its widest
    cell: every row is a subgrid of these tracks, so the columns line up across
    rows instead of leaving type and status ragged. */
 .recon-list {
-  margin-top: 18px;
+  margin-top: 10px;
   border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
@@ -3208,9 +3259,41 @@ button.deps-node:hover {
   display: grid;
   grid-template-columns: subgrid;
   align-items: baseline;
+  row-gap: 5px;
   padding: 7px 4px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+}
+
+/* Matches live on a second row beneath the Jira summary. They are deliberately
+   non-interactive until Recon's navigation back to WBS/timeline is settled. */
+.recon-issue-links {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  min-width: 0;
+}
+
+.recon-linked-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.recon-linked-item .color-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+}
+
+.recon-linked-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recon-issue-key {

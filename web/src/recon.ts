@@ -15,8 +15,10 @@
 // query.
 
 import { api } from "./api";
+import { laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { icons } from "./icons";
+import { diffTrackerIssues, type ReconciledIssue } from "./recon-diff";
 import { state } from "./state";
 import { toast } from "./toast";
 import type { TrackerIssue, TrackerQuery } from "./types";
@@ -31,6 +33,9 @@ let issues: TrackerIssue[] = [];
 let next: string | undefined;
 let loading = false;
 let error: string | null = null;
+// A local projection over the loaded page set. It survives view switches like
+// the results themselves, and never causes another tracker request.
+let unmatchedOnly = false;
 // Stamps each fetch so a slow response cannot apply over a newer run's
 // results: bumped at every start, checked before applying.
 let seq = 0;
@@ -391,10 +396,20 @@ function buildResults(): HTMLElement[] {
   }
 
   const out: HTMLElement[] = [];
+  const reconciled = diffTrackerIssues(issues, state.current);
+  const unmatched = reconciled.filter((row) => row.matches.length === 0);
+  const visible = unmatchedOnly ? unmatched : reconciled;
   if (issues.length > 0) {
-    const list = div("recon-list");
-    for (const issue of issues) list.append(issueRow(issue));
-    out.push(list);
+    out.push(filterChip(unmatched.length, issues.length));
+    if (visible.length > 0) {
+      const list = div("recon-list");
+      for (const row of visible) list.append(issueRow(row));
+      out.push(list);
+    } else {
+      const hint = div("recon-hint recon-filter-empty");
+      hint.textContent = "Every loaded issue is linked to a Roadie item.";
+      out.push(hint);
+    }
   } else if (loading) {
     const hint = div("recon-hint");
     hint.textContent = "Searching…";
@@ -406,8 +421,8 @@ function buildResults(): HTMLElement[] {
   }
 
   // The count states its scope ("loaded", not "found"): the tracker reports no
-  // total, and the filter chip to come will count against loaded issues only —
-  // that scope has to be legible from the start (JIRA.md).
+  // total, and the filter chip counts against loaded issues only — that scope
+  // has to stay legible (JIRA.md).
   if (issues.length > 0 || next !== undefined) {
     const foot = div("recon-foot");
     if (next !== undefined) {
@@ -420,20 +435,39 @@ function buildResults(): HTMLElement[] {
     }
     const count = div("recon-count");
     const n = issues.length;
-    count.textContent =
-      next !== undefined
-        ? `${n} issue${n === 1 ? "" : "s"} loaded · more available`
-        : `All ${n} issue${n === 1 ? "" : "s"} loaded`;
+    count.textContent = `${unmatched.length} unmatched among ${n} loaded issue${n === 1 ? "" : "s"}${
+      next !== undefined ? " · more available" : " · all results loaded"
+    }`;
     foot.append(count);
     out.push(foot);
   }
   return out;
 }
 
+function filterChip(unmatched: number, loaded: number): HTMLElement {
+  const bar = div("recon-filters");
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = unmatchedOnly ? "recon-filter-chip active" : "recon-filter-chip";
+  chip.setAttribute("aria-pressed", String(unmatchedOnly));
+  chip.setAttribute("aria-label", `Show unmatched issues only (${unmatched} of ${loaded} loaded)`);
+  chip.append(document.createTextNode("Unmatched"));
+  const count = document.createElement("span");
+  count.className = "recon-filter-chip-count";
+  count.textContent = String(unmatched);
+  chip.append(count);
+  chip.addEventListener("click", () => {
+    unmatchedOnly = !unmatchedOnly;
+    rerender();
+  });
+  bar.append(chip);
+  return bar;
+}
+
 // One result row: enough to identify the issue (key, summary, type, status),
 // with the key linking out — opening an issue goes to Jira, never to a Roadie
 // rendering of it.
-function issueRow(issue: TrackerIssue): HTMLElement {
+function issueRow({ issue, matches }: ReconciledIssue): HTMLElement {
   const row = div("recon-issue");
   const key = document.createElement("a");
   key.className = "recon-issue-key";
@@ -450,5 +484,23 @@ function issueRow(issue: TrackerIssue): HTMLElement {
   const status = div("recon-issue-status");
   status.textContent = issue.status;
   row.append(key, title, type, status);
+  if (matches.length > 0) {
+    const linked = div("recon-issue-links");
+    for (const match of matches) {
+      const item = document.createElement("span");
+      item.className = "recon-linked-item";
+      item.title = match.title || "(untitled)";
+      const dot = document.createElement("span");
+      dot.className = "color-dot";
+      dot.style.background = laneColorValue(match.laneColor);
+      dot.setAttribute("aria-hidden", "true");
+      const itemTitle = document.createElement("span");
+      itemTitle.className = "recon-linked-item-title";
+      itemTitle.textContent = match.title || "(untitled)";
+      item.append(dot, itemTitle);
+      linked.append(item);
+    }
+    row.append(linked);
+  }
   return row;
 }
