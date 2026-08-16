@@ -12,6 +12,8 @@ system, a programme, or a team. Roadie can hold many independent roadmaps.
 A roadmap organizes items and milestones into contexts. It may also define a
 schedule and dependencies between its items and milestones.
 
+→ [Managing roadmaps](managing-roadmaps.md)
+
 ## Contexts
 
 A **context** groups work by an enduring concern that helps readers understand
@@ -121,3 +123,5 @@ all links remain available when editing the item.
 Roadie treats external references as links, not integrations: it does not fetch
 status, synchronize another system's hierarchy, or derive roadmap progress from
 external tools.
+
+→ [Jira reconciliation](jira-reconciliation.md)
