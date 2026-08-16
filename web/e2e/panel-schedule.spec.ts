@@ -140,6 +140,23 @@ test("typing a date does not change the roadmap until editing finishes", async (
     .toBe("2023-01-19");
 });
 
+test("month and quarter inputs resolve at their field boundary", async ({ page, request }) => {
+  await openItem(page);
+  const endInput = page.locator("#panel .panel-date-input").nth(1);
+
+  await endInput.fill("Q3/2026");
+  await endInput.press("Enter");
+  await startInput(page).fill("04/2026");
+  await startInput(page).press("Enter");
+
+  await expect
+    .poll(async () => {
+      const item = (await laneItems(request, seeded.roadmapId, seeded.laneId))[0]!;
+      return [item.startDate, item.endDate];
+    })
+    .toEqual(["2026-04-01", "2026-09-30"]);
+});
+
 test("the calendar commits its selection immediately", async ({ page, request }) => {
   await openItem(page);
   await page.getByRole("button", { name: "Choose start date" }).click();

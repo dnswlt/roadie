@@ -5,18 +5,13 @@
 import { actions } from "./actions";
 import { copyText } from "./clipboard";
 import { laneColorValue } from "./colors";
+import { editRangeDate, parseDateInput, type DateEdge } from "./dates";
 import { dependenciesSection, depsGraphButton } from "./deps";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { extractLinks } from "./links";
 import { itemMarkdown } from "./markdown";
-import {
-  editRangeDate,
-  isValidDate,
-  periodAtEdge,
-  periodDates,
-  periodsByStart,
-} from "./schedule";
+import { periodAtEdge, periodDates, periodsByStart } from "./schedule";
 import { state, type MilestoneLocation } from "./state";
 import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./types";
 import { selectionLink } from "./url";
@@ -479,6 +474,7 @@ interface DateField {
 function dateField(
   label: string,
   pickerTitle: string,
+  edge: DateEdge,
   onCommit: (value: string) => void,
 ): DateField {
   const wrap = document.createElement("div");
@@ -514,7 +510,7 @@ function dateField(
 
   const error = document.createElement("span");
   error.className = "panel-date-error";
-  error.textContent = "Use valid YYYY-MM-DD";
+  error.textContent = "Try 2026-07-15, 7/26, or Q3/2026";
   error.hidden = true;
 
   let committed = "";
@@ -529,8 +525,8 @@ function dateField(
     clearError();
   };
   const commitText = (): void => {
-    const next = input.value.trim();
-    if (!isValidDate(next)) {
+    const next = parseDateInput(input.value, edge);
+    if (next === null) {
       input.setAttribute("aria-invalid", "true");
       error.hidden = false;
       return;
@@ -545,11 +541,11 @@ function dateField(
     if (event.key === "Enter") input.blur();
   });
   open.addEventListener("click", () => {
-    const draft = input.value.trim();
+    const draft = parseDateInput(input.value, edge);
     // An unusable draft is abandoned before the calendar opens. It would
     // otherwise start on the committed date, and choosing that same day fires
     // no change event — leaving the field marked invalid and the pick ignored.
-    if (isValidDate(draft)) picker.value = draft;
+    if (draft !== null) picker.value = draft;
     else show(committed);
     // No feature detection: where showPicker is missing the button is inert and
     // the text field is the whole editor, which is the deal.
@@ -573,8 +569,8 @@ function dateField(
 function itemDateEditor(item: Item): DateEditorRows {
   const dates = document.createElement("div");
   dates.className = "panel-row";
-  const start = dateField("Start", "Choose start date", (date) => edit("start", date));
-  const end = dateField("End", "Choose end date", (date) => edit("end", date));
+  const start = dateField("Start", "Choose start date", "start", (date) => edit("start", date));
+  const end = dateField("End", "Choose end date", "end", (date) => edit("end", date));
   dates.append(start.wrap, end.wrap);
 
   const periods = periodsByStart(state.current?.periods ?? []);
@@ -636,7 +632,7 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
     show(next);
     if (next !== previous) void actions.updateMilestone(milestone.id, { date: next });
   };
-  const date = dateField("Date", "Choose date", commit);
+  const date = dateField("Date", "Choose date", "end", commit);
 
   let periodRowElement: HTMLElement | null = null;
   if (periods.length > 0) {
