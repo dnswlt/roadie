@@ -9,14 +9,14 @@ import (
 )
 
 var testIssues = []fixtureIssue{
-	{Key: "PAY-1", Summary: "First", IssueType: "Epic", Status: "To Do"},
-	{Key: "PAY-2", Summary: "Second", IssueType: "Story", Status: "In Progress"},
-	{Key: "PAY-3", Summary: "Third", IssueType: "Task", Status: "Done"},
+	{Key: "PAY-1", Summary: "First payment provider", IssueType: "Epic", Status: "To Do"},
+	{Key: "PAY-2", Summary: "Second PAYMENT provider", IssueType: "Story", Status: "In Progress"},
+	{Key: "PAY-3", Summary: "Third account flow", IssueType: "Task", Status: "Done"},
 }
 
-func TestSearchIgnoresJQLAndPages(t *testing.T) {
+func TestSearchFiltersTitleAndPages(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/rest/api/2/search", strings.NewReader(
-		`{"jql":"project = DOES_NOT_EXIST","startAt":1,"maxResults":1,"fields":["summary"]}`,
+		`{"jql":"payment PROVIDER","startAt":1,"maxResults":1,"fields":["summary"]}`,
 	))
 	req.Host = "jira.test"
 	w := httptest.NewRecorder()
@@ -33,8 +33,51 @@ func TestSearchIgnoresJQLAndPages(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.StartAt != 1 || got.Total != 3 || len(got.Issues) != 1 || got.Issues[0].Key != "PAY-2" {
+	if got.StartAt != 1 || got.Total != 2 || len(got.Issues) != 1 || got.Issues[0].Key != "PAY-2" {
 		t.Fatalf("unexpected response: %+v", got)
+	}
+	// The id remains its fixture position rather than its position in this
+	// filtered result, just as it does across pages of a real Jira search.
+	if got.Issues[0].ID != "2" {
+		t.Fatalf("issue id = %q, want stable fixture id 2", got.Issues[0].ID)
+	}
+}
+
+func TestSearchEmptyQueryMatchesAllIssues(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/rest/api/2/search", strings.NewReader(
+		`{"jql":"  ","startAt":0,"maxResults":50}`,
+	))
+	w := httptest.NewRecorder()
+	newHandler(testIssues).ServeHTTP(w, req)
+
+	var got struct {
+		Total  int         `json:"total"`
+		Issues []jiraIssue `json:"issues"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || got.Total != 3 || len(got.Issues) != 3 {
+		t.Fatalf("status = %d, response = %+v", w.Code, got)
+	}
+}
+
+func TestSearchRequiresEveryTerm(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/rest/api/2/search", strings.NewReader(
+		`{"jql":"payment account","startAt":0,"maxResults":50}`,
+	))
+	w := httptest.NewRecorder()
+	newHandler(testIssues).ServeHTTP(w, req)
+
+	var got struct {
+		Total  int         `json:"total"`
+		Issues []jiraIssue `json:"issues"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || got.Total != 0 || len(got.Issues) != 0 {
+		t.Fatalf("status = %d, response = %+v", w.Code, got)
 	}
 }
 

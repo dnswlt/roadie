@@ -1,7 +1,7 @@
 // Jira is a tiny, read-only Jira Data Center stand-in for local development.
-// It implements only the two REST resources Roadie uses. JQL and field
-// selection are accepted but deliberately ignored; issues come from a JSON
-// fixture loaded at startup.
+// It implements only the two REST resources Roadie uses. The JQL string is
+// interpreted as a deliberately tiny title search; field selection is ignored
+// and issues come from a JSON fixture loaded at startup.
 package main
 
 import (
@@ -116,18 +116,43 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		req.MaxResults = 50
 	}
 
-	start := min(req.StartAt, len(s.issues))
-	end := min(start+req.MaxResults, len(s.issues))
+	matches := matchingIssueIndices(s.issues, req.JQL)
+	start := min(req.StartAt, len(matches))
+	end := min(start+req.MaxResults, len(matches))
 	page := make([]jiraIssue, 0, end-start)
 	for i := start; i < end; i++ {
-		page = append(page, toJiraIssue(r, i+1, s.issues[i]))
+		fixtureIndex := matches[i]
+		page = append(page, toJiraIssue(r, fixtureIndex+1, s.issues[fixtureIndex]))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"startAt":    start,
 		"maxResults": req.MaxResults,
-		"total":      len(s.issues),
+		"total":      len(matches),
 		"issues":     page,
 	})
+}
+
+// matchingIssueIndices is the mock's whole "JQL" implementation: split the
+// query on whitespace, then require every term to occur somewhere in the
+// summary, case-insensitively. Returning fixture indices keeps Jira issue ids
+// stable across different searches and pages.
+func matchingIssueIndices(issues []fixtureIssue, query string) []int {
+	terms := strings.Fields(strings.ToLower(query))
+	matches := make([]int, 0, len(issues))
+	for i, issue := range issues {
+		summary := strings.ToLower(issue.Summary)
+		matched := true
+		for _, term := range terms {
+			if !strings.Contains(summary, term) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			matches = append(matches, i)
+		}
+	}
+	return matches
 }
 
 func (s *server) getIssue(w http.ResponseWriter, r *http.Request) {

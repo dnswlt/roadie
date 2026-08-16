@@ -22,5 +22,41 @@
     "summary": "Refresh account recovery on mobile",
     "issueType": "Epic",
     "status": "Done"
+  },
+  {
+    "key": "PAY-123",
+    "summary": "Update payment provider failure alerts",
+    "issueType": "Task",
+    "status": "To Do"
+  },
+  {
+    "key": "PLAT-57",
+    "summary": "Archive audit events after the retention window",
+    "issueType": "Story",
+    "status": "In Progress"
+  },
+  {
+    "key": "MOB-91",
+    "summary": "Improve mobile checkout performance",
+    "issueType": "Feature",
+    "status": "In Review"
+  },
+  {
+    "key": "SEC-33",
+    "summary": "Rotate authorization service credentials",
+    "issueType": "Task",
+    "status": "To Do"
+  },
+  {
+    "key": "DATA-64",
+    "summary": "Reconcile transaction reports with the ledger",
+    "issueType": "Story",
+    "status": "In Progress"
+  },
+  {
+    "key": "OPS-19",
+    "summary": "Document the account recovery support playbook",
+    "issueType": "Task",
+    "status": "Done"
   }
 ]
