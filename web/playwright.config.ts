@@ -16,11 +16,24 @@ export default defineConfig({
   // throwaway roadmaps there, never touching existing rows. The frontend is
   // built first since -dev serves web/dist from disk. reuseExistingServer
   // only ever matches a previous e2e server on this port.
-  webServer: {
-    command:
-      "npm run build && cd .. && DATABASE_URL=postgres://roadie:roadie@localhost:5433/roadie go run ./cmd/roadie -dev -addr=localhost:8090",
-    url: "http://localhost:8090/healthz",
-    reuseExistingServer: true,
-    timeout: 60_000,
-  },
+  //
+  // The Jira Data Center mock runs alongside, on its own port for the same
+  // reason: the reconciliation view is hidden outright unless the deployment
+  // has a tracker connection, so without it that view could not be reached at
+  // all. It serves fixtures and ignores the JQL it is sent (dev/jira).
+  webServer: [
+    {
+      command: "cd ../dev/jira && go run . -addr=localhost:4013",
+      url: "http://localhost:4013/healthz",
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
+    {
+      command:
+        "npm run build && cd .. && DATABASE_URL=postgres://roadie:roadie@localhost:5433/roadie JIRA_URL=http://localhost:4013 go run ./cmd/roadie -dev -addr=localhost:8090",
+      url: "http://localhost:8090/healthz",
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
+  ],
 });

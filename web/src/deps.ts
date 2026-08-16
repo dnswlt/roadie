@@ -26,6 +26,7 @@ import {
   splitDeps,
 } from "./deps-graph";
 import { icons } from "./icons";
+import { openPopover } from "./popover";
 import { createSearchList } from "./search-list";
 import { state } from "./state";
 import { dayOf, formatDay } from "./timescale";
@@ -104,10 +105,10 @@ function depGroup(ref: DependencyRef, dir: Direction, rerender: () => void): HTM
   add.title = GROUP_TEXT[dir].add;
   add.setAttribute("aria-label", GROUP_TEXT[dir].add);
   add.append(icons.plus(14));
-  add.addEventListener("click", (e) => {
-    // Openers swallow their own click, as in wireTopbar: the picker's
-    // click-away handler must not see the click that opened it.
-    e.stopPropagation();
+  add.addEventListener("click", () => {
+    // No stopPropagation: popover.ts dismisses from the capture phase, before
+    // this runs, so the picker never sees the click that opened it. Swallowing
+    // here is what used to leave *other* surfaces' menus stranded open.
     openPicker(group, ref, dir, rerender);
   });
   head.append(label, add);
@@ -172,33 +173,18 @@ function depRow(dep: Dependency, far: DependencyRef, rerender: () => void): HTML
 // outside dismisses it. It manages that itself only because it is a transient
 // node the topbar's document handler doesn't know about.
 
-// close() of the currently open picker, or null. Module-level because
-// exclusivity is app-wide: two pickers can never be open at once.
-let openPickerClose: (() => void) | null = null;
-
 function openPicker(
   group: HTMLElement,
   ref: DependencyRef,
   dir: Direction,
   rerender: () => void,
 ): void {
-  openPickerClose?.();
-
   const pop = document.createElement("div");
   pop.className = "menu dep-pop";
-
-  const onDocClick = (e: MouseEvent): void => {
-    if (!pop.contains(e.target as Node)) close();
-  };
-  // Safe to call more than once: removing a removed listener and a detached
-  // node are both no-ops.
-  const close = (): void => {
-    if (openPickerClose === close) openPickerClose = null;
-    document.removeEventListener("click", onDocClick);
-    pop.remove();
-  };
-  openPickerClose = close;
-  document.addEventListener("click", onDocClick);
+  // Exclusivity, click-away dismissal and the stale-handle guard all come from
+  // the registry now; this module keeps only what the picker itself is.
+  const handle = openPopover({ root: pop, onDismiss: () => pop.remove() });
+  const close = (): void => handle.close();
 
   const excluded = linkedRefs(state.current?.dependencies ?? [], ref);
   excluded.add(refKey(ref));

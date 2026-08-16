@@ -20,6 +20,7 @@ import { laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { icons } from "./icons";
 import { appendLinkToDescription } from "./links";
+import { openPopover, type PopoverHandle } from "./popover";
 import { diffTrackerIssues, type ReconciledIssue } from "./recon-diff";
 import { createSearchList } from "./search-list";
 import { state } from "./state";
@@ -56,14 +57,16 @@ let favsLoading = false;
 // name stays the pencil's (rename's) job. Stale ids self-heal: the lookup
 // finding nothing simply means no active favourite.
 let activeFavId: number | null = null;
+// Whether the Saved menu is rendered. The registry decides *when* it closes
+// (popover.ts); this only says whether the current render draws it. Its
+// anchors are looked up lazily because this view rebuilds wholesale, which
+// would otherwise leave the registry holding a detached menu.
 let pickerOpen = false;
-let pickerCloseWired = false;
+let favMenu: PopoverHandle | null = null;
 
-// The issue-to-item picker is a transient search-list popup, like the dependency
-// picker. Only one may be open; keeping its closer here also lets a
-// full Recon rebuild remove its document click-away listener before replacing
-// the DOM underneath it.
-let issuePickerClose: (() => void) | null = null;
+// The issue-to-item picker is a transient search-list popup, like the
+// dependency picker: a node that lives inside a row and is removed on dismiss.
+let issuePicker: PopoverHandle | null = null;
 
 let mount: HTMLElement | null = null;
 
@@ -201,17 +204,43 @@ async function saveCurrent(): Promise<void> {
 
 // pickFavourite is the row click: load the query into the editor and rerun it
 // — one action, since a favourite exists to be rerun.
-// closePicker shuts the menu and repaints. The repaint is the point: pickerOpen
-// alone only describes the next render, and the document closer ignores an
-// already-false flag — so a path that closes the menu without rendering (a
-// cancelled rename or delete) would leave it on screen and unclickable-away.
-function closePicker(): void {
-  pickerOpen = false;
+// toggleFavMenu is the Saved button. Opening registers with popover.ts, which
+// is what dismisses every other popover in the app — and what dismisses this
+// one when anything else opens.
+function toggleFavMenu(): void {
+  if (favMenu?.isOpen()) {
+    favMenu.close();
+    return;
+  }
+  pickerOpen = true;
+  favMenu = openPopover({
+    // Looked up rather than captured: this view rebuilds wholesale, so the
+    // menu that is on screen is rarely the node that was open at click time.
+    root: () => mount?.querySelector(".recon-fav-menu") ?? null,
+    opener: () => mount?.querySelector(".recon-fav-btn") ?? null,
+    // Removes just the menu node — deliberately NOT a rerender. Dismissal runs
+    // in the capture phase, before the handler of whatever was clicked, so
+    // rebuilding the view here would detach that element first: clicking an
+    // issue's + while this menu was open left the link picker appended to a
+    // row that was no longer in the document. Equivalent to a rerender anyway,
+    // since the Saved button looks the same open or closed.
+    onDismiss: () => {
+      pickerOpen = false;
+      mount?.querySelector(".recon-fav-menu")?.remove();
+    },
+  });
   rerender();
 }
 
+// closePicker shuts the Saved menu through its handle, which also removes it
+// from the screen — so the paths that close it without otherwise rendering (a
+// cancelled rename or delete) leave nothing behind.
+function closePicker(): void {
+  favMenu?.close();
+}
+
 function pickFavourite(fav: TrackerQuery): void {
-  pickerOpen = false;
+  closePicker();
   activeFavId = fav.id;
   query = fav.query;
   run();
@@ -248,21 +277,13 @@ function div(className: string): HTMLDivElement {
 }
 
 export function renderRecon(container: HTMLElement): void {
-  issuePickerClose?.();
+  // The issue picker is a node inside a result row, which this render is about
+  // to replace; dismissing it first keeps the registry from holding a detached
+  // popover. The Saved menu survives instead — it is rebuilt from pickerOpen
+  // and finds itself by lookup.
+  issuePicker?.close();
   mount = container;
   ensureFavourites();
-  // Close the picker from anywhere outside its wrap. Wired once, on the
-  // document like app.ts's popover closer — the menu rebuilds with every
-  // render, so a listener on the menu itself would not survive to see the
-  // click.
-  if (!pickerCloseWired) {
-    pickerCloseWired = true;
-    document.addEventListener("click", (e) => {
-      if (!pickerOpen || (e.target as HTMLElement).closest(".recon-fav-wrap")) return;
-      pickerOpen = false;
-      rerender();
-    });
-  }
   const scrollTop = container.scrollTop;
   const prev = container.querySelector<HTMLInputElement>(".recon-input");
   const caret =
@@ -349,18 +370,16 @@ function buildFavPicker(): HTMLElement {
   btn.className = "btn recon-fav-btn";
   btn.append(document.createTextNode("Saved"), icons.chevronDown(14));
   if (favourites.length === 0) {
-    pickerOpen = false;
     btn.disabled = true;
     btn.title = "No saved queries yet — run one and press Save";
   } else {
     btn.title = "Saved queries";
-    btn.addEventListener("click", () => {
-      pickerOpen = !pickerOpen;
-      rerender();
-    });
+    btn.addEventListener("click", () => toggleFavMenu());
   }
   wrap.append(btn);
-  if (!pickerOpen) return wrap;
+  // No favourites means no menu, whatever pickerOpen says: deleting the last
+  // one closes it (deleteFavourite), so this only guards the render.
+  if (!pickerOpen || favourites.length === 0) return wrap;
 
   const menu = document.createElement("div");
   menu.className = "menu recon-fav-menu";
@@ -475,24 +494,12 @@ function filterChip(unmatched: number, loaded: number): HTMLElement {
 }
 
 function openIssuePicker(row: HTMLElement, issue: TrackerIssue, linkedItemIds: Set<number>): void {
-  issuePickerClose?.();
-  // The Saved menu and this picker occupy the same view. If the plus was
-  // clicked while Saved was open, its swallowed opener click cannot reach the
-  // Saved menu's document closer, so close that menu explicitly.
-  pickerOpen = false;
-  mount?.querySelector(".recon-fav-menu")?.remove();
-
   const pop = div("menu recon-link-pop");
-  const onDocClick = (e: MouseEvent): void => {
-    if (!pop.contains(e.target as Node)) close();
-  };
-  const close = (): void => {
-    if (issuePickerClose === close) issuePickerClose = null;
-    document.removeEventListener("click", onDocClick);
-    pop.remove();
-  };
-  issuePickerClose = close;
-  document.addEventListener("click", onDocClick);
+  // Registering is the whole of exclusivity: the Saved menu (and every other
+  // popover in the app) is dismissed by this, so nothing here has to know it
+  // exists.
+  issuePicker = openPopover({ root: pop, onDismiss: () => pop.remove() });
+  const close = (): void => issuePicker?.close();
 
   const picker = createSearchList({
     placeholder: "Link to a Roadie item…",
@@ -541,9 +548,9 @@ function issueRow({ issue, matches }: ReconciledIssue): HTMLElement {
   add.title = `Link ${issue.key} to a Roadie item`;
   add.setAttribute("aria-label", add.title);
   add.append(icons.plus(14));
-  add.addEventListener("click", (e) => {
-    // Do not let the click-away listener see the click that created it.
-    e.stopPropagation();
+  add.addEventListener("click", () => {
+    // No stopPropagation: popover.ts dismisses from the capture phase, so this
+    // picker never sees the click that opened it.
     openIssuePicker(row, issue, new Set(matches.map((match) => match.itemId)));
   });
   row.append(add);

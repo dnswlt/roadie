@@ -18,6 +18,7 @@ import { projectWbsSelection, renderWbs } from "./wbs";
 import { initWbsDnd } from "./wbs-dnd";
 import { laneMarkdown, roadmapMarkdown } from "./markdown";
 import { focusPanelTitle, renderPanel } from "./panel";
+import { openPopover, type PopoverHandle } from "./popover";
 import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { type SnapMode } from "./timescale";
@@ -193,10 +194,9 @@ function buildSnapMenu(pop: HTMLElement): void {
       b.disabled = true;
       b.title = "Define a schedule first (roadmap menu → Edit schedule)";
     } else {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
+      b.addEventListener("click", () => {
         setSnapMode(mode);
-        pop.classList.add("hidden");
+        closeTopbarMenu(pop);
         renderTopbar();
       });
     }
@@ -360,47 +360,54 @@ function injectIcons(): void {
   $("account-signout").prepend(icons.signOut(14));
 }
 
+// The topbar's dropdowns are persistent elements toggled `hidden`, so their
+// onDismiss hides rather than removes. Each registers with popover.ts on open,
+// which is the whole of their mutual dismissal — and their dismissal by any
+// other surface in the app. Openers deliberately do not stopPropagation: the
+// registry's capture listener has already dismissed whatever was open by the
+// time these run (see popover.ts).
+function toggleTopbarMenu(pop: HTMLElement, opener: Element, build?: () => void): void {
+  if (topbarMenus.get(pop)?.isOpen()) {
+    topbarMenus.get(pop)!.close();
+    return;
+  }
+  build?.();
+  pop.classList.remove("hidden");
+  topbarMenus.set(
+    pop,
+    openPopover({ root: pop, opener, onDismiss: () => pop.classList.add("hidden") }),
+  );
+}
+
+const topbarMenus = new Map<HTMLElement, PopoverHandle>();
+
+// A menu row that acts and closes goes through the handle, never straight to
+// classList: hiding the element behind the registry's back would leave it
+// holding a popover that is already gone.
+function closeTopbarMenu(pop: HTMLElement): void {
+  topbarMenus.get(pop)?.close();
+}
+
 function wireTopbar(): void {
   const menuPop = $("rm-menu-pop");
   const visPop = $("lane-vis-pop");
   const focusPop = $("focus-pop");
   const snapPop = $("snap-pop");
   const accountPop = $("account-pop");
-  const findPop = $("find-pop");
-  const allPops = [menuPop, visPop, focusPop, snapPop, accountPop, findPop];
-  // Close every top-bar popover except the one being opened.
-  const closeOthers = (keep: HTMLElement): void => {
-    for (const p of allPops) if (p !== keep) p.classList.add("hidden");
-  };
   $("home-btn").addEventListener("click", () => void openHome());
-  rmPicker.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeOthers(menuPop);
-    menuPop.classList.toggle("hidden");
+  rmPicker.addEventListener("click", () => toggleTopbarMenu(menuPop, rmPicker));
+  $("lane-vis-menu").addEventListener("click", () => {
+    toggleTopbarMenu(visPop, $("lane-vis-menu"), () => buildLaneVisMenu(visPop));
   });
-  $("lane-vis-menu").addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeOthers(visPop);
-    if (visPop.classList.contains("hidden")) buildLaneVisMenu(visPop);
-    visPop.classList.toggle("hidden");
+  $("focus-menu").addEventListener("click", () => {
+    toggleTopbarMenu(focusPop, $("focus-menu"), () => buildFocusMenu(focusPop));
   });
-  $("focus-menu").addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeOthers(focusPop);
-    if (focusPop.classList.contains("hidden")) buildFocusMenu(focusPop);
-    focusPop.classList.toggle("hidden");
-  });
-  $("snap-menu").addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeOthers(snapPop);
-    if (snapPop.classList.contains("hidden")) buildSnapMenu(snapPop);
-    snapPop.classList.toggle("hidden");
+  $("snap-menu").addEventListener("click", () => {
+    toggleTopbarMenu(snapPop, $("snap-menu"), () => buildSnapMenu(snapPop));
   });
   $("help-menu").addEventListener("click", () => openHelpDialog(bindings));
-  $("account-menu").addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeOthers(accountPop);
-    accountPop.classList.toggle("hidden");
+  $("account-menu").addEventListener("click", () => {
+    toggleTopbarMenu(accountPop, $("account-menu"));
   });
   $("account-signout").addEventListener("click", () => {
     // Land on the dedicated signed-out page, not "/": going home would hit the
@@ -411,31 +418,22 @@ function wireTopbar(): void {
       () => location.assign("/auth/signed-out"),
     );
   });
-  document.addEventListener("click", (e) => {
-    // Close each popup unless the click landed inside its own menu wrap.
-    const wrap = (e.target as HTMLElement).closest(".menu-wrap");
-    for (const p of allPops) {
-      if (!p.classList.contains("hidden") && !wrap?.contains(p)) p.classList.add("hidden");
-    }
-    closeColorPop(e.target as HTMLElement);
-    closeLaneMenu(e.target as HTMLElement);
-  });
 
   $("rm-rename").addEventListener("click", async () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     if (!state.current) return;
     const name = await promptDialog("Rename roadmap", state.current.name, "Rename");
     if (name) void actions.renameRoadmap(name);
   });
   $("rm-duplicate").addEventListener("click", async () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     if (!state.current) return;
     // Prefill a distinct name so the copy is deliberately named, not "(2)".
     const name = await promptDialog("Duplicate roadmap", `${state.current.name} (copy)`, "Duplicate");
     if (name) void actions.duplicateRoadmap(name);
   });
   $("rm-visibility").addEventListener("click", async () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     if (!state.current) return;
     // Both directions confirm. Publishing obviously has to — it exposes the
     // roadmap to everyone — but so does locking down, for a different reason:
@@ -454,26 +452,26 @@ function wireTopbar(): void {
     if (ok) void actions.setVisibility(goPrivate ? "private" : "public");
   });
   $("rm-history").addEventListener("click", () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     void actions.openHistory();
   });
   $("rm-schedule").addEventListener("click", () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     void openScheduleEditor();
   });
   $("rm-export").addEventListener("click", () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     actions.exportRoadmap();
   });
   // Export downloads the JSON that import and snapshots round-trip; this copies
   // the same roadmap as prose, for pasting somewhere that reads rather than
   // restores it.
   $("rm-copy-md").addEventListener("click", () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     if (state.current) void copyText(roadmapMarkdown(state.current), "Markdown");
   });
   $("rm-delete").addEventListener("click", async () => {
-    menuPop.classList.add("hidden");
+    closeTopbarMenu(menuPop);
     if (!state.current) return;
     // Name the trash: the reassurance is the whole point of it, and it is worth
     // nothing if the confirm still reads like the end of the world.
@@ -568,8 +566,8 @@ function wireChart(): void {
       }
       const menuBtn = t.closest<HTMLElement>(".lane-menu-btn");
       if (menuBtn) {
-        // Keep this click away from the document-level close handler.
-        e.stopPropagation();
+        // No stopPropagation: popover.ts dismisses from the capture phase, so
+        // swallowing here would protect nothing and blind nobody.
         toggleLaneMenu(menuBtn, laneId);
         return;
       }
@@ -666,8 +664,7 @@ function buildLaneVisMenu(pop: HTMLElement): void {
   showAll.className = "menu-item";
   showAll.append(icons.eye(16), text("Show all contexts"));
   showAll.disabled = state.hiddenLanes.size === 0;
-  showAll.addEventListener("click", (e) => {
-    e.stopPropagation();
+  showAll.addEventListener("click", () => {
     state.showAllLanes();
     buildLaneVisMenu(pop);
   });
@@ -687,7 +684,6 @@ function buildLaneVisMenu(pop: HTMLElement): void {
     name.textContent = lane.name;
     row.append(hidden ? icons.eyeOff(16) : icons.eye(16), dot, name);
     row.addEventListener("click", (e) => {
-      e.stopPropagation();
       if (e.altKey) state.isolateLane(lane.id);
       else state.setLaneHidden(lane.id, !state.isLaneHidden(lane.id));
       buildLaneVisMenu(pop);
@@ -725,16 +721,21 @@ function placePopover(el: HTMLElement, anchor: HTMLElement, align: "left" | "rig
   el.style.top = `${fitsBelow || above < EDGE ? Math.min(below, window.innerHeight - h - EDGE) : above}px`;
 }
 
-function closeLaneMenu(target?: HTMLElement): void {
-  const menu = document.querySelector<HTMLElement>(".lane-menu");
-  if (menu && (!target || !target.closest(".lane-menu"))) menu.remove();
+// The lane menu and the color picker are transient body-level nodes, so their
+// onDismiss removes them. Each is its own popover: opening one dismisses the
+// other through the registry, which is why "Lane color" no longer closes the
+// lane menu by hand.
+let laneMenu: PopoverHandle | null = null;
+let colorPop: PopoverHandle | null = null;
+
+function closeLaneMenu(): void {
+  laneMenu?.close();
 }
 
 function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
   const existing = document.querySelector<HTMLElement>(".lane-menu");
   const wasOpenHere = existing?.dataset.laneId === String(laneId);
   closeLaneMenu();
-  closeColorPop();
   if (wasOpenHere) return;
 
   const lane = state.findLane(laneId);
@@ -770,9 +771,9 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
   dot.className = "color-dot";
   dot.style.background = laneColorValue(lane.color);
   color.append(dot, text("Lane color"));
-  color.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closeLaneMenu();
+  color.addEventListener("click", () => {
+    // No explicit close: opening the color picker dismisses this menu, since
+    // the registry allows only one popover at a time.
     toggleColorPop(anchor, laneId);
   });
 
@@ -802,6 +803,7 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
   document.body.append(menu);
   // Right-aligned under the button, which keeps it clear of the right edge.
   placePopover(menu, anchor, "right");
+  laneMenu = openPopover({ root: menu, opener: anchor, onDismiss: () => menu.remove() });
 }
 
 function text(s: string): HTMLElement {
@@ -864,7 +866,6 @@ function buildFocusMenu(pop: HTMLElement): void {
     if (icon) b.append(icon);
     b.append(name);
     b.addEventListener("click", (e) => {
-      e.stopPropagation();
       onPick(e);
       state.notify();
       buildFocusMenu(pop);
@@ -909,9 +910,8 @@ function buildFocusMenu(pop: HTMLElement): void {
 
 // Lane color picker popover: a row of swatches anchored to the color button.
 
-function closeColorPop(target?: HTMLElement): void {
-  const pop = document.querySelector<HTMLElement>(".color-pop");
-  if (pop && (!target || !target.closest(".color-pop"))) pop.remove();
+function closeColorPop(): void {
+  colorPop?.close();
 }
 
 function toggleColorPop(anchor: HTMLElement, laneId: number): void {
@@ -941,6 +941,11 @@ function toggleColorPop(anchor: HTMLElement, laneId: number): void {
   // it still fits below the anchor.
   document.body.append(pop);
   placePopover(pop, anchor, "left");
+  // The anchor is the lane's dots button, which also opens the lane menu — it
+  // is deliberately not registered as this popover's opener, so clicking it
+  // again dismisses the swatches and reopens the menu rather than being
+  // treated as a click "inside".
+  colorPop = openPopover({ root: pop, onDismiss: () => pop.remove() });
 }
 
 // applySelection restores a deep-linked item/milestone selection after its

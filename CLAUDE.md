@@ -163,12 +163,18 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   last segment, so `Platform` stays top level beside a `Platform` folder. Folders
   are synthetic and never selectable, and start shut except on the path to the
   selection.
+- **One popover at a time, owned by `popover.ts`.** Every dropdown registers on
+  open and gets a handle; owners close through the handle, never by hiding the
+  element themselves. **Openers must not `stopPropagation`** — dismissal runs in
+  the capture phase, so swallowing protects nothing and blinds every other
+  surface (that was the bug).
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**
 - **E2E is a smoke layer, not a UI test suite** (`web/e2e`, `make test-e2e`).
   Playwright exists only for what a real browser answers and nothing else can —
-  pointer gestures, and panel flows whose bug *is* the focus behaviour — and every
+  pointer gestures, panel flows whose bug *is* the focus behaviour, and popover
+  exclusivity (event phase across surfaces) — and every
   test follows one pattern: **seed via API, act in the browser, assert via API,
   purge**. The UI is the actuator, the model is the oracle: no screenshots, and
   the only selectors are the class contracts the controllers themselves hit-test.
