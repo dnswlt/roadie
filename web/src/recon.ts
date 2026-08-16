@@ -67,8 +67,8 @@ let favourites: TrackerQuery[] = [];
 let favsFor: number | null = null;
 let favsLoading = false;
 // The favourite the editor's content came from — set by picking one, moved by
-// saving under a new name. Save… prefills its name and may only ever write
-// THIS favourite: giving it another favourite's name is rejected by the
+// saving under a new name. The save action prefills its name and may only ever
+// write THIS favourite: giving it another favourite's name is rejected by the
 // store's uniqueness check, so no overwrite confirm exists and taking over a
 // name stays the pencil's (rename's) job. Stale ids self-heal: the lookup
 // finding nothing simply means no active favourite.
@@ -443,26 +443,27 @@ function buildQueryForm(): HTMLElement {
   input.spellcheck = false;
   input.placeholder = "JQL — e.g. project = ROAD AND issuetype = Epic";
   input.value = query;
-  const orderHelp = document.createElement("button");
-  orderHelp.type = "button";
-  orderHelp.className = "icon-btn recon-query-help";
-  orderHelp.title = "How to order Jira results";
-  orderHelp.setAttribute("aria-label", orderHelp.title);
-  orderHelp.append(icons.help(18));
-  orderHelp.addEventListener("click", () => openOrderingHelp());
+  const helpBtn = document.createElement("button");
+  helpBtn.type = "button";
+  helpBtn.className = "icon-btn recon-query-help";
+  helpBtn.title = "About Jira reconciliation";
+  helpBtn.setAttribute("aria-label", helpBtn.title);
+  helpBtn.append(icons.help(18));
+  helpBtn.addEventListener("click", () => openReconHelp());
   const runBtn = document.createElement("button");
   runBtn.type = "submit";
   runBtn.className = "btn btn-primary";
   runBtn.textContent = loading ? "Running…" : "Run";
   runBtn.disabled = loading;
-  // "Save…" keeps a hard-won query; "Saved queries" brings one back. The
+  // The save icon keeps a hard-won query; "Saved queries" brings one back. The
   // lightweight picker JIRA.md asks for: a small menu beside the editor, rows
   // that rerun on click, rename/delete on each row — no management page.
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
-  saveBtn.className = "btn";
-  saveBtn.textContent = "Save…";
-  saveBtn.title = "Save this query under a name";
+  saveBtn.className = "icon-btn recon-query-save";
+  saveBtn.title = "Save query…";
+  saveBtn.setAttribute("aria-label", saveBtn.title);
+  saveBtn.append(icons.save(18));
   // Typing changes exactly one thing on screen — whether Save is available —
   // so the input syncs that button itself instead of rendering. A rebuild per
   // keystroke would throw away and recreate the whole result list.
@@ -475,7 +476,9 @@ function buildQueryForm(): HTMLElement {
   });
   syncSave();
   saveBtn.addEventListener("click", () => void saveCurrent());
-  form.append(buildFavPicker(), input, orderHelp, runBtn, saveBtn);
+  const actions = div("recon-query-actions");
+  actions.append(helpBtn, saveBtn, runBtn);
+  form.append(buildFavPicker(), input, actions);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     run();
@@ -598,20 +601,25 @@ function roadieItemRow(item: UnreferencedRoadieItem): HTMLElement {
   return row;
 }
 
-// Jira owns result ordering; Roadie preserves it rather than growing a second,
-// subtly different sorting model. The small local help dialog gives the useful
-// part of JQL's ORDER BY syntax at the point where it can be applied.
-function openOrderingHelp(): void {
+// Enough context to make this small workflow self-explanatory; fuller Jira and
+// reconciliation documentation belongs in the help pages, not this dialog.
+function openReconHelp(): void {
   const dlg = document.getElementById("dialog") as HTMLDialogElement;
   dlg.replaceChildren();
 
   const h = document.createElement("h3");
-  h.textContent = "Order Jira issues";
-  const body = div("recon-order-help");
-  const intro = document.createElement("p");
-  intro.textContent =
+  h.textContent = "Jira reconciliation";
+  const body = div("recon-help");
+  const overview = document.createElement("p");
+  overview.textContent =
+    "Compare Jira query results with Jira links in this roadmap. Unmatched shows unlinked Jira issues; Roadie items shows the reverse.";
+  const saved = document.createElement("p");
+  saved.textContent =
+    "Saved queries belong to this roadmap. Saving stores the current JQL under a name; choosing a saved query loads and runs it. Saved queries can also be renamed or deleted.";
+  const ordering = document.createElement("p");
+  ordering.textContent =
     "Roadie shows issues in the order Jira returns them. Prefer to build and test queries in Jira, then paste the JQL here. For a quick ordering change, add ORDER BY at the end:";
-  body.append(intro);
+  body.append(overview, saved, ordering);
 
   const examples = document.createElement("dl");
   examples.className = "recon-order-examples";
@@ -635,6 +643,15 @@ function openOrderingHelp(): void {
   note.className = "recon-order-note";
   note.textContent = "Ascending is the default; add DESC to reverse it. Separate fields with commas.";
   body.append(note);
+
+  const docs = document.createElement("p");
+  const docsLink = document.createElement("a");
+  docsLink.href = "https://dnswlt.github.io/roadie/jira-reconciliation/";
+  docsLink.target = "_blank";
+  docsLink.rel = "noreferrer";
+  docsLink.textContent = "Read the Jira reconciliation guide";
+  docs.append(docsLink);
+  body.append(docs);
 
   const actions = div("dialog-actions");
   const close = document.createElement("button");
@@ -660,7 +677,7 @@ function buildFavPicker(): HTMLElement {
   btn.append(document.createTextNode("Saved"), icons.chevronDown(14));
   if (favourites.length === 0) {
     btn.disabled = true;
-    btn.title = "No saved queries yet — run one and press Save";
+    btn.title = "No saved queries for this roadmap";
   } else {
     btn.title = "Saved queries";
     btn.addEventListener("click", () => toggleFavMenu());

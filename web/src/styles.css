@@ -3222,9 +3222,7 @@ button.deps-node:hover {
   margin-bottom: -1px;
   padding: 7px 1px 8px;
   font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--muted);
+  color: var(--ink-2);
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -3237,6 +3235,7 @@ button.deps-node:hover {
 
 .recon-tab.active {
   color: var(--ink);
+  font-weight: 600;
   border-bottom-color: var(--ink-2);
 }
 
@@ -3295,9 +3294,11 @@ button.deps-node:hover {
   gap: 8px;
 }
 
-.recon-query-help {
+.recon-query-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex: none;
-  align-self: center;
 }
 
 .recon-fav-btn {
@@ -3365,7 +3366,7 @@ button.deps-node:hover {
   outline-offset: -1px;
 }
 
-.recon-order-help {
+.recon-help {
   width: 480px;
   max-width: 100%;
   font-size: 13px;
@@ -3373,8 +3374,12 @@ button.deps-node:hover {
   color: var(--ink-2);
 }
 
-.recon-order-help p {
+.recon-help p {
   margin: 0;
+}
+
+.recon-help p + p {
+  margin-top: 10px;
 }
 
 .recon-order-examples {

@@ -104,6 +104,12 @@ export const icons = {
         `<path d="M7 8l5-5 5 5"/><path d="M12 3v12"/>`,
       size,
     ),
+  save: (size = 16) =>
+    svg(
+      `<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/>` +
+        `<path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>`,
+      size,
+    ),
   chevronDown: (size = 14) => svg(`<path d="m6 9 6 6 6-6"/>`, size),
   chevronLeft: (size = 14) => svg(`<path d="m15 6-6 6 6 6"/>`, size),
   chevronRight: (size = 14) => svg(`<path d="m9 6 6 6-6 6"/>`, size),

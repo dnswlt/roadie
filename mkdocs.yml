@@ -15,6 +15,7 @@ nav:
   - Home: index.md
   - Key concepts: concepts.md
   - Managing roadmaps: managing-roadmaps.md
+  - Jira reconciliation: jira-reconciliation.md
 
 plugins:
   - search

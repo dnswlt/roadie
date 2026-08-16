@@ -16,6 +16,8 @@ that remain useful at scale.
   its parts work together.
 - [Managing roadmaps](managing-roadmaps.md) covers roadmap lifecycle, history,
   sharing, and collaboration.
+- [Jira reconciliation](jira-reconciliation.md) explains how to find and link
+  Jira issues and Roadie items that are missing references.
 - Practical guides and deeper planning material will be added as the
   documentation grows.
 
