@@ -361,27 +361,95 @@ function renderEmptyRail(body: HTMLElement): void {
   body.style.removeProperty("--c");
 }
 
-// renderSelectionPanel: several items selected. The fields are all per-item, so
-// there is nothing to edit here — but Delete is already defined for many (the
-// Del shortcut has always handled it, see deleteSelection), and showing the
-// count turns a panel that used to vanish into one that explains itself.
+// commonValue reports the value every item shares, and whether they differ at
+// all — `mixed`, the third display state the bulk controls need.
+function commonValue<T>(items: Item[], value: (item: Item) => T): { value: T; mixed: boolean } {
+  const first = value(items[0]!);
+  return { value: first, mixed: items.some((item) => !Object.is(value(item), first)) };
+}
+
+// renderSelectionPanel offers only scalar metadata whose bulk meaning is
+// mechanical: one explicit value is applied to every selected item. Labels and
+// dependencies stay single-item operations — their partial/common state and
+// edge ownership would turn this small editor into a batch-management system.
 function renderSelectionPanel(body: HTMLElement): void {
-  const n = state.selectedItemIds.size;
-  // Keyed on the count alone: the view shows nothing else about *which* items
-  // are selected, and Delete reads the live selection when clicked.
-  const key = `multi:${n}`;
-  if (renderedKey === key) return;
-  renderedKey = key;
+  const items = [...state.selectedItemIds]
+    .map((id) => state.findItem(id)?.item)
+    .filter((item) => item !== undefined);
+  const ids = items.map((item) => item.id);
+  const n = items.length;
+  // Always rebuilt, unlike the item view: the controls below capture their
+  // state at build time, so nothing here may start skipping the rebuild.
+  // Safe — the view is all buttons, so there is no in-progress edit to eat.
+  renderedKey = "multi";
   body.replaceChildren();
   body.style.removeProperty("--c");
 
-  const note = noteBlock(`${n} items selected`, "Select a single item to edit its fields.");
+  const note = noteBlock(`${n} items selected`, "Changes below apply to every selected item.");
+
+  const priority = commonValue(items, (item) => item.priority);
+  const prio = document.createElement("div");
+  prio.className = "panel-field";
+  const prioLabel = document.createElement("span");
+  prioLabel.textContent = priority.mixed ? "Priority · Mixed" : "Priority";
+  const chips = document.createElement("div");
+  chips.className = "prio-chips";
+  for (let p = 1; p <= 4; p++) {
+    const chip = document.createElement("button");
+    chip.className = "prio-chip";
+    chip.textContent = `P${p}`;
+    const active = !priority.mixed && priority.value === p;
+    chip.classList.toggle("active", active);
+    chip.setAttribute("aria-pressed", String(active));
+    chip.addEventListener("click", () => {
+      void actions.updateItemMetadata(ids, { priority: active ? null : p });
+    });
+    chips.append(chip);
+  }
+
+  const signalState = (field: "tentative" | "atRisk" | "flagged"): boolean | "mixed" => {
+    const common = commonValue(items, (item) => item[field]);
+    return common.mixed ? "mixed" : common.value;
+  };
+  const signals = document.createElement("div");
+  signals.className = "signal-btns";
+  signals.append(
+    metadataSignalButton(
+      "tent-btn",
+      "Tentative timing: dates are not a precise commitment",
+      icons.approx(16),
+      signalState("tentative"),
+      (tentative) => void actions.updateItemMetadata(ids, { tentative }),
+    ),
+    metadataSignalButton(
+      "risk-btn",
+      "At risk: the plan stands, but there is reason to doubt it",
+      icons.alertTriangle(16),
+      signalState("atRisk"),
+      (atRisk) => void actions.updateItemMetadata(ids, { atRisk }),
+    ),
+    metadataSignalButton(
+      "flag-btn",
+      "Flag: needs attention (!)",
+      icons.flag(16),
+      signalState("flagged"),
+      (flagged) => void actions.setFlagged(ids, flagged),
+    ),
+  );
+  const prioRow = document.createElement("div");
+  prioRow.className = "prio-row";
+  prioRow.append(chips, signals);
+  prio.append(prioLabel, prioRow);
+
+  const attrs = document.createElement("div");
+  attrs.className = "panel-attrs multi-meta";
+  attrs.append(prio);
 
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
   actionsRow.append(deleteButton(`Delete ${n} items`, () => deleteSelection()));
 
-  body.append(railHead("Selection", closeButton()), note, actionsRow);
+  body.append(railHead("Selection", closeButton()), note, attrs, actionsRow);
 }
 
 // renderPanel routes the rail to one of four views. The rail itself is a
@@ -553,7 +621,7 @@ export function renderPanel(panel: HTMLElement): void {
   chips.className = "prio-chips";
   for (let p = 1; p <= 4; p++) {
     const chip = document.createElement("button");
-    chip.className = `prio-chip p${p}`;
+    chip.className = "prio-chip";
     chip.textContent = `P${p}`;
     if (item.priority === p) chip.classList.add("active");
     chip.addEventListener("click", () => {
@@ -628,49 +696,73 @@ function deleteButton(label: string, onClick: () => void): HTMLButtonElement {
   return btn;
 }
 
+// All three planning signals use the same two-state button. Multi-selection
+// adds one display-only state: mixed. Its click still has a binary meaning —
+// mixed or false becomes true for all; only uniformly true becomes false.
+function metadataSignalButton(
+  className: string,
+  title: string,
+  icon: Node,
+  value: boolean | "mixed",
+  onChange: (next: boolean) => void,
+): HTMLButtonElement {
+  let current = value;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `icon-btn ${className}`;
+  btn.classList.toggle("active", value === true);
+  btn.classList.toggle("mixed", value === "mixed");
+  btn.title = value === "mixed" ? `${title} — mixed; click to set for all` : title;
+  btn.setAttribute("aria-label", btn.title);
+  btn.setAttribute("aria-pressed", String(value));
+  btn.append(icon);
+  btn.addEventListener("click", () => {
+    const next = current !== true;
+    current = next;
+    btn.classList.remove("mixed");
+    btn.classList.toggle("active", next);
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+    btn.setAttribute("aria-pressed", String(next));
+    onChange(next);
+  });
+  return btn;
+}
+
 // flagButton is the flag's only label anywhere in the UI: an icon-only toggle
 // whose tooltip says what the marker means. That is affordable precisely
 // because the meaning is the product's and not the user's — there is one flag
 // with one meaning, so a glyph plus a tooltip is the whole legend.
 function flagButton(item: Item): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.className = item.flagged ? "icon-btn flag-btn active" : "icon-btn flag-btn";
-  btn.title = "Flag: needs attention (!)";
-  btn.append(icons.flag(16));
-  btn.addEventListener("click", () => {
-    // Toggled directly, like the priority chips: the panel skips its own
-    // rebuild while a control holds focus, so the class has to move by hand.
-    btn.classList.toggle("active");
-    void actions.setFlagged([item.id], !item.flagged);
-  });
-  return btn;
+  return metadataSignalButton(
+    "flag-btn",
+    "Flag: needs attention (!)",
+    icons.flag(16),
+    item.flagged,
+    (flagged) => void actions.setFlagged([item.id], flagged),
+  );
 }
 
 // tentativeButton and riskButton follow flagButton: icon-only toggles whose
-// tooltips are the signals' only labels. They commit a plain single-item
-// patch — unlike the flag, neither has a multi-select shortcut.
+// tooltips are the signals' only labels.
 function tentativeButton(item: Item): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.className = item.tentative ? "icon-btn tent-btn active" : "icon-btn tent-btn";
-  btn.title = "Tentative timing: dates are not a precise commitment";
-  btn.append(icons.approx(16));
-  btn.addEventListener("click", () => {
-    btn.classList.toggle("active");
-    void actions.updateItem(item.id, { tentative: !item.tentative });
-  });
-  return btn;
+  return metadataSignalButton(
+    "tent-btn",
+    "Tentative timing: dates are not a precise commitment",
+    icons.approx(16),
+    item.tentative,
+    (tentative) => void actions.updateItem(item.id, { tentative }),
+  );
 }
 
 function riskButton(item: Item): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.className = item.atRisk ? "icon-btn risk-btn active" : "icon-btn risk-btn";
-  btn.title = "At risk: the plan stands, but there is reason to doubt it";
-  btn.append(icons.alertTriangle(16));
-  btn.addEventListener("click", () => {
-    btn.classList.toggle("active");
-    void actions.updateItem(item.id, { atRisk: !item.atRisk });
-  });
-  return btn;
+  return metadataSignalButton(
+    "risk-btn",
+    "At risk: the plan stands, but there is reason to doubt it",
+    icons.alertTriangle(16),
+    item.atRisk,
+    (atRisk) => void actions.updateItem(item.id, { atRisk }),
+  );
 }
 
 // labelsField is a tag editor: removable chips for the item's labels plus an

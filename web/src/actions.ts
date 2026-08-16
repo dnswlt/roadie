@@ -18,6 +18,8 @@ import type {
 } from "./types";
 import { setRoadmapUrl } from "./url";
 
+type ItemMetadataPatch = Pick<ItemPatch, "priority" | "flagged" | "tentative" | "atRisk">;
+
 // Default length of a new top-level item, in days added to the start (end date
 // is inclusive, so this spans DEFAULT_ITEM_SPAN + 1 days). New children don't
 // use it at all — they inherit their parent's exact range.
@@ -500,13 +502,11 @@ export const actions = {
     );
   },
 
-  // setFlagged flags or unflags several items at once, leaving everything else
-  // untouched. Backs both the panel chip (one item) and the "!" shortcut, which
-  // deliberately acts on a whole multi-selection: marking the handful of items
-  // a discussion just surfaced is the gesture this exists for.
-  async setFlagged(ids: number[], flagged: boolean): Promise<void> {
+  // updateItemMetadata applies one scalar patch to several explicitly selected items.
+  // It backs the multi-selection metadata controls: one optimistic apply and
+  // rollback, while the server keeps its deliberately small per-item PATCH.
+  async updateItemMetadata(ids: number[], patch: ItemMetadataPatch): Promise<void> {
     if (ids.length === 0) return;
-    const patch: ItemPatch = { flagged };
     await optimistic(
       () => {
         for (const id of ids) applyItemPatch(id, patch);
@@ -515,13 +515,20 @@ export const actions = {
     );
   },
 
+  // setFlagged backs both the panel chip and the "!" shortcut. It retains the
+  // named action because flagging a whole selection is also a keyboard command;
+  // the underlying batch mechanics are shared with the other simple metadata.
+  async setFlagged(ids: number[], flagged: boolean): Promise<void> {
+    await actions.updateItemMetadata(ids, { flagged });
+  },
+
   // deleteItems removes one or more items. The server cascades a parent's
   // children away with it, which the local removal gets for free: the parent
   // carries its `children` array. `state.toggleItem` guarantees a parent and
   // its child are never both selected, so the ids always name disjoint
   // containers and nothing is removed twice.
   //
-  // Batched like shiftItems/setFlagged rather than looped through a
+  // Batched like shiftItems/updateItemMetadata rather than looped through a
   // single-delete action: one optimistic apply, one rollback, one toast.
   async deleteItems(ids: number[]): Promise<void> {
     if (ids.length === 0) return;

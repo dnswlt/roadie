@@ -1269,6 +1269,15 @@ kbd {
   background: var(--c);
 }
 
+/* A multi-selection has no single lane color. Its chosen priority uses the
+   app's neutral selection tint instead of borrowing one selected lane.
+   Deliberately not .vis-chips' indigo, the other laneless chip: that is
+   --btn-primary's color, and in the rail a chip is a value, not an action. */
+.multi-meta .prio-chip.active {
+  border-color: var(--focus);
+  background: color-mix(in oklab, var(--focus) 24%, transparent);
+}
+
 /* Priority chips and the flag toggle share one row, the flag pushed to the
    trailing edge. */
 .prio-row {
@@ -1307,6 +1316,17 @@ kbd {
 .icon-btn.flag-btn.active:hover,
 .icon-btn.risk-btn.active:hover {
   background: color-mix(in oklab, var(--flag) 88%, black);
+}
+
+/* Mixed means some, not all, selected items carry the signal. Dashed is
+   deliberately neither the empty button nor the solid active fill. */
+.icon-btn.flag-btn.mixed,
+.icon-btn.tent-btn.mixed,
+.icon-btn.risk-btn.mixed {
+  color: var(--ink-2);
+  border-color: var(--border-strong);
+  border-style: dashed;
+  background: var(--grid);
 }
 
 .bar .rh:hover {
