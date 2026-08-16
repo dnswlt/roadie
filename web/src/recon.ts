@@ -487,17 +487,25 @@ function issueRow({ issue, matches }: ReconciledIssue): HTMLElement {
   if (matches.length > 0) {
     const linked = div("recon-issue-links");
     for (const match of matches) {
-      const item = document.createElement("span");
-      item.className = "recon-linked-item";
-      item.title = match.title || "(untitled)";
+      const displayTitle = match.title || "(untitled)";
+      const selected = state.isItemSelected(match.itemId);
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = selected ? "recon-linked-item selected" : "recon-linked-item";
+      item.title = `Show ${displayTitle}`;
+      item.style.setProperty("--c", laneColorValue(match.laneColor));
+      if (selected) item.setAttribute("aria-current", "true");
       const dot = document.createElement("span");
       dot.className = "color-dot";
-      dot.style.background = laneColorValue(match.laneColor);
       dot.setAttribute("aria-hidden", "true");
       const itemTitle = document.createElement("span");
       itemTitle.className = "recon-linked-item-title";
-      itemTitle.textContent = match.title || "(untitled)";
+      itemTitle.textContent = displayTitle;
       item.append(dot, itemTitle);
+      // Use the same cross-view jump as Find and dependency links. Besides
+      // feeding the edit panel, this makes a hidden/folded item renderable and
+      // leaves scrollToSelection set for the next WBS/timeline render.
+      item.addEventListener("click", () => state.revealAndSelect("item", match.itemId));
       linked.append(item);
     }
     row.append(linked);

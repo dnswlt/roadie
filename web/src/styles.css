@@ -3265,8 +3265,9 @@ button.deps-node:hover {
   font-size: 13px;
 }
 
-/* Matches live on a second row beneath the Jira summary. They are deliberately
-   non-interactive until Recon's navigation back to WBS/timeline is settled. */
+/* Matches live on a second row beneath the Jira summary. Clicking one selects
+   it in the existing edit rail; Recon stays put, so comparing several matches
+   does not bounce between views. */
 .recon-issue-links {
   grid-column: 2 / -1;
   display: flex;
@@ -3276,12 +3277,31 @@ button.deps-node:hover {
 }
 
 .recon-linked-item {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  padding: 1px 5px;
+  font: inherit;
+  text-align: left;
   color: var(--ink-2);
   font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.recon-linked-item:hover {
+  color: var(--ink);
+  background: var(--grid);
+}
+
+.recon-linked-item.selected {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--c) 18%, var(--surface));
+  border-color: color-mix(in oklab, var(--c) 42%, var(--surface));
 }
 
 .recon-linked-item .color-dot {
