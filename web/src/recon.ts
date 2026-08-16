@@ -410,7 +410,7 @@ function buildLinkModeBanner(loc: ItemLocation | null): HTMLElement | null {
   lead.append(title);
   const hint = document.createElement("div");
   hint.className = "recon-link-mode-hint";
-  hint.textContent = "Use Link beside an issue. Run or refine the query if needed.";
+  hint.textContent = "Run or refine the query if needed, then select Link.";
   copy.append(lead, hint);
   const cancel = document.createElement("button");
   cancel.type = "button";
