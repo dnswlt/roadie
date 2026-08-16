@@ -319,6 +319,13 @@ function buildQueryForm(): HTMLElement {
   input.spellcheck = false;
   input.placeholder = "JQL — e.g. project = ROAD AND issuetype = Epic";
   input.value = query;
+  const orderHelp = document.createElement("button");
+  orderHelp.type = "button";
+  orderHelp.className = "icon-btn recon-query-help";
+  orderHelp.title = "How to order Jira results";
+  orderHelp.setAttribute("aria-label", orderHelp.title);
+  orderHelp.append(icons.help(18));
+  orderHelp.addEventListener("click", () => openOrderingHelp());
   const runBtn = document.createElement("button");
   runBtn.type = "submit";
   runBtn.className = "btn btn-primary";
@@ -344,7 +351,7 @@ function buildQueryForm(): HTMLElement {
   });
   syncSave();
   saveBtn.addEventListener("click", () => void saveCurrent());
-  form.append(buildFavPicker(), input, runBtn, saveBtn);
+  form.append(buildFavPicker(), input, orderHelp, runBtn, saveBtn);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     run();
@@ -357,6 +364,56 @@ function buildQueryForm(): HTMLElement {
     head.append(err);
   }
   return head;
+}
+
+// Jira owns result ordering; Roadie preserves it rather than growing a second,
+// subtly different sorting model. The small local help dialog gives the useful
+// part of JQL's ORDER BY syntax at the point where it can be applied.
+function openOrderingHelp(): void {
+  const dlg = document.getElementById("dialog") as HTMLDialogElement;
+  dlg.replaceChildren();
+
+  const h = document.createElement("h3");
+  h.textContent = "Order Jira issues";
+  const body = div("recon-order-help");
+  const intro = document.createElement("p");
+  intro.textContent =
+    "Roadie shows issues in the order Jira returns them. Prefer to build and test queries in Jira, then paste the JQL here. For a quick ordering change, add ORDER BY at the end:";
+  body.append(intro);
+
+  const examples = document.createElement("dl");
+  examples.className = "recon-order-examples";
+  const rows: [query: string, meaning: string][] = [
+    ["ORDER BY updated DESC", "Most recently modified first"],
+    ["ORDER BY summary", "Title from A to Z"],
+    ["ORDER BY status, issueKey", "Status first, then issue key"],
+  ];
+  for (const [query, meaning] of rows) {
+    const term = document.createElement("dt");
+    const code = document.createElement("code");
+    code.textContent = query;
+    term.append(code);
+    const description = document.createElement("dd");
+    description.textContent = meaning;
+    examples.append(term, description);
+  }
+  body.append(examples);
+
+  const note = document.createElement("p");
+  note.className = "recon-order-note";
+  note.textContent = "Ascending is the default; add DESC to reverse it. Separate fields with commas.";
+  body.append(note);
+
+  const actions = div("dialog-actions");
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "btn btn-primary";
+  close.textContent = "Close";
+  close.addEventListener("click", () => dlg.close());
+  actions.append(close);
+
+  dlg.append(h, body, actions);
+  dlg.showModal();
 }
 
 // buildFavPicker builds the "Saved" dropdown: a .menu-wrap so the shared menu

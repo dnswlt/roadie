@@ -94,6 +94,11 @@ strategically relevant. Teams can express that scope using whatever Jira fields
 already carry meaning for them: issue type, project, release, component,
 initiative, or an existing portfolio marker.
 
+Roadie also preserves the result order Jira returns rather than adding a second
+sorting UI. A small help affordance beside the query editor shows a few useful
+`ORDER BY` examples, including descending order and multiple fields, so users do
+not need to remember the syntax or configure sortable columns in Roadie.
+
 ### Roadie items
 
 The second list is independent of the active Jira query. It shows every Roadie
