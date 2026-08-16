@@ -1,6 +1,6 @@
-// The edit side-panel for the selected item. Values are committed on
-// change (blur / Enter / date pick); structural actions (add child,
-// delete) go through actions.ts.
+// The edit side-panel for the selected item. Text values are committed when
+// editing finishes (blur / Enter); deliberate picks and structural actions
+// (add child, delete) commit immediately through actions.ts.
 
 import { actions } from "./actions";
 import { copyText } from "./clipboard";
@@ -10,7 +10,13 @@ import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
 import { extractLinks } from "./links";
 import { itemMarkdown } from "./markdown";
-import { periodAtEdge, periodDates, periodsByStart } from "./schedule";
+import {
+  editRangeDate,
+  isValidDate,
+  periodAtEdge,
+  periodDates,
+  periodsByStart,
+} from "./schedule";
 import { state, type MilestoneLocation } from "./state";
 import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./types";
 import { selectionLink } from "./url";
@@ -459,21 +465,116 @@ interface DateEditorRows {
 
 type ItemDates = Pick<Item, "startDate" | "endDate">;
 
-// itemDateEditor owns the four controls that edit one date range: two native
-// date inputs and, when the roadmap has a schedule, the two period selects
-// beneath them. `value` is their one shared state. Every edit passes through
-// show (synchronize all four controls) and commit (send one minimal patch), so
-// neither the DOM nor the item captured by render has to masquerade as the
-// latest value while the focused panel deliberately skips rebuilds.
+interface DateField {
+  wrap: HTMLElement;
+  show: (value: string) => void;
+}
+
+// A native date input conflates editing a segment with committing the date:
+// Chromium fires `change` while the cursor is still in the field. Keep the
+// useful half of that control — its calendar — but give keyboard editing to an
+// ordinary ISO text field with ordinary text-field semantics. The two distinct
+// controls make commit intent explicit rather than inferred from pointer or
+// keyboard events.
+function dateField(
+  label: string,
+  pickerTitle: string,
+  onCommit: (value: string) => void,
+): DateField {
+  const wrap = document.createElement("div");
+  wrap.className = "panel-field";
+  const caption = document.createElement("span");
+  caption.textContent = label;
+
+  const editor = document.createElement("div");
+  editor.className = "panel-date-editor";
+  const input = document.createElement("input");
+  input.className = "panel-date-input";
+  input.type = "text";
+  input.placeholder = "YYYY-MM-DD";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.setAttribute("aria-label", label);
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "icon-btn panel-date-picker";
+  open.title = pickerTitle;
+  open.setAttribute("aria-label", open.title);
+  open.append(icons.calendar(15));
+
+  // Kept rendered so showPicker() can anchor the browser calendar beside the
+  // button. It never receives ordinary focus: keyboard users open it through
+  // the labelled button, just like mouse users.
+  const picker = document.createElement("input");
+  picker.className = "panel-native-date-picker";
+  picker.type = "date";
+  picker.tabIndex = -1;
+  picker.setAttribute("aria-hidden", "true");
+
+  const error = document.createElement("span");
+  error.className = "panel-date-error";
+  error.textContent = "Use valid YYYY-MM-DD";
+  error.hidden = true;
+
+  let committed = "";
+  const clearError = (): void => {
+    input.removeAttribute("aria-invalid");
+    error.hidden = true;
+  };
+  const show = (value: string): void => {
+    committed = value;
+    input.value = value;
+    picker.value = value;
+    clearError();
+  };
+  const commitText = (): void => {
+    const next = input.value.trim();
+    if (!isValidDate(next)) {
+      input.setAttribute("aria-invalid", "true");
+      error.hidden = false;
+      return;
+    }
+    clearError();
+    onCommit(next);
+  };
+
+  input.addEventListener("input", clearError);
+  input.addEventListener("blur", commitText);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") input.blur();
+  });
+  open.addEventListener("click", () => {
+    const draft = input.value.trim();
+    // An unusable draft is abandoned before the calendar opens. It would
+    // otherwise start on the committed date, and choosing that same day fires
+    // no change event — leaving the field marked invalid and the pick ignored.
+    if (isValidDate(draft)) picker.value = draft;
+    else show(committed);
+    // No feature detection: where showPicker is missing the button is inert and
+    // the text field is the whole editor, which is the deal.
+    picker.showPicker();
+  });
+  picker.addEventListener("change", () => {
+    if (picker.value) onCommit(picker.value);
+  });
+
+  editor.append(input, open, picker);
+  wrap.append(caption, editor, error);
+  return { wrap, show };
+}
+
+// itemDateEditor owns every control that edits one date range: the two date
+// fields and, when the roadmap has a schedule, the two period selects beneath
+// them. `value` is their one shared state. Every edit passes through show
+// (synchronize all controls) and commit (send one minimal patch), so neither
+// the DOM nor the item captured by render has to masquerade as the latest value
+// while the focused panel deliberately skips rebuilds.
 function itemDateEditor(item: Item): DateEditorRows {
   const dates = document.createElement("div");
   dates.className = "panel-row";
-  const start = field("Start", "input");
-  const startInput = start.control as HTMLInputElement;
-  startInput.type = "date";
-  const end = field("End", "input");
-  const endInput = end.control as HTMLInputElement;
-  endInput.type = "date";
+  const start = dateField("Start", "Choose start date", (date) => edit("start", date));
+  const end = dateField("End", "Choose end date", (date) => edit("end", date));
   dates.append(start.wrap, end.wrap);
 
   const periods = periodsByStart(state.current?.periods ?? []);
@@ -483,8 +584,8 @@ function itemDateEditor(item: Item): DateEditorRows {
 
   const show = (next: ItemDates): void => {
     value = next;
-    startInput.value = next.startDate;
-    endInput.value = next.endDate;
+    start.show(next.startDate);
+    end.show(next.endDate);
     if (startPeriod) {
       startPeriod.value = periodAtEdge(periods, "start", next.startDate)?.id.toString() ?? "";
     }
@@ -500,17 +601,9 @@ function itemDateEditor(item: Item): DateEditorRows {
     if (next.endDate !== previous.endDate) patch.endDate = next.endDate;
     if (patch.startDate || patch.endDate) void actions.updateItem(item.id, patch);
   };
-  const edit = (edge: "start" | "end", input: HTMLInputElement): void => {
-    if (!input.value) return;
-    commit(
-      edge === "start"
-        ? { startDate: input.value, endDate: value.endDate }
-        : { startDate: value.startDate, endDate: input.value },
-    );
-  };
-
-  startInput.addEventListener("change", () => edit("start", startInput));
-  endInput.addEventListener("change", () => edit("end", endInput));
+  function edit(edge: "start" | "end", date: string): void {
+    commit(editRangeDate(edge, date, value));
+  }
 
   let periodRowElement: HTMLElement | null = null;
   if (periods.length > 0) {
@@ -525,18 +618,15 @@ function itemDateEditor(item: Item): DateEditorRows {
 }
 
 // milestoneDateEditor is the point-date twin of itemDateEditor. The same local
-// value drives both the native input and its optional "Due in" period select.
+// value drives both the date field and its optional "Due in" period select.
 function milestoneDateEditor(milestone: Milestone): DateEditorRows {
-  const fieldRow = field("Date", "input");
-  const input = fieldRow.control as HTMLInputElement;
-  input.type = "date";
   const periods = periodsByStart(state.current?.periods ?? []);
   let value = milestone.date;
   let duePeriod: HTMLSelectElement | null = null;
 
   const show = (next: string): void => {
     value = next;
-    input.value = next;
+    date.show(next);
     if (duePeriod) {
       duePeriod.value = periodAtEdge(periods, "end", next)?.id.toString() ?? "";
     }
@@ -546,10 +636,7 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
     show(next);
     if (next !== previous) void actions.updateMilestone(milestone.id, { date: next });
   };
-
-  input.addEventListener("change", () => {
-    if (input.value) commit(input.value);
-  });
+  const date = dateField("Date", "Choose date", commit);
 
   let periodRowElement: HTMLElement | null = null;
   if (periods.length > 0) {
@@ -559,7 +646,7 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
     periodRowElement = periodRow(duePeriod);
   }
   show(value);
-  return { dateRow: fieldRow.wrap, periodRow: periodRowElement };
+  return { dateRow: date.wrap, periodRow: periodRowElement };
 }
 
 // renderPanel routes the rail to one of four views. The rail itself is a

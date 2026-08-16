@@ -51,7 +51,7 @@ test.afterEach(async ({ request }) => {
 
 const startSelect = (page: Page) => page.locator('#panel select[aria-label="Start period"]');
 const endSelect = (page: Page) => page.locator('#panel select[aria-label="End period"]');
-const startInput = (page: Page) => page.locator("#panel .panel-row input").first();
+const startInput = (page: Page) => page.locator("#panel .panel-date-input").first();
 
 // shown is what a dropdown currently displays — "—" when the date it belongs
 // to is not a period edge.
@@ -118,6 +118,48 @@ test("a typed date moves its dropdown, leaving every boundary pickable", async (
   await expect
     .poll(async () => (await laneItems(request, seeded.roadmapId, seeded.laneId))[0]!.startDate)
     .toBe("2026-01-05");
+});
+
+test("typing a date does not change the roadmap until editing finishes", async ({
+  page,
+  request,
+}) => {
+  await openItem(page);
+  await startInput(page).fill("2023-01-19");
+
+  // The draft is visible, but neither the stored item nor the timeline moves
+  // while the user is still assembling the date.
+  expect(await startInput(page).inputValue()).toBe("2023-01-19");
+  expect((await laneItems(request, seeded.roadmapId, seeded.laneId))[0]!.startDate).toBe(
+    "2026-01-19",
+  );
+
+  await startInput(page).press("Enter");
+  await expect
+    .poll(async () => (await laneItems(request, seeded.roadmapId, seeded.laneId))[0]!.startDate)
+    .toBe("2023-01-19");
+});
+
+test("the calendar commits its selection immediately", async ({ page, request }) => {
+  await openItem(page);
+  await page.getByRole("button", { name: "Choose start date" }).click();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(async () => (await laneItems(request, seeded.roadmapId, seeded.laneId))[0]!.startDate)
+    .toBe("2026-01-20");
+});
+
+test("an invalid typed date stays local and is marked", async ({ page, request }) => {
+  await openItem(page);
+  await startInput(page).fill("2026-02-30");
+  await startSelect(page).focus();
+
+  await expect(startInput(page)).toHaveAttribute("aria-invalid", "true");
+  expect((await laneItems(request, seeded.roadmapId, seeded.laneId))[0]!.startDate).toBe(
+    "2026-01-19",
+  );
 });
 
 test("a milestone's Due in lands on the period's last day", async ({ page, request }) => {

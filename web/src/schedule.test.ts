@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
+  editRangeDate,
+  isValidDate,
   nearestBoundary,
   parseSchedule,
   periodAtEdge,
@@ -11,6 +13,39 @@ import {
 } from "./schedule";
 import { dayOf } from "./timescale";
 import type { SchedulePeriod } from "./types";
+
+test("isValidDate accepts only real ISO calendar dates", () => {
+  assert.equal(isValidDate("2026-02-28"), true);
+  assert.equal(isValidDate("2026-02-30"), false);
+  assert.equal(isValidDate("2026-2-28"), false);
+});
+
+test("editRangeDate collapses a crossed range onto the entered date", () => {
+  const dates = { startDate: "2026-02-01", endDate: "2026-02-28" };
+  assert.deepEqual(editRangeDate("start", "2026-03-10", dates), {
+    startDate: "2026-03-10",
+    endDate: "2026-03-10",
+  });
+  assert.deepEqual(editRangeDate("end", "2026-01-10", dates), {
+    startDate: "2026-01-10",
+    endDate: "2026-01-10",
+  });
+  assert.deepEqual(editRangeDate("start", "2026-01-10", dates), {
+    startDate: "2026-01-10",
+    endDate: "2026-02-28",
+  });
+});
+
+test("editRangeDate rejects anything that is not a real ISO date", () => {
+  const dates = { startDate: "2026-02-01", endDate: "2026-02-28" };
+  assert.throws(() => editRangeDate("start", "2027-7-1", dates), /requires valid dates/);
+  // Parseable but impossible: Date rolls this over to 2026-03-02.
+  assert.throws(() => editRangeDate("start", "2026-02-30", dates), /requires valid dates/);
+  assert.throws(
+    () => editRangeDate("start", "2026-03-10", { startDate: "2026-02-01", endDate: "" }),
+    /requires valid dates/,
+  );
+});
 
 test("parseSchedule reads START END LABEL lines", () => {
   const { periods, errors } = parseSchedule(

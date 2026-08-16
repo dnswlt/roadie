@@ -2050,6 +2050,78 @@ kbd {
   flex: 1;
 }
 
+/* Date entry is deliberately split in two. The text field gives keyboard
+   editing normal text semantics; the attached button opens the browser's
+   calendar for pointing. They share one outline so this reads as one control,
+   not an input with an unrelated action beside it. */
+.panel-date-editor {
+  position: relative;
+  display: flex;
+}
+
+.panel-date-input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 7px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px 0 0 7px;
+}
+
+.panel-date-input:focus {
+  position: relative;
+  z-index: 1;
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
+}
+
+.panel-date-input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.icon-btn.panel-date-picker {
+  flex: none;
+  width: 31px;
+  height: 31px;
+  border-color: var(--border);
+  border-left: 0;
+  border-radius: 0 7px 7px 0;
+  background: var(--surface);
+}
+
+.icon-btn.panel-date-picker:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
+}
+
+.panel-native-date-picker {
+  position: absolute;
+  right: 15px;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-date-error {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.panel-date-error[hidden] {
+  display: none;
+}
+
 /* A second line of the row above rather than a field of its own: it pulls up
    against that row and carries its bottom margin instead of adding one. */
 .panel-row-sub {

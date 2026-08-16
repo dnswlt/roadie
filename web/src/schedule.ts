@@ -14,11 +14,32 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // isValidDate rejects both malformed strings and impossible calendar dates
 // (e.g. 2026-02-30, which Date would silently roll over).
-function isValidDate(s: string): boolean {
+export function isValidDate(s: string): boolean {
   if (!ISO_DATE.test(s)) return false;
   const t = Date.parse(s + "T00:00:00Z");
   if (Number.isNaN(t)) return false;
   return new Date(t).toISOString().slice(0, 10) === s;
+}
+
+// editRangeDate applies a hand-entered edge without ever producing an invalid
+// range: crossing the other edge makes the item a one-day item at the entered
+// date, rather than leaving a rejected value in the editor. A resize drag
+// clamps to the untouched edge instead (dnd.ts) — a typed date is a deliberate
+// assertion, not a gesture passing through. Every date must be a real ISO
+// calendar date; a caller that cannot promise that has to validate first.
+export function editRangeDate(
+  edge: "start" | "end",
+  date: string,
+  current: { startDate: string; endDate: string },
+): { startDate: string; endDate: string } {
+  if (![date, current.startDate, current.endDate].every(isValidDate)) {
+    throw new Error("editRangeDate requires valid dates");
+  }
+  const day = dayOf(date);
+  if (edge === "start") {
+    return { startDate: date, endDate: day > dayOf(current.endDate) ? date : current.endDate };
+  }
+  return { startDate: day < dayOf(current.startDate) ? date : current.startDate, endDate: date };
 }
 
 // parseSchedule reads the editor format: one period per line, `START END LABEL`
