@@ -85,7 +85,8 @@ class AppState {
   // preference like snapMode — a way of working, not a property of any one
   // roadmap — persisted in localStorage (read at boot in app.ts) and toggled
   // by "v" and the topbar button. Recon is a task you visit, not a way of
-  // working, so it is never persisted: a reload lands on the chart.
+  // working, so it is never persisted: a reload lands on the chart. It is
+  // entered by "r" or its own button, never by the chart cycle.
   viewMode: ViewMode = "timeline";
   // The chart view to return to when leaving Recon.
   private lastChartMode: ChartMode = "timeline";
@@ -308,6 +309,13 @@ class AppState {
     return this.viewMode === "recon" ? this.lastChartMode : this.viewMode;
   }
 
+  // Whether Recon can be shown at all: the server has a tracker configured and
+  // a roadmap is open. The topbar button expresses the two separately (hidden,
+  // then disabled); the "r" shortcut has no such affordance, so it asks here.
+  get canShowRecon(): boolean {
+    return this.me.trackerAvailable && this.current !== null;
+  }
+
   // setViewMode switches what the main area shows. Any current selection is
   // scrolled into view after the switch, so toggling between chart views reads
   // as re-projecting the same spot of the model, not as jumping to an
@@ -341,6 +349,14 @@ class AppState {
     this.setViewMode(
       this.viewMode === "recon" ? this.chartMode : this.viewMode === "wbs" ? "timeline" : "wbs",
     );
+  }
+
+  // toggleReconView backs the "r" shortcut: into Recon from a chart view, back
+  // out to the chart view it was entered from. Leaving works even where Recon
+  // could not be entered, so the shortcut can never strand the user there.
+  toggleReconView(): void {
+    if (this.viewMode === "recon") this.setViewMode(this.chartMode);
+    else if (this.canShowRecon) this.setViewMode("recon");
   }
 
   isMilestonesCollapsed(laneId: number): boolean {

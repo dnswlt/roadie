@@ -140,6 +140,15 @@ export const bindings: Binding[] = [
     run: () => state.toggleChartView(),
   },
   {
+    key: "r",
+    label: "r",
+    // Does nothing when Recon is unavailable (no tracker configured, or no
+    // roadmap open) — the topbar button is hidden or disabled there, and a
+    // shortcut has no way to show that.
+    description: "*Switch to Jira Recon*, and back to the view you came from.",
+    run: () => state.toggleReconView(),
+  },
+  {
     key: "z",
     label: "z",
     description: "*Fit all items* in the visible contexts on screen (timeline view).",
