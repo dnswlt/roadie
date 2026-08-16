@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { extractLinks, linkLabel, trimUrl } from "./links";
+import { appendLinkToDescription, extractLinks, linkLabel, trimUrl } from "./links";
+
+test("appendLinkToDescription adds a final paragraph without rewriting the description", () => {
+  const url = "https://jira.example.test/browse/PAY-1";
+  assert.equal(appendLinkToDescription("", url), url);
+  assert.equal(appendLinkToDescription("Existing notes", url), `Existing notes\n\n${url}`);
+  assert.equal(appendLinkToDescription("Existing notes\n", url), `Existing notes\n\n${url}`);
+  assert.equal(appendLinkToDescription("Existing notes\n\n", url), `Existing notes\n\n${url}`);
+});
 
 test("trimUrl strips trailing sentence punctuation", () => {
   assert.equal(trimUrl("https://example.com/page."), "https://example.com/page");

@@ -3243,18 +3243,19 @@ button.deps-node:hover {
   margin-top: 22px;
 }
 
-/* Four true columns — key, summary, type, status — each sized by its widest
-   cell: every row is a subgrid of these tracks, so the columns line up across
-   rows instead of leaving type and status ragged. */
+/* Five true columns — key, summary, type, status, link action — each sized by
+   its widest cell. Every row is a subgrid of these tracks, so the columns line
+   up across rows instead of leaving type and status ragged. */
 .recon-list {
   margin-top: 10px;
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content;
   column-gap: 14px;
 }
 
 .recon-issue {
+  position: relative;
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
@@ -3263,6 +3264,25 @@ button.deps-node:hover {
   padding: 7px 4px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+}
+
+.recon-issue-add {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+}
+
+/* Shared search-list furniture, anchored under the issue row's plus. Right
+   alignment keeps the popup inside Recon's reading-width column. */
+.recon-link-pop {
+  left: auto;
+  right: 0;
+  width: min(400px, calc(100vw - 48px));
+  padding: 6px;
+}
+
+.recon-link-pop .find-list {
+  max-height: 240px;
 }
 
 /* Matches live on a second row beneath the Jira summary. Clicking one selects

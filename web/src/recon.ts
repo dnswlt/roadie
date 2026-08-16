@@ -14,11 +14,14 @@
 // rebuild, so an SSE refresh landing mid-typing cannot eat a half-written
 // query.
 
+import { actions } from "./actions";
 import { api } from "./api";
 import { laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
 import { icons } from "./icons";
+import { appendLinkToDescription } from "./links";
 import { diffTrackerIssues, type ReconciledIssue } from "./recon-diff";
+import { createSearchList } from "./search-list";
 import { state } from "./state";
 import { toast } from "./toast";
 import type { TrackerIssue, TrackerQuery } from "./types";
@@ -55,6 +58,12 @@ let favsLoading = false;
 let activeFavId: number | null = null;
 let pickerOpen = false;
 let pickerCloseWired = false;
+
+// The issue-to-item picker is a transient search-list popup, like the dependency
+// picker. Only one may be open; keeping its closer here also lets a
+// full Recon rebuild remove its document click-away listener before replacing
+// the DOM underneath it.
+let issuePickerClose: (() => void) | null = null;
 
 let mount: HTMLElement | null = null;
 
@@ -239,6 +248,7 @@ function div(className: string): HTMLDivElement {
 }
 
 export function renderRecon(container: HTMLElement): void {
+  issuePickerClose?.();
   mount = container;
   ensureFavourites();
   // Close the picker from anywhere outside its wrap. Wired once, on the
@@ -464,6 +474,47 @@ function filterChip(unmatched: number, loaded: number): HTMLElement {
   return bar;
 }
 
+function openIssuePicker(row: HTMLElement, issue: TrackerIssue, linkedItemIds: Set<number>): void {
+  issuePickerClose?.();
+  // The Saved menu and this picker occupy the same view. If the plus was
+  // clicked while Saved was open, its swallowed opener click cannot reach the
+  // Saved menu's document closer, so close that menu explicitly.
+  pickerOpen = false;
+  mount?.querySelector(".recon-fav-menu")?.remove();
+
+  const pop = div("menu recon-link-pop");
+  const onDocClick = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) close();
+  };
+  const close = (): void => {
+    if (issuePickerClose === close) issuePickerClose = null;
+    document.removeEventListener("click", onDocClick);
+    pop.remove();
+  };
+  issuePickerClose = close;
+  document.addEventListener("click", onDocClick);
+
+  const picker = createSearchList({
+    placeholder: "Link to a Roadie item…",
+    maxRows: 8,
+    emptyHint: "Type to search Roadie items.",
+    filter: (match) => match.kind === "item" && !linkedItemIds.has(match.id),
+    onCommit: (match) => {
+      close();
+      const loc = state.findItem(match.id);
+      if (!loc) return;
+      const description = appendLinkToDescription(loc.item.description, issue.url);
+      void actions.updateItem(match.id, { description });
+    },
+    onDismiss: close,
+  });
+
+  pop.append(picker.el);
+  row.append(pop);
+  picker.refresh();
+  picker.focus();
+}
+
 // One result row: enough to identify the issue (key, summary, type, status),
 // with the key linking out — opening an issue goes to Jira, never to a Roadie
 // rendering of it.
@@ -484,6 +535,18 @@ function issueRow({ issue, matches }: ReconciledIssue): HTMLElement {
   const status = div("recon-issue-status");
   status.textContent = issue.status;
   row.append(key, title, type, status);
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "icon-btn recon-issue-add";
+  add.title = `Link ${issue.key} to a Roadie item`;
+  add.setAttribute("aria-label", add.title);
+  add.append(icons.plus(14));
+  add.addEventListener("click", (e) => {
+    // Do not let the click-away listener see the click that created it.
+    e.stopPropagation();
+    openIssuePicker(row, issue, new Set(matches.map((match) => match.itemId)));
+  });
+  row.append(add);
   if (matches.length > 0) {
     const linked = div("recon-issue-links");
     for (const match of matches) {

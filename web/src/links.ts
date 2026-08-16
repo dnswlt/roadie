@@ -9,6 +9,15 @@ export interface Link {
   explicit: boolean;
 }
 
+// Append a URL as its own final paragraph without rewriting any authored text.
+// Descriptions are plain text/Markdown, so two line breaks are the smallest
+// separator that stays a separate paragraph in both representations.
+export function appendLinkToDescription(description: string, url: string): string {
+  if (description === "") return url;
+  const separator = description.endsWith("\n\n") ? "" : description.endsWith("\n") ? "\n" : "\n\n";
+  return `${description}${separator}${url}`;
+}
+
 function countChar(s: string, ch: string): number {
   let n = 0;
   for (const c of s) if (c === ch) n++;

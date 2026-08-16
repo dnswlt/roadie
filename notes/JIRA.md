@@ -83,9 +83,10 @@ to fill the filtered list. The UI makes that scope clear, for example: “27
 unmatched among 300 loaded issues.” A user who needs complete reconciliation
 loads the remaining pages explicitly.
 
-Opening an issue goes to Jira. Opening a match selects the Roadie item. The
-first version does not write a link into either system from this view; users add
-Jira URLs through the existing Roadie description field.
+Opening an issue goes to Jira. Opening a match selects the Roadie item. An issue
+can be linked to additional Roadie items from its result row; choosing an item
+appends the Jira URL to that item's description. Items already linked to that
+issue are omitted from the picker. Roadie still never writes to Jira.
 
 The query defines the Jira universe. Roadie does not require a
 `Roadie_enabled` label or attempt to infer which of hundreds of Jira issues are
