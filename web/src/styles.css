@@ -663,6 +663,13 @@ kbd {
   position: relative;
 }
 
+/* Timeline and WBS paint full-width white lane surfaces. Recon is a narrower
+   reading column, so its own presence supplies the same white working surface
+   without involving the app's view controller. */
+.chart-scroll:has(> .recon) {
+  background: var(--surface);
+}
+
 .grid {
   min-width: 100%;
 }
@@ -3186,8 +3193,9 @@ button.deps-node:hover {
 
 /* ---------- Jira Recon view (recon.ts) ---------- */
 
-/* A reading-width column inside the chart's scroll container: Recon is a list
-   to review, not a canvas, so it doesn't stretch to the viewport. */
+/* A reading-width column on the same white working surface as the roadmap
+   views: Recon is a list to review, so its content need not stretch merely to
+   fill the canvas. */
 .recon {
   max-width: 880px;
   margin: 0 auto;
@@ -3198,6 +3206,88 @@ button.deps-node:hover {
   margin: 0 0 12px;
   font-size: 16px;
   font-weight: 600;
+}
+
+.recon-tabs {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.recon-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: -1px;
+  padding: 7px 1px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.recon-tab:hover {
+  color: var(--ink);
+}
+
+.recon-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink-2);
+}
+
+.recon-tab-count {
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--ink-2);
+  background: var(--grid);
+}
+
+/* Linking starts on the Roadie-items tab but is completed against Jira
+   results. This banner carries the selected item's lane color and enough
+   weight that the temporary meaning of every row action cannot be missed. */
+.recon-link-mode {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: color-mix(in oklab, var(--c) 22%, var(--surface));
+  border-left: 3px solid var(--c);
+}
+
+.recon-link-mode-icon {
+  display: inline-flex;
+  flex: none;
+  color: color-mix(in oklab, var(--c) 55%, black);
+}
+
+.recon-link-mode-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.recon-link-mode-lead {
+  font-size: 13px;
+}
+
+.recon-link-mode-lead strong {
+  font-weight: 650;
+}
+
+.recon-link-mode-hint {
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: 11.5px;
 }
 
 .recon-query {
@@ -3319,6 +3409,88 @@ button.deps-node:hover {
   white-space: pre-wrap;
 }
 
+.recon-roadie-list {
+  margin-top: 9px;
+  border-top: 1px solid var(--border);
+}
+
+.recon-roadie-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  width: 100%;
+  color: var(--ink);
+  /* Exact WBS parent shade: the list is another projection of the same items,
+     so inventing a near-identical color scale would only make it feel foreign. */
+  background: color-mix(in oklab, var(--c) 22%, var(--surface));
+  border-bottom: 1px solid var(--border);
+}
+
+.recon-roadie-open {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) minmax(120px, 0.65fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 4px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.recon-roadie-link {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 4px;
+}
+
+.recon-roadie-item:hover {
+  background: color-mix(in oklab, var(--c) 32%, var(--surface));
+}
+
+/* Exact WBS child shades, without WBS indentation: the breadcrumb carries the
+   hierarchy here because filtering can leave a child without its parent row. */
+.recon-roadie-item.child {
+  background: color-mix(in oklab, var(--c) 10%, var(--surface));
+}
+
+.recon-roadie-item.child:hover {
+  background: color-mix(in oklab, var(--c) 24%, var(--surface));
+}
+
+.recon-roadie-item.selected {
+  z-index: 1;
+  outline: 2px solid color-mix(in oklab, var(--c) 65%, black);
+  outline-offset: -2px;
+}
+
+.recon-roadie-item .color-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.recon-roadie-title,
+.recon-roadie-context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Secondary, but readable over a lane tint: the row's own ink dimmed, exactly
+   as .wbs-dates carries the date range — not a flat gray, which is why this
+   went too light. */
+.recon-roadie-context {
+  opacity: 0.75;
+  font-size: 12px;
+}
+
 .recon-hint {
   margin-top: 28px;
   color: var(--muted);
@@ -3404,6 +3576,14 @@ button.deps-node:hover {
   align-self: center;
   width: 22px;
   height: 22px;
+}
+
+/* In linking mode the ambiguous icon becomes an explicit primary action. The
+   target banner supplies the object; every row supplies the issue. */
+.recon-issue-link-target {
+  align-self: center;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 /* Shared search-list furniture, anchored under the issue row's plus. Right

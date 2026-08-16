@@ -25,6 +25,7 @@ import {
   toggleFlagSelection,
   togglePanel,
 } from "./panel";
+import { cancelReconLinkMode } from "./recon";
 import { state } from "./state";
 import { zoomToFit } from "./zoom";
 
@@ -68,13 +69,15 @@ export const bindings: Binding[] = [
     // Enter on the title is handled on the field itself (see titleField); it
     // has the same finish-and-retain-selection result.
     inTextField: true,
-    description: "*Finish editing*, or leave version history.",
+    description: "*Finish editing*, cancel Jira linking, or leave version history.",
+    // Ordered as the description reads: a half-typed panel field is the
+    // nearest meaning of Escape, so it wins over the view-level modes. Recon's
+    // linking banner is one of those — the rail is on screen there too, and
+    // the linked item is exactly the one being edited.
     run: () => {
-      if (state.history !== null) {
-        void actions.closeHistory();
-      } else {
-        flushPendingEdit();
-      }
+      if (flushPendingEdit()) return;
+      if (cancelReconLinkMode()) return;
+      if (state.history !== null) void actions.closeHistory();
     },
   },
   {

@@ -19,8 +19,7 @@ The connection is deliberately asymmetric and read-only:
 The feature answers two separate questions:
 
 1. Which issues in a chosen Jira result set are represented in this roadmap?
-2. Which Roadie items have neither a Jira reference nor an explicit reason not
-   to need one?
+2. Which Roadie items have no Jira reference?
 
 Neither list declares that one system is correct. It gives a person a small set
 of discrepancies to review.
@@ -102,38 +101,30 @@ not need to remember the syntax or configure sortable columns in Roadie.
 ### Roadie items
 
 The second list is independent of the active Jira query. It shows every Roadie
-item that:
-
-- contains no recognized Jira issue URL; and
-- has not explicitly been ignored for reconciliation.
+item that contains no recognized Jira issue URL.
 
 This is intentionally a reference-presence check, not a claim that a Jira issue
 matching some query exists for the item.
 
-Each row opens the item and offers a cheap **Ignore for Jira Recon** action.
-Ignored items move to a separate list on the same page. That list is collapsed
-by default, displays its count, and makes restoring an item to the active list a
-single action. Keeping ignored items visible and reversible prevents the ignore
-mechanism from becoming an invisible graveyard.
+Each row opens the item in the existing edit panel. Its link action carries the
+selected item to the Jira-issues list, where the normal query finds candidates
+and each result becomes a direct Link action for that item. Linking returns to
+the Roadie list; cancelling does the same. This keeps issue discovery in the
+one place that already understands JQL rather than adding a second, partial
+Jira search.
+
+One local filter narrows the list to top-level items, for a review that wants
+to settle parents before their subtasks. It is a view over the same list, not a
+change to what counts as unreferenced: children remain individually checked.
+
+The first implementation deliberately has no ignore action or ignore state;
+whether reconciliation needs that extra workflow should be decided from use
+rather than assumed up front.
 
 Children are checked individually: a link on a parent does not silently cover
 its children, and vice versa. This keeps the rule mechanical and avoids
 importing Jira or Roadie hierarchy semantics into reconciliation. We can revisit
 this if real roadmaps produce excessive noise.
-
-## Ignored Roadie items
-
-Ignored items are stored as explicit reconciliation state in a separate backend
-table. The table associates an item with its roadmap and exposes atomic ignore
-and restore operations. It cascades on item deletion.
-
-This state does not use a reserved label. Ignoring an item is a decision owned
-by Jira Recon rather than a classification of the roadmap item, and keeping it
-separate avoids magic label semantics and concurrent whole-array label updates.
-
-Ignore state lives outside the `RoadmapExport` envelope. Restoring the plan does
-not restore an old reconciliation inbox. No reason, expiry, or workflow state
-is needed initially; the visible ignored-items list provides reviewability.
 
 ## Matching rules
 
@@ -158,9 +149,9 @@ never roadmap fields, exports, or snapshots. Access must be limited to Jira
 search and issue reads.
 
 Saved query favourites live in their own backend table and belong to one
-roadmap. Like ignore state, they are operational reconciliation data rather than
-roadmap content and remain outside snapshots and exports. Deleting a roadmap
-deletes its saved queries.
+roadmap. They are operational reconciliation data rather than roadmap content
+and remain outside snapshots and exports. Deleting a roadmap deletes its saved
+queries.
 
 The first version runs queries explicitly. It may cache results briefly. It has
 no polling, webhooks, background reconciliation, notifications, or automatic
@@ -184,8 +175,7 @@ validated against Atlassian's Jira Data Center REST documentation.
 1. Add connection configuration and read-only ad hoc JQL search.
 2. Extract and index Jira references from the current roadmap, then add the
    matched/unmatched Jira result filter.
-3. Add the independent unreferenced Roadie item list and reviewable ignore
-   state.
+3. Add the independent unreferenced Roadie item list.
 4. Add lightweight saved-query CRUD.
 5. Based on usage, consider stale or inaccessible-link reporting.
 

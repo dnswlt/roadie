@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { diffTrackerIssues } from "./recon-diff";
+import { diffTrackerIssues, roadieItemsWithoutJiraReference } from "./recon-diff";
 import type { Item, ItemFull, LaneFull, RoadmapFull, TrackerIssue } from "./types";
 
 function child(id: number, title: string, description = ""): Item {
@@ -125,4 +125,59 @@ test("diff handles no roadmap without changing issue order", () => {
   const rows = diffTrackerIssues(issues, null);
   assert.deepEqual(rows.map((row) => row.issue.key), ["PAY-2", "PAY-1"]);
   assert.ok(rows.every((row) => row.matches.length === 0));
+});
+
+test("unreferenced Roadie items are flat, individually checked, and keep roadmap order", () => {
+  const rm = roadmap(
+    item(1, "Linked parent", "https://jira.example.test/jira/browse/PAY-1", [
+      child(2, "Unlinked child"),
+      child(3, "Linked child", "[work](https://jira.example.test/jira/browse/pay-2?tab=work)"),
+    ]),
+    item(4, "Unlinked parent", "A normal link: https://example.test/document"),
+  );
+  rm.lanes.push({
+    id: 2,
+    roadmapId: 1,
+    name: "Operations",
+    position: 1,
+    color: "blue",
+    items: [{ ...item(5, "Later lane"), laneId: 2 }],
+    milestones: [],
+  });
+
+  assert.deepEqual(roadieItemsWithoutJiraReference(rm), [
+    {
+      itemId: 2,
+      title: "Unlinked child",
+      laneName: "Delivery",
+      laneColor: "green",
+      parentTitle: "Linked parent",
+    },
+    {
+      itemId: 4,
+      title: "Unlinked parent",
+      laneName: "Delivery",
+      laneColor: "green",
+      parentTitle: null,
+    },
+    {
+      itemId: 5,
+      title: "Later lane",
+      laneName: "Operations",
+      laneColor: "blue",
+      parentTitle: null,
+    },
+  ]);
+});
+
+test("unreferenced Roadie items reject malformed Jira-shaped links and ignore milestones", () => {
+  const rm = roadmap(
+    item(1, "Zero key", "https://jira.example.test/browse/PAY-0"),
+    item(2, "Not browse", "https://jira.example.test/issues/PAY-2"),
+  );
+  assert.deepEqual(
+    roadieItemsWithoutJiraReference(rm).map((row) => row.title),
+    ["Zero key", "Not browse"],
+  );
+  assert.deepEqual(roadieItemsWithoutJiraReference(null), []);
 });

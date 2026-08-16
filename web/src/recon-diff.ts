@@ -18,6 +18,14 @@ export interface ReconciledIssue {
   matches: RoadieIssueMatch[];
 }
 
+export interface UnreferencedRoadieItem {
+  itemId: number;
+  title: string;
+  laneName: string;
+  laneColor: string;
+  parentTitle: string | null;
+}
+
 // Jira's default issue-key grammar. The key is normalized separately from the
 // rest of the URL because Jira keys are case-insensitive while a deployment's
 // context path need not be.
@@ -36,6 +44,49 @@ function issueIdentity(raw: string, expectedKey?: string): string | null {
   } catch {
     return null;
   }
+}
+
+// The Roadie-side list is deliberately independent of a Jira query, so it has
+// no canonical result URL from which to infer the configured deployment. At
+// this frontend-only stage, "has a Jira reference" therefore means a valid
+// HTTP(S) Jira issue-link shape. Exact deployment identity is still enforced
+// by diffTrackerIssues whenever a concrete Jira issue is being matched.
+function hasJiraIssueReference(description: string): boolean {
+  return extractLinks(description).some((link) => issueIdentity(link.url) !== null);
+}
+
+// A flat projection in the roadmap's own order: lanes, then each top-level
+// item immediately followed by its children. Parent and child references are
+// checked independently, and milestones never enter the traversal.
+export function roadieItemsWithoutJiraReference(
+  roadmap: RoadmapFull | null,
+): UnreferencedRoadieItem[] {
+  if (!roadmap) return [];
+  const rows: UnreferencedRoadieItem[] = [];
+  for (const lane of roadmap.lanes) {
+    for (const top of lane.items) {
+      if (!hasJiraIssueReference(top.description)) {
+        rows.push({
+          itemId: top.id,
+          title: top.title,
+          laneName: lane.name,
+          laneColor: lane.color,
+          parentTitle: null,
+        });
+      }
+      for (const child of top.children) {
+        if (hasJiraIssueReference(child.description)) continue;
+        rows.push({
+          itemId: child.id,
+          title: child.title,
+          laneName: lane.name,
+          laneColor: lane.color,
+          parentTitle: top.title,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 // diffTrackerIssues preserves Jira result order and roadmap order. Several

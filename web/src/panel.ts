@@ -239,9 +239,16 @@ let panelEl: HTMLElement | null = null;
 // down, since an element removed from the DOM fires neither blur nor change.
 // Blurring here fires `change` synchronously, so the field's own commit handler
 // does the saving and no second save path exists.
-export function flushPendingEdit(): void {
+//
+// Returns whether an edit was actually pending — a text control, not a button
+// or a select, both of which have already committed. Escape reads that to know
+// whether it means "finish this edit" or something view-level.
+export function flushPendingEdit(): boolean {
   const el = document.activeElement;
-  if (el instanceof HTMLElement && panelEl?.contains(el)) el.blur();
+  if (!(el instanceof HTMLElement) || !panelEl?.contains(el)) return false;
+  const pending = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+  el.blur();
+  return pending;
 }
 
 // closeButton deselects, which closes the panel. Pressing it must not blur the

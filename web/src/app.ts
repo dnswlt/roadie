@@ -974,7 +974,9 @@ async function boot(): Promise<void> {
   state.subscribeSelection(() => {
     if (state.viewMode === "wbs") projectWbsSelection(chart);
     else if (state.viewMode === "timeline") projectSelection(chart);
-    // Recon draws no selection; the panel alone reflects it there.
+    // Recon's lists mark the selected item too, but have no projection of
+    // their own: they rebuild from state, preserving scroll and query caret.
+    else renderRecon(chart);
     renderPanel(panel);
   });
   injectIcons();

@@ -21,9 +21,14 @@ import { confirmDialog, promptDialog } from "./dialogs";
 import { icons } from "./icons";
 import { appendLinkToDescription } from "./links";
 import { openPopover, type PopoverHandle } from "./popover";
-import { diffTrackerIssues, type ReconciledIssue } from "./recon-diff";
+import {
+  diffTrackerIssues,
+  roadieItemsWithoutJiraReference,
+  type ReconciledIssue,
+  type UnreferencedRoadieItem,
+} from "./recon-diff";
 import { createSearchList } from "./search-list";
-import { state } from "./state";
+import { state, type ItemLocation } from "./state";
 import { toast } from "./toast";
 import type { TrackerIssue, TrackerQuery } from "./types";
 
@@ -40,6 +45,17 @@ let error: string | null = null;
 // A local projection over the loaded page set. It survives view switches like
 // the results themselves, and never causes another tracker request.
 let unmatchedOnly = false;
+// The Roadie list's one local projection. Children remain independently
+// reconciled; this only lets a review temporarily narrow to top-level items.
+let topLevelOnly = false;
+// A Roadie-row + starts a short cross-tab linking mode. The roadmap id keeps a
+// target from ever following an item-id collision into another roadmap.
+let linkTarget: { roadmapId: number; itemId: number } | null = null;
+let linkingIssueKey: string | null = null;
+// The two reconciliation questions are peers, but only Jira issues have query
+// controls. Keeping this local matches the rest of Recon's ephemeral UI state
+// and makes the Roadie list independent of whichever JQL was last run.
+let section: "issues" | "roadie" = "issues";
 // Stamps each fetch so a slow response cannot apply over a newer run's
 // results: bumped at every start, checked before applying.
 let seq = 0;
@@ -78,6 +94,28 @@ let mount: HTMLElement | null = null;
 // which is exactly what events.ts gates refreshes to avoid.
 function rerender(): void {
   if (mount && state.viewMode === "recon") renderRecon(mount);
+}
+
+// Reset the cross-tab operation without touching AppState: linking is local
+// Recon UI state. Returning to the Roadie list makes every exit land where the
+// operation started.
+function resetLinkMode(): boolean {
+  if (linkTarget === null) return false;
+  linkTarget = null;
+  linkingIssueKey = null;
+  section = "roadie";
+  return true;
+}
+
+// Explicit in-view cancellation (button / Escape) needs a repaint.
+export function cancelReconLinkMode(): boolean {
+  // A mode that is temporarily off-screen is not an Escape target. This lets
+  // somebody inspect WBS/timeline and return without losing the operation,
+  // while Escape in those views retains its ordinary editing meaning.
+  if (state.viewMode !== "recon") return false;
+  if (!resetLinkMode()) return false;
+  rerender();
+  return true;
 }
 
 async function search(q: string, cursor?: string): Promise<void> {
@@ -283,7 +321,7 @@ export function renderRecon(container: HTMLElement): void {
   // and finds itself by lookup.
   issuePicker?.close();
   mount = container;
-  ensureFavourites();
+  if (section === "issues") ensureFavourites();
   const scrollTop = container.scrollTop;
   const prev = container.querySelector<HTMLInputElement>(".recon-input");
   const caret =
@@ -292,7 +330,16 @@ export function renderRecon(container: HTMLElement): void {
       : null;
 
   const root = div("recon");
-  root.append(buildQueryForm(), ...buildResults());
+  const unreferenced = roadieItemsWithoutJiraReference(state.current);
+  // Resolved once per render: the lookup also drops a target that has since
+  // vanished, which every issue row would otherwise repeat.
+  const target = currentLinkTarget();
+  root.append(buildHeader(unreferenced.length));
+  if (section === "issues") {
+    const banner = buildLinkModeBanner(target);
+    if (banner) root.append(banner);
+    root.append(buildQueryForm(), ...buildResults(target));
+  } else root.append(...buildRoadieResults(unreferenced));
   container.replaceChildren(root);
 
   container.scrollTop = scrollTop;
@@ -305,11 +352,88 @@ export function renderRecon(container: HTMLElement): void {
   }
 }
 
-function buildQueryForm(): HTMLElement {
+function buildHeader(unreferencedCount: number): HTMLElement {
   const head = div("recon-head");
   const h = document.createElement("h2");
   h.textContent = "Jira Reconciliation";
   head.append(h);
+
+  const tabs = document.createElement("nav");
+  tabs.className = "recon-tabs";
+  tabs.setAttribute("aria-label", "Reconciliation lists");
+  const choices: { id: typeof section; label: string; count?: number }[] = [
+    { id: "issues", label: "Jira issues" },
+    { id: "roadie", label: "Roadie items", count: unreferencedCount },
+  ];
+  for (const choice of choices) {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = choice.id === section ? "recon-tab active" : "recon-tab";
+    tab.setAttribute("aria-pressed", String(choice.id === section));
+    tab.textContent = choice.label;
+    if (choice.count !== undefined) {
+      const count = document.createElement("span");
+      count.className = "recon-tab-count";
+      count.textContent = String(choice.count);
+      tab.append(count);
+    }
+    // Switching tabs leaves a pending link alone, exactly as switching views
+    // does: the banner comes back with the Jira list. Only Cancel and Escape
+    // end the operation.
+    tab.addEventListener("click", () => {
+      if (choice.id === section) return;
+      closePicker();
+      issuePicker?.close();
+      section = choice.id;
+      rerender();
+    });
+    tabs.append(tab);
+  }
+  head.append(tabs);
+  return head;
+}
+
+function buildLinkModeBanner(loc: ItemLocation | null): HTMLElement | null {
+  if (!loc) return null;
+
+  const banner = div("recon-link-mode");
+  banner.style.setProperty("--c", laneColorValue(loc.lane.color));
+  const icon = document.createElement("span");
+  icon.className = "recon-link-mode-icon";
+  icon.append(icons.link(18));
+  const copy = div("recon-link-mode-copy");
+  const lead = document.createElement("div");
+  lead.className = "recon-link-mode-lead";
+  lead.append(document.createTextNode("Choose a Jira issue to link to "));
+  const title = document.createElement("strong");
+  title.textContent = loc.item.title || "(untitled)";
+  lead.append(title);
+  const hint = document.createElement("div");
+  hint.className = "recon-link-mode-hint";
+  hint.textContent = "Use Link beside an issue. Run or refine the query if needed.";
+  copy.append(lead, hint);
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => cancelReconLinkMode());
+  banner.append(icon, copy, cancel);
+  return banner;
+}
+
+function currentLinkTarget(): ItemLocation | null {
+  if (linkTarget === null) return null;
+  if (state.current?.id === linkTarget.roadmapId) {
+    const loc = state.findItem(linkTarget.itemId);
+    if (loc) return loc;
+  }
+  linkTarget = null;
+  linkingIssueKey = null;
+  return null;
+}
+
+function buildQueryForm(): HTMLElement {
+  const head = div("recon-query-wrap");
 
   const form = document.createElement("form");
   form.className = "recon-query";
@@ -364,6 +488,114 @@ function buildQueryForm(): HTMLElement {
     head.append(err);
   }
   return head;
+}
+
+function buildRoadieResults(items: readonly UnreferencedRoadieItem[]): HTMLElement[] {
+  if (items.length === 0) {
+    const hint = div("recon-hint");
+    // "All referenced" and "nothing to reference" are different answers, and
+    // an empty roadmap must not be congratulated on its Jira hygiene.
+    const anyItems = state.current?.lanes.some((lane) => lane.items.length > 0) ?? false;
+    hint.textContent = anyItems
+      ? "Every Roadie item has a Jira reference."
+      : "No Roadie items to reconcile.";
+    return [hint];
+  }
+
+  const topLevel = items.filter((item) => item.parentTitle === null);
+  const visible = topLevelOnly ? topLevel : items;
+  const out: HTMLElement[] = [roadieFilterChip(topLevel.length, items.length)];
+  if (visible.length > 0) {
+    const list = div("recon-roadie-list");
+    for (const item of visible) list.append(roadieItemRow(item));
+    out.push(list);
+  } else {
+    const hint = div("recon-hint recon-filter-empty");
+    hint.textContent = "No top-level Roadie items are missing a Jira reference.";
+    out.push(hint);
+  }
+  // Counted below the list, where the Jira tab states its own scope.
+  const foot = div("recon-foot");
+  const count = div("recon-count");
+  const plural = items.length === 1 ? "" : "s";
+  count.textContent = topLevelOnly
+    ? `${visible.length} top-level among ${items.length} Roadie item${plural} without a Jira reference`
+    : `${items.length} Roadie item${plural} without a Jira reference`;
+  foot.append(count);
+  out.push(foot);
+  return out;
+}
+
+function roadieFilterChip(topLevel: number, total: number): HTMLElement {
+  const bar = div("recon-filters");
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = topLevelOnly ? "recon-filter-chip active" : "recon-filter-chip";
+  chip.setAttribute("aria-pressed", String(topLevelOnly));
+  chip.setAttribute("aria-label", `Show top-level Roadie items only (${topLevel} of ${total})`);
+  chip.append(document.createTextNode("Top-level only"));
+  const count = document.createElement("span");
+  count.className = "recon-filter-chip-count";
+  count.textContent = String(topLevel);
+  chip.append(count);
+  chip.addEventListener("click", () => {
+    topLevelOnly = !topLevelOnly;
+    rerender();
+  });
+  bar.append(chip);
+  return bar;
+}
+
+function roadieItemRow(item: UnreferencedRoadieItem): HTMLElement {
+  const selected = state.isItemSelected(item.itemId);
+  const row = div("recon-roadie-item");
+  if (item.parentTitle !== null) row.classList.add("child");
+  if (selected) row.classList.add("selected");
+  row.style.setProperty("--c", laneColorValue(item.laneColor));
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "recon-roadie-open";
+  open.title = `Show ${item.title || "(untitled)"}`;
+  if (selected) open.setAttribute("aria-current", "true");
+
+  const dot = document.createElement("span");
+  dot.className = "color-dot";
+  dot.setAttribute("aria-hidden", "true");
+  const title = document.createElement("span");
+  title.className = "recon-roadie-title";
+  title.textContent = item.title || "(untitled)";
+  const context = document.createElement("span");
+  context.className = "recon-roadie-context";
+  const laneName = item.laneName || "(untitled context)";
+  context.textContent = item.parentTitle !== null
+    ? `${laneName} › ${item.parentTitle || "(untitled)"}`
+    : laneName;
+  open.append(dot, title, context);
+  open.addEventListener("click", () => state.revealAndSelect("item", item.itemId));
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "icon-btn recon-roadie-link";
+  link.title = `Link a Jira issue to ${item.title || "(untitled)"}`;
+  link.setAttribute("aria-label", link.title);
+  link.append(icons.plus(14));
+  link.addEventListener("click", () => {
+    const roadmap = state.current;
+    if (!roadmap) return;
+    closePicker();
+    issuePicker?.close();
+    linkTarget = { roadmapId: roadmap.id, itemId: item.itemId };
+    // The target may legitimately share an issue with another Roadie item.
+    // A stale "Unmatched" filter would hide exactly those candidates while
+    // the user is trying to choose, so linking always starts from all results.
+    unmatchedOnly = false;
+    section = "issues";
+    // Besides opening the edit rail, this keeps the target highlighted when
+    // the user returns to WBS/timeline after linking.
+    state.revealAndSelect("item", item.itemId);
+  });
+  row.append(open, link);
+  return row;
 }
 
 // Jira owns result ordering; Roadie preserves it rather than growing a second,
@@ -474,7 +706,7 @@ function buildFavPicker(): HTMLElement {
   return wrap;
 }
 
-function buildResults(): HTMLElement[] {
+function buildResults(target: ItemLocation | null): HTMLElement[] {
   if (ranQuery === null) {
     const hint = div("recon-hint");
     hint.textContent = "Run a JQL query to list issues from the connected Jira.";
@@ -489,7 +721,7 @@ function buildResults(): HTMLElement[] {
     out.push(filterChip(unmatched.length, issues.length));
     if (visible.length > 0) {
       const list = div("recon-list");
-      for (const row of visible) list.append(issueRow(row));
+      for (const row of visible) list.append(issueRow(row, target));
       out.push(list);
     } else {
       const hint = div("recon-hint recon-filter-empty");
@@ -579,10 +811,29 @@ function openIssuePicker(row: HTMLElement, issue: TrackerIssue, linkedItemIds: S
   picker.focus();
 }
 
+async function linkIssueToTarget(issue: TrackerIssue): Promise<void> {
+  const loc = currentLinkTarget();
+  if (!loc || linkingIssueKey !== null) return;
+  const itemId = loc.item.id;
+  const description = appendLinkToDescription(loc.item.description, issue.url);
+  linkingIssueKey = issue.key;
+  await actions.updateItem(itemId, { description });
+  linkingIssueKey = null;
+
+  // updateItem rolls back on failure. Stay in linking mode in that case so the
+  // error toast and unchanged Link buttons leave a clear retry path.
+  if (state.findItem(itemId)?.item.description !== description) {
+    rerender();
+    return;
+  }
+  resetLinkMode();
+  rerender();
+}
+
 // One result row: enough to identify the issue (key, summary, type, status),
 // with the key linking out — opening an issue goes to Jira, never to a Roadie
 // rendering of it.
-function issueRow({ issue, matches }: ReconciledIssue): HTMLElement {
+function issueRow({ issue, matches }: ReconciledIssue, target: ItemLocation | null): HTMLElement {
   const row = div("recon-issue");
   const key = document.createElement("a");
   key.className = "recon-issue-key";
@@ -601,15 +852,27 @@ function issueRow({ issue, matches }: ReconciledIssue): HTMLElement {
   row.append(key, title, type, status);
   const add = document.createElement("button");
   add.type = "button";
-  add.className = "icon-btn recon-issue-add";
-  add.title = `Link ${issue.key} to a Roadie item`;
-  add.setAttribute("aria-label", add.title);
-  add.append(icons.plus(14));
-  add.addEventListener("click", () => {
-    // No stopPropagation: popover.ts dismisses from the capture phase, so this
-    // picker never sees the click that opened it.
-    openIssuePicker(row, issue, new Set(matches.map((match) => match.itemId)));
-  });
+  if (target) {
+    const alreadyLinked = matches.some((match) => match.itemId === target.item.id);
+    add.className = "btn btn-primary recon-issue-link-target";
+    add.disabled = linkingIssueKey !== null || alreadyLinked;
+    add.textContent =
+      linkingIssueKey === issue.key ? "Linking…" : alreadyLinked ? "Linked" : "Link";
+    add.title = alreadyLinked
+      ? `${issue.key} is already linked to ${target.item.title || "(untitled)"}`
+      : `Link ${issue.key} to ${target.item.title || "(untitled)"}`;
+    if (!alreadyLinked) add.addEventListener("click", () => void linkIssueToTarget(issue));
+  } else {
+    add.className = "icon-btn recon-issue-add";
+    add.title = `Link ${issue.key} to a Roadie item`;
+    add.setAttribute("aria-label", add.title);
+    add.append(icons.plus(14));
+    add.addEventListener("click", () => {
+      // No stopPropagation: popover.ts dismisses from the capture phase, so this
+      // picker never sees the click that opened it.
+      openIssuePicker(row, issue, new Set(matches.map((match) => match.itemId)));
+    });
+  }
   row.append(add);
   if (matches.length > 0) {
     const linked = div("recon-issue-links");
