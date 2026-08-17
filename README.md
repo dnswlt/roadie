@@ -106,10 +106,30 @@ and never in production.
 
 ## Jira reconciliation
 
-Set `JIRA_URL` and `JIRA_TOKEN` to enable the read-only Jira Data Center client.
-The token has no flag equivalent.
+Set `JIRA_URL` to enable the read-only Jira Data Center client, plus credentials
+in one of two forms. Credentials have no flag equivalents.
 
-For local development:
+A Jira personal access token:
+
+| Variable     | Meaning                |
+| ------------ | ---------------------- |
+| `JIRA_TOKEN` | sent as a bearer token |
+
+Or an OAuth 2.0 client-credentials grant, for a deployment behind an SSO gateway.
+Roadie authenticates as itself, fetches an access token from the authorization
+server, and refetches it when it expires:
+
+| Variable                   | Meaning                                      |
+| -------------------------- | -------------------------------------------- |
+| `JIRA_OAUTH_TOKEN_URL`     | the token endpoint; setting it selects OAuth |
+| `JIRA_OAUTH_CLIENT_ID`     | required with it                             |
+| `JIRA_OAUTH_CLIENT_SECRET` | required with it                             |
+| `JIRA_OAUTH_SCOPES`        | optional, space-separated                    |
+
+Setting the token URL wins: `JIRA_TOKEN` is then ignored, with a warning in the
+log. The startup line names which credential is in use.
+
+The dev/jira mock accepts any request, so local development needs neither:
 
 ```sh
 make -C dev/jira run

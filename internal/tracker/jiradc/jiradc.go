@@ -16,26 +16,48 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
+
 	"github.com/dnswlt/roadie/internal/tracker"
 )
 
 const maxResponseBytes = 16 << 20
 
-// Config describes one Jira Data Center deployment. Token is optional so the
-// local development mock can run without authentication. In production it is
-// sent as a bearer token on every request.
+// Config describes one Jira Data Center deployment. Credentials are optional so
+// the local development mock can run without authentication.
+//
+// The two credential kinds are alternatives, and OAuth wins when both are set:
+// Token is a static personal access token, OAuth mints short-lived ones.
 type Config struct {
 	BaseURL string
 	Token   string
+	OAuth   OAuthConfig
 	Client  *http.Client
+}
+
+// OAuthConfig is an OAuth 2.0 client-credentials grant, in force when TokenURL
+// is set. Roadie authenticates as itself rather than as a user, so there is no
+// interactive flow and no refresh token: the token source fetches an access
+// token on first use and again once it expires.
+type OAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	TokenURL     string
+	// Scopes the authorization server needs before it will issue a token Jira
+	// accepts. Many deployments need none.
+	Scopes []string
 }
 
 // Client translates Jira's REST representation and offset paging into the
 // deliberately smaller tracker.Client contract.
 type Client struct {
 	baseURL *url.URL
-	token   string
-	http    *http.Client
+	// Exactly one of these carries credentials, or neither does: tokens is nil
+	// unless OAuth is configured, and configuring OAuth clears token.
+	token  string
+	tokens oauth2.TokenSource
+	http   *http.Client
 }
 
 var _ tracker.Client = (*Client)(nil)
@@ -59,7 +81,59 @@ func New(cfg Config) (*Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
-	return &Client{baseURL: base, token: strings.TrimSpace(cfg.Token), http: httpClient}, nil
+	c := &Client{baseURL: base, token: strings.TrimSpace(cfg.Token), http: httpClient}
+	if cfg.OAuth.enabled() {
+		tokens, err := cfg.OAuth.tokenSource(httpClient)
+		if err != nil {
+			return nil, err
+		}
+		// A PAT left in the environment alongside OAuth must not silently decide
+		// authentication; the caller reports which one won.
+		c.token, c.tokens = "", tokens
+	}
+	return c, nil
+}
+
+// enabled treats the token URL as the switch: an authorization server is the one
+// part of a client-credentials grant with no default.
+func (o OAuthConfig) enabled() bool { return strings.TrimSpace(o.TokenURL) != "" }
+
+// tokenSource validates the grant as a whole — half a credential is a
+// misconfiguration to fail startup on, not to discover on the first search —
+// and returns a source that caches the access token until it expires.
+func (o OAuthConfig) tokenSource(httpClient *http.Client) (oauth2.TokenSource, error) {
+	tokenURL := strings.TrimSpace(o.TokenURL)
+	u, err := url.Parse(tokenURL)
+	if err != nil {
+		return nil, fmt.Errorf("jira OAuth token URL: %w", err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("jira OAuth token URL must be an absolute HTTP(S) URL")
+	}
+	clientID, clientSecret := strings.TrimSpace(o.ClientID), strings.TrimSpace(o.ClientSecret)
+	if clientID == "" || clientSecret == "" {
+		return nil, fmt.Errorf("jira OAuth needs a client ID and a client secret alongside the token URL")
+	}
+	cfg := &clientcredentials.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		TokenURL:     tokenURL,
+		Scopes:       o.Scopes,
+		// AuthStyleAutoDetect (the zero value) tries HTTP Basic first, then form
+		// parameters, and remembers what the server accepted — so which of the
+		// two spellings a deployment wants is not another thing to configure.
+	}
+	// The context carries our HTTP client, and with it the timeout, to the token
+	// endpoint. It is deliberately not a request context: a token outlives the
+	// request that first needed it, so a caller giving up must not cancel it.
+	//
+	// The returned source refetches on expiry only, and expiry means expires_in:
+	// a server that omits it (RFC 6749 only recommends it) pins one token for the
+	// process lifetime, and Recon then fails until a restart. The fix, if a
+	// deployment ever does that, is a source that also refetches on a 401 — not
+	// a guessed lifetime.
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, httpClient)
+	return cfg.TokenSource(ctx), nil
 }
 
 type searchRequest struct {
@@ -240,6 +314,23 @@ func (e *responseError) userMessage() string {
 	return strings.TrimSpace(strings.Join(parts, "; "))
 }
 
+// authorize attaches the configured credential, if there is one. An OAuth token
+// comes from a cache that refetches only once the current token expires, so on
+// all but the first request this is a mutex and an expiry check.
+func (c *Client) authorize(req *http.Request) error {
+	switch {
+	case c.tokens != nil:
+		tok, err := c.tokens.Token()
+		if err != nil {
+			return fmt.Errorf("get Jira OAuth token: %w", err)
+		}
+		tok.SetAuthHeader(req)
+	case c.token != "":
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	return nil
+}
+
 // do owns the shared wire policy: JSON headers, bearer authentication, bounded
 // error text and response decoding. It intentionally does not interpret HTTP
 // statuses; an issue lookup's 404 and a missing search endpoint mean different
@@ -253,8 +344,8 @@ func (c *Client) do(ctx context.Context, method, endpoint string, body io.Reader
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+	if err := c.authorize(req); err != nil {
+		return err
 	}
 
 	resp, err := c.http.Do(req)

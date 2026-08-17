@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -192,6 +193,175 @@ func TestGetIssueNotFound(t *testing.T) {
 	_, err := c.GetIssue(context.Background(), "NOPE-1")
 	if !errors.Is(err, tracker.ErrNotFound) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// oauthJira is a Jira stand-in that only answers requests bearing a token it
+// issued itself, so a test asserting on issues also proves the grant ran. Each
+// token is minted with a distinct value; tokens counts how often the grant ran.
+type oauthJira struct {
+	mux    *http.ServeMux
+	tokens int
+	// expiresIn is what the token endpoint claims. Anything under oauth2's
+	// 10s expiry margin makes every request see an expired cached token, which
+	// is how "refetch when it expires" is pinned without waiting for a clock.
+	expiresIn int
+	issued    string
+	scope     string
+	basicAuth [2]string
+	grantType string
+}
+
+func newOAuthJira(t *testing.T, expiresIn int) (*oauthJira, *httptest.Server) {
+	t.Helper()
+	j := &oauthJira{mux: http.NewServeMux(), expiresIn: expiresIn}
+	j.mux.HandleFunc("POST /oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("token request form: %v", err)
+		}
+		user, pass, _ := r.BasicAuth()
+		j.basicAuth = [2]string{user, pass}
+		j.grantType = r.PostForm.Get("grant_type")
+		j.scope = r.PostForm.Get("scope")
+		j.tokens++
+		j.issued = fmt.Sprintf("minted-%d", j.tokens)
+		writeJSON(w, map[string]any{
+			"access_token": j.issued, "token_type": "Bearer", "expires_in": j.expiresIn,
+		})
+	})
+	j.mux.HandleFunc("POST /rest/api/2/search", func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.Header.Get("Authorization"), "Bearer "+j.issued; got != want {
+			// Not t.Fatalf: this runs on the server's goroutine.
+			t.Errorf("Authorization = %q, want %q", got, want)
+			writeError(w, http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, map[string]any{"startAt": 0, "maxResults": 50, "total": 1, "issues": []any{
+			map[string]any{"id": "1", "key": "PAY-1", "fields": map[string]any{
+				"summary": "Payment flow", "issuetype": map[string]string{"name": "Epic"},
+				"status": map[string]string{"name": "In Progress"},
+			}},
+		}})
+	})
+	ts := httptest.NewServer(j.mux)
+	t.Cleanup(ts.Close)
+	return j, ts
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int) {
+	w.WriteHeader(status)
+	w.Write([]byte(`{"errorMessages":["Client must be authenticated."],"errors":{}}`))
+}
+
+// A long-lived token is fetched once and reused: the grant must not run per
+// request. A PAT set alongside OAuth is ignored, not sent.
+func TestOAuthClientCredentials(t *testing.T) {
+	j, ts := newOAuthJira(t, 3600)
+	c, err := New(Config{
+		BaseURL: ts.URL,
+		Token:   "ignored-pat",
+		OAuth: OAuthConfig{
+			ClientID:     "roadie",
+			ClientSecret: "s3cret",
+			TokenURL:     ts.URL + "/oauth/token",
+			Scopes:       []string{"read:jira-work", "read:me"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		page, err := c.Search(context.Background(), "project = PAY", "", 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Issues) != 1 {
+			t.Fatalf("issues = %+v", page.Issues)
+		}
+	}
+	if j.tokens != 1 {
+		t.Fatalf("token requests = %d, want 1 (cached)", j.tokens)
+	}
+	if j.grantType != "client_credentials" {
+		t.Fatalf("grant_type = %q", j.grantType)
+	}
+	if j.basicAuth != [2]string{"roadie", "s3cret"} {
+		t.Fatalf("client authentication = %q", j.basicAuth)
+	}
+	if j.scope != "read:jira-work read:me" {
+		t.Fatalf("scope = %q", j.scope)
+	}
+}
+
+func TestOAuthRefetchesExpiredToken(t *testing.T) {
+	j, ts := newOAuthJira(t, 5) // inside oauth2's expiry margin: always stale
+	c, err := New(Config{BaseURL: ts.URL, OAuth: OAuthConfig{
+		ClientID: "roadie", ClientSecret: "s3cret", TokenURL: ts.URL + "/oauth/token",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := c.Search(context.Background(), "", "", 50); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if j.tokens != 2 {
+		t.Fatalf("token requests = %d, want 2 (one per expired token)", j.tokens)
+	}
+	if j.scope != "" {
+		t.Fatalf("scope = %q, want none", j.scope)
+	}
+}
+
+// A token endpoint that refuses the client is an operator fault, so it must not
+// reach the user as a complaint about their JQL.
+func TestOAuthTokenEndpointFailure(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"invalid_client"}`))
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL, OAuth: OAuthConfig{
+		ClientID: "roadie", ClientSecret: "wrong", TokenURL: ts.URL + "/oauth/token",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Search(context.Background(), "project = PAY", "", 50)
+	var qErr *tracker.QueryError
+	if err == nil || errors.As(err, &qErr) {
+		t.Fatalf("error = %v, want a plain failure", err)
+	}
+}
+
+// Half a grant is a misconfiguration to fail startup on, not to discover on the
+// first search.
+func TestOAuthValidation(t *testing.T) {
+	for _, o := range []OAuthConfig{
+		{TokenURL: "https://sso.example.com/token"},
+		{ClientID: "roadie", TokenURL: "https://sso.example.com/token"},
+		{ClientSecret: "s3cret", TokenURL: "https://sso.example.com/token"},
+		{ClientID: "roadie", ClientSecret: "s3cret", TokenURL: "sso.example.com/token"},
+		{ClientID: "roadie", ClientSecret: "s3cret", TokenURL: "ftp://sso.example.com/token"},
+	} {
+		if _, err := New(Config{BaseURL: "https://jira.example.com", OAuth: o}); err == nil {
+			t.Errorf("New(%+v) succeeded", o)
+		}
+	}
+	// An unset token URL leaves the PAT in charge, whatever else is set.
+	c, err := New(Config{BaseURL: "https://jira.example.com", Token: "pat",
+		OAuth: OAuthConfig{ClientID: "roadie", ClientSecret: "s3cret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.tokens != nil || c.token != "pat" {
+		t.Fatalf("credentials = (%v, %q), want the PAT alone", c.tokens, c.token)
 	}
 }
 

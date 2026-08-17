@@ -44,7 +44,7 @@ func run() error {
 	authDebug := flag.Bool("auth-debug", envBool("AUTH_DEBUG"),
 		"log every claim the OIDC provider sends (personal data: for diagnosing a provider, not for normal running); also settable as AUTH_DEBUG")
 	jiraURL := flag.String("jira-url", strings.TrimSpace(os.Getenv("JIRA_URL")),
-		"Jira Data Center base URL (empty disables Jira Recon; also settable as JIRA_URL; token comes only from JIRA_TOKEN)")
+		"Jira Data Center base URL (empty disables Jira Recon; also settable as JIRA_URL; credentials come only from the environment: JIRA_TOKEN, or JIRA_OAUTH_*)")
 	flag.Parse()
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -88,17 +88,11 @@ func run() error {
 		return err
 	}
 	if *jiraURL != "" {
-		jira, err := jiradc.New(jiradc.Config{
-			BaseURL: *jiraURL,
-			// Secrets never have flag equivalents: flags are visible in ps and in
-			// OpenShift workload definitions, while env values can come from a Secret.
-			Token: os.Getenv("JIRA_TOKEN"),
-		})
+		opt, err := jiraTracker(*jiraURL)
 		if err != nil {
-			return fmt.Errorf("jira: %w", err)
+			return err
 		}
-		opts = append(opts, server.WithTracker(jira))
-		log.Printf("jira: reconciliation enabled for %s", *jiraURL)
+		opts = append(opts, opt)
 	}
 
 	app := server.New(st, static, opts...)
@@ -200,6 +194,57 @@ func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duratio
 	// this line is what you compare against the app registration.
 	log.Printf("auth: oidc (issuer=%s, client=%s, redirect=%s, session=%s)", issuer, clientID, redirectURL, ttl)
 	return []server.Option{server.WithAuth(a)}, nil
+}
+
+// jiraTracker builds the Jira Recon client for a deployment base URL.
+//
+// Credentials come from the environment only, never flags, which are visible in
+// ps and in OpenShift workload definitions while env values can come from a
+// Secret:
+//
+//	JIRA_TOKEN                 a Jira personal access token
+//	JIRA_OAUTH_TOKEN_URL       the authorization server's token endpoint
+//	JIRA_OAUTH_CLIENT_ID       \ the client-credentials grant, used instead of
+//	JIRA_OAUTH_CLIENT_SECRET   / JIRA_TOKEN when the token URL is set
+//	JIRA_OAUTH_SCOPES          optional, space-separated
+//
+// Unlike -auth, there is no mode to declare: a Jira misconfiguration degrades one
+// view rather than leaving the server unauthenticated, and both credentials are
+// legitimately absent against the dev mock. What is not allowed to pass silently
+// is either of them being *half* set — that is a startup failure, or a warning
+// naming the variable being ignored.
+func jiraTracker(baseURL string) (server.Option, error) {
+	token := strings.TrimSpace(os.Getenv("JIRA_TOKEN"))
+	oauth := jiradc.OAuthConfig{
+		ClientID:     os.Getenv("JIRA_OAUTH_CLIENT_ID"),
+		ClientSecret: os.Getenv("JIRA_OAUTH_CLIENT_SECRET"),
+		TokenURL:     strings.TrimSpace(os.Getenv("JIRA_OAUTH_TOKEN_URL")),
+		Scopes:       strings.Fields(os.Getenv("JIRA_OAUTH_SCOPES")),
+	}
+	jira, err := jiradc.New(jiradc.Config{BaseURL: baseURL, Token: token, OAuth: oauth})
+	if err != nil {
+		return nil, fmt.Errorf("jira: %w", err)
+	}
+
+	credentials := "no credentials"
+	if token != "" {
+		credentials = "personal access token"
+	}
+	switch {
+	case oauth.TokenURL != "":
+		credentials = fmt.Sprintf("oauth client_credentials (client=%s, token_url=%s, scopes=%q)",
+			oauth.ClientID, oauth.TokenURL, strings.Join(oauth.Scopes, " "))
+		if token != "" {
+			log.Print("jira: WARNING — ignoring JIRA_TOKEN because JIRA_OAUTH_TOKEN_URL is set")
+		}
+	case oauth.ClientID != "" || oauth.ClientSecret != "":
+		// The other half of the same promise: an unset or mistyped token URL
+		// leaves the client credentials inert, which otherwise surfaces only as
+		// Recon failing against a Jira that rejects whatever it fell back to.
+		log.Print("jira: WARNING — ignoring JIRA_OAUTH_CLIENT_ID/JIRA_OAUTH_CLIENT_SECRET because JIRA_OAUTH_TOKEN_URL is not set")
+	}
+	log.Printf("jira: reconciliation enabled for %s (%s)", baseURL, credentials)
+	return server.WithTracker(jira), nil
 }
 
 // sessionKey reads the 32-byte cookie sealing key from SESSION_KEY, e.g.
