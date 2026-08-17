@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dnswlt/roadie/internal/tracker"
@@ -337,6 +338,11 @@ func TestOAuthTokenEndpointFailure(t *testing.T) {
 	var qErr *tracker.QueryError
 	if err == nil || errors.As(err, &qErr) {
 		t.Fatalf("error = %v, want a plain failure", err)
+	}
+	// This text is what the server logs, so the provider's own refusal has to
+	// survive into it; the log is all a deployment has to go on.
+	if !strings.Contains(err.Error(), "invalid_client") {
+		t.Errorf("error %q does not carry the provider's refusal", err)
 	}
 }
 

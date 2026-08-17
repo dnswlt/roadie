@@ -601,8 +601,9 @@ function roadieItemRow(item: UnreferencedRoadieItem): HTMLElement {
   return row;
 }
 
-// Enough context to make this small workflow self-explanatory; fuller Jira and
-// reconciliation documentation belongs in the help pages, not this dialog.
+// A task reference for the controls on screen, one section per question a user
+// has while using them. What reconciliation is for, and how matching works,
+// belong to the linked guide — not to a dialog opened mid-task.
 function openReconHelp(): void {
   const dlg = document.getElementById("dialog") as HTMLDialogElement;
   dlg.replaceChildren();
@@ -610,48 +611,62 @@ function openReconHelp(): void {
   const h = document.createElement("h3");
   h.textContent = "Jira reconciliation";
   const body = div("recon-help");
-  const overview = document.createElement("p");
-  overview.textContent =
-    "Compare Jira query results with Jira links in this roadmap. Unmatched shows unlinked Jira issues; Roadie items shows the reverse.";
-  const saved = document.createElement("p");
-  saved.textContent =
-    "Saved queries belong to this roadmap. Saving stores the current JQL under a name; choosing a saved query loads and runs it. Saved queries can also be renamed or deleted.";
-  const ordering = document.createElement("p");
-  ordering.textContent =
-    "Roadie shows issues in the order Jira returns them. Prefer to build and test queries in Jira, then paste the JQL here. For a quick ordering change, add ORDER BY at the end:";
-  body.append(overview, saved, ordering);
 
-  const examples = document.createElement("dl");
-  examples.className = "recon-order-examples";
-  const rows: [query: string, meaning: string][] = [
-    ["ORDER BY updated DESC", "Most recently modified first"],
-    ["ORDER BY summary", "Title from A to Z"],
-    ["ORDER BY status, issueKey", "Status first, then issue key"],
-  ];
-  for (const [query, meaning] of rows) {
-    const term = document.createElement("dt");
-    const code = document.createElement("code");
-    code.textContent = query;
-    term.append(code);
-    const description = document.createElement("dd");
-    description.textContent = meaning;
-    examples.append(term, description);
-  }
-  body.append(examples);
+  const heading = (text: string): HTMLElement => {
+    const el = document.createElement("h4");
+    el.textContent = text;
+    return el;
+  };
+  const para = (...parts: (string | Node)[]): HTMLElement => {
+    const el = document.createElement("p");
+    el.append(...parts);
+    return el;
+  };
+  const code = (text: string): HTMLElement => {
+    const el = document.createElement("code");
+    el.textContent = text;
+    return el;
+  };
 
-  const note = document.createElement("p");
-  note.className = "recon-order-note";
-  note.textContent = "Ascending is the default; add DESC to reverse it. Separate fields with commas.";
-  body.append(note);
+  body.append(
+    heading("Jira issues"),
+    para(
+      "Enter JQL and select Run; Load more fetches the next page. Build substantial queries in Jira first, then paste them here. Unmatched narrows the list to issues no item in this roadmap links to, among the results loaded so far.",
+    ),
+    heading("Roadie items"),
+    para(
+      "Items whose description holds no link to this Jira, parents and children alike, independent of the query. Top-level only hides the children.",
+    ),
+    heading("Linking"),
+    para(
+      "Select + on either list, then choose the counterpart. Roadie appends the issue URL to the item's description, and never changes anything in Jira.",
+    ),
+    heading("Ordering"),
+    para(
+      "Issues appear in the order Jira returns them. Add ORDER BY at the end of the JQL, such as ",
+      code("ORDER BY updated DESC"),
+      " — ascending by default, DESC to reverse, commas between fields.",
+    ),
+  );
 
-  const docs = document.createElement("p");
+  const quoted = document.createElement("span");
+  quoted.className = "recon-help-error";
+  quoted.textContent = "The value 'ABC' does not exist for the field 'project'";
+  body.append(
+    heading("When a query fails"),
+    para(
+      "Jira reports a project you lack permission for as if it did not exist: “",
+      quoted,
+      "”. If the project key is correct, check your Jira permissions.",
+    ),
+  );
+
   const docsLink = document.createElement("a");
   docsLink.href = "https://dnswlt.github.io/roadie/jira-reconciliation/";
   docsLink.target = "_blank";
   docsLink.rel = "noreferrer";
   docsLink.textContent = "Read the Jira reconciliation guide";
-  docs.append(docsLink);
-  body.append(docs);
+  body.append(heading("More information"), para(docsLink));
 
   const actions = div("dialog-actions");
   const close = document.createElement("button");
@@ -663,6 +678,9 @@ function openReconHelp(): void {
 
   dlg.append(h, body, actions);
   dlg.showModal();
+  // showModal focuses the first focusable node, which is the guide link: Enter
+  // would then leave the app for the docs site instead of closing the dialog.
+  close.focus();
 }
 
 // buildFavPicker builds the "Saved" dropdown: a .menu-wrap so the shared menu

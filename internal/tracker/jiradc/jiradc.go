@@ -151,10 +151,8 @@ func (o OAuthConfig) tokenSource(httpClient *http.Client) (oauth2.TokenSource, e
 	}
 	// The context carries our HTTP client, and with it the timeout. Not a request
 	// context: a token outlives the request that first needed it.
-	//
-	// The source refetches on expiry only, and expiry means expires_in — a server
-	// that omits it pins one token for the process lifetime.
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, httpClient)
+	// The source caches the token and refetches on expiry only.
 	return cfg.TokenSource(ctx), nil
 }
 
@@ -345,7 +343,7 @@ func (c *Client) authorize(req *http.Request) error {
 	case c.tokens != nil:
 		tok, err := c.tokens.Token()
 		if err != nil {
-			return fmt.Errorf("get Jira OAuth token: %w", err)
+			return fmt.Errorf("jira oauth: %w", err)
 		}
 		tok.SetAuthHeader(req)
 	case c.token != "":

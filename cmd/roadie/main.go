@@ -44,7 +44,7 @@ func run() error {
 	authDebug := flag.Bool("auth-debug", envBool("AUTH_DEBUG"),
 		"log every claim the OIDC provider sends (personal data: for diagnosing a provider, not for normal running); also settable as AUTH_DEBUG")
 	jiraURL := flag.String("jira-url", strings.TrimSpace(os.Getenv("JIRA_URL")),
-		"Jira Data Center base URL as a browser reaches it, which is what issue links are built from (empty disables Jira Recon; also settable as JIRA_URL; credentials come only from the environment: JIRA_TOKEN, or JIRA_OAUTH_*)")
+		"Jira Data Center base URL as a browser reaches it; issue links are built from it (empty disables Jira Recon; also settable as JIRA_URL; credentials: JIRA_TOKEN or JIRA_OAUTH_*)")
 	jiraRestURL := flag.String("jira-rest-url", strings.TrimSpace(os.Getenv("JIRA_REST_URL")),
 		"where the Jira REST API answers, if that is not -jira-url (also settable as JIRA_REST_URL)")
 	flag.Parse()
@@ -223,26 +223,28 @@ func jiraTracker(baseURL, restURL string) (server.Option, error) {
 		return nil, fmt.Errorf("jira: %w", err)
 	}
 
-	credentials := "no credentials"
-	if token != "" {
-		credentials = "personal access token"
+	fields := []string{"url=" + baseURL}
+	if restURL != "" && restURL != baseURL {
+		fields = append(fields, "rest="+restURL)
 	}
 	switch {
 	case oauth.TokenURL != "":
-		credentials = fmt.Sprintf("oauth client_credentials (client=%s, token_url=%s, scopes=%q)",
-			oauth.ClientID, oauth.TokenURL, strings.Join(oauth.Scopes, " "))
-		if token != "" {
-			log.Print("jira: WARNING — ignoring JIRA_TOKEN because JIRA_OAUTH_TOKEN_URL is set")
+		fields = append(fields, "auth=oauth", "client="+oauth.ClientID, "token_url="+oauth.TokenURL)
+		if len(oauth.Scopes) > 0 {
+			fields = append(fields, "scopes="+strings.Join(oauth.Scopes, " "))
 		}
-	case oauth.ClientID != "" || oauth.ClientSecret != "":
-		// A mistyped token URL otherwise shows up only as Recon failing.
-		log.Print("jira: WARNING — ignoring JIRA_OAUTH_CLIENT_ID/JIRA_OAUTH_CLIENT_SECRET because JIRA_OAUTH_TOKEN_URL is not set")
+		if token != "" {
+			log.Print("jira: WARNING — JIRA_TOKEN ignored, JIRA_OAUTH_TOKEN_URL is set")
+		}
+	case token != "":
+		fields = append(fields, "auth=pat")
+	default:
+		fields = append(fields, "auth=none")
 	}
-	log.Printf("jira: reconciliation enabled for %s (%s)", baseURL, credentials)
-	// Only when they differ; otherwise it says the same URL twice.
-	if restURL != "" && restURL != baseURL {
-		log.Printf("jira: REST API at %s; issue links keep pointing at %s", restURL, baseURL)
+	if oauth.TokenURL == "" && (oauth.ClientID != "" || oauth.ClientSecret != "") {
+		log.Print("jira: WARNING — JIRA_OAUTH_CLIENT_ID/JIRA_OAUTH_CLIENT_SECRET ignored, JIRA_OAUTH_TOKEN_URL is not set")
 	}
+	log.Printf("jira: recon enabled (%s)", strings.Join(fields, ", "))
 	return server.WithTracker(jira), nil
 }
 
