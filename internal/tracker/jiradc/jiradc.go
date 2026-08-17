@@ -30,7 +30,13 @@ const maxResponseBytes = 16 << 20
 // The two credential kinds are alternatives, and OAuth wins when both are set:
 // Token is a static personal access token, OAuth mints short-lived ones.
 type Config struct {
+	// BaseURL is the deployment as a browser reaches it, and the authority for
+	// issue links: the frontend reconciles an item's description links against
+	// the URL an issue carries, so the wrong host matches nothing.
 	BaseURL string
+	// RestURL is where the REST API answers, for deployments that publish it on
+	// a different host from the web UI. Empty means BaseURL serves both.
+	RestURL string
 	Token   string
 	OAuth   OAuthConfig
 	Client  *http.Client
@@ -52,7 +58,10 @@ type OAuthConfig struct {
 // Client translates Jira's REST representation and offset paging into the
 // deliberately smaller tracker.Client contract.
 type Client struct {
-	baseURL *url.URL
+	// webURL builds the links people follow; restURL is where requests go. They
+	// are the same URL unless the deployment splits the two.
+	webURL  *url.URL
+	restURL *url.URL
 	// Exactly one of these carries credentials, or neither does: tokens is nil
 	// unless OAuth is configured, and configuring OAuth clears token.
 	token  string
@@ -62,26 +71,25 @@ type Client struct {
 
 var _ tracker.Client = (*Client)(nil)
 
-// New validates the deployment URL once, so request methods can safely append
+// New validates the deployment URLs once, so request methods can safely append
 // paths to Jira installations both at a host root and below a context path.
 func New(cfg Config) (*Client, error) {
-	base, err := url.Parse(strings.TrimSpace(cfg.BaseURL))
+	web, err := parseBaseURL(cfg.BaseURL, "base")
 	if err != nil {
-		return nil, fmt.Errorf("jira base URL: %w", err)
+		return nil, err
 	}
-	if (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
-		return nil, fmt.Errorf("jira base URL must be an absolute HTTP(S) URL")
+	rest := web
+	if strings.TrimSpace(cfg.RestURL) != "" {
+		if rest, err = parseBaseURL(cfg.RestURL, "REST base"); err != nil {
+			return nil, err
+		}
 	}
-	if base.User != nil || base.RawQuery != "" || base.Fragment != "" {
-		return nil, fmt.Errorf("jira base URL must not contain credentials, a query, or a fragment")
-	}
-	base.Path = strings.TrimRight(base.Path, "/")
 
 	httpClient := cfg.Client
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
-	c := &Client{baseURL: base, token: strings.TrimSpace(cfg.Token), http: httpClient}
+	c := &Client{webURL: web, restURL: rest, token: strings.TrimSpace(cfg.Token), http: httpClient}
 	if cfg.OAuth.enabled() {
 		tokens, err := cfg.OAuth.tokenSource(httpClient)
 		if err != nil {
@@ -92,6 +100,24 @@ func New(cfg Config) (*Client, error) {
 		c.token, c.tokens = "", tokens
 	}
 	return c, nil
+}
+
+// parseBaseURL validates one configured Jira URL and strips a trailing slash so
+// JoinPath is predictable. what names the URL in the error, since a deployment
+// can configure two of them.
+func parseBaseURL(raw, what string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("jira %s URL: %w", what, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("jira %s URL must be an absolute HTTP(S) URL", what)
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("jira %s URL must not contain credentials, a query, or a fragment", what)
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u, nil
 }
 
 // enabled treats the token URL as the switch: an authorization server is the one
@@ -123,15 +149,11 @@ func (o OAuthConfig) tokenSource(httpClient *http.Client) (oauth2.TokenSource, e
 		// parameters, and remembers what the server accepted — so which of the
 		// two spellings a deployment wants is not another thing to configure.
 	}
-	// The context carries our HTTP client, and with it the timeout, to the token
-	// endpoint. It is deliberately not a request context: a token outlives the
-	// request that first needed it, so a caller giving up must not cancel it.
+	// The context carries our HTTP client, and with it the timeout. Not a request
+	// context: a token outlives the request that first needed it.
 	//
-	// The returned source refetches on expiry only, and expiry means expires_in:
-	// a server that omits it (RFC 6749 only recommends it) pins one token for the
-	// process lifetime, and Recon then fails until a restart. The fix, if a
-	// deployment ever does that, is a source that also refetches on a 401 — not
-	// a guessed lifetime.
+	// The source refetches on expiry only, and expiry means expires_in — a server
+	// that omits it pins one token for the process lifetime.
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, httpClient)
 	return cfg.TokenSource(ctx), nil
 }
@@ -187,7 +209,7 @@ func (c *Client) Search(ctx context.Context, query, continuation string, pageSiz
 	}
 
 	var result jiraPage
-	if err := c.do(ctx, http.MethodPost, c.endpoint("rest", "api", "2", "search").String(), bytes.NewReader(body), &result); err != nil {
+	if err := c.do(ctx, http.MethodPost, c.restEndpoint("rest", "api", "2", "search").String(), bytes.NewReader(body), &result); err != nil {
 		return tracker.Page{}, searchError(err)
 	}
 
@@ -221,7 +243,7 @@ func (c *Client) GetIssue(ctx context.Context, externalID string) (tracker.Issue
 	if strings.ContainsAny(externalID, "/?#") {
 		return tracker.Issue{}, fmt.Errorf("invalid Jira issue ID")
 	}
-	u := c.endpoint("rest", "api", "2", "issue", externalID)
+	u := c.restEndpoint("rest", "api", "2", "issue", externalID)
 	q := u.Query()
 	q.Set("fields", "summary,issuetype,status")
 	u.RawQuery = q.Encode()
@@ -248,7 +270,8 @@ func decodeContinuation(raw string) (int, error) {
 }
 
 // normalize is the only place Jira's field nesting crosses into the generic
-// model. The browser URL is constructed because Jira's self link targets REST.
+// model. The browser URL is constructed because Jira's self link targets REST —
+// on a split deployment, a different host altogether.
 func (c *Client) normalize(issue jiraIssue) tracker.Issue {
 	return tracker.Issue{
 		ID:     issue.ID,
@@ -256,7 +279,7 @@ func (c *Client) normalize(issue jiraIssue) tracker.Issue {
 		Title:  issue.Fields.Summary,
 		Type:   issue.Fields.IssueType.Name,
 		Status: issue.Fields.Status.Name,
-		URL:    c.endpoint("browse", issue.Key).String(),
+		URL:    c.browseURL(issue.Key),
 	}
 }
 
@@ -367,7 +390,14 @@ func (c *Client) do(ctx context.Context, method, endpoint string, body io.Reader
 	return nil
 }
 
-// endpoint preserves a configured Jira context path such as /jira.
-func (c *Client) endpoint(parts ...string) *url.URL {
-	return c.baseURL.JoinPath(parts...)
+// restEndpoint preserves a configured Jira context path such as /jira.
+func (c *Client) restEndpoint(parts ...string) *url.URL {
+	return c.restURL.JoinPath(parts...)
+}
+
+// browseURL is built from the web base even when the REST API answers on another
+// host: this is the link a person follows, and the identity the frontend matches
+// an item's description links against.
+func (c *Client) browseURL(key string) string {
+	return c.webURL.JoinPath("browse", key).String()
 }

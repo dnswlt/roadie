@@ -44,7 +44,9 @@ func run() error {
 	authDebug := flag.Bool("auth-debug", envBool("AUTH_DEBUG"),
 		"log every claim the OIDC provider sends (personal data: for diagnosing a provider, not for normal running); also settable as AUTH_DEBUG")
 	jiraURL := flag.String("jira-url", strings.TrimSpace(os.Getenv("JIRA_URL")),
-		"Jira Data Center base URL (empty disables Jira Recon; also settable as JIRA_URL; credentials come only from the environment: JIRA_TOKEN, or JIRA_OAUTH_*)")
+		"Jira Data Center base URL as a browser reaches it, which is what issue links are built from (empty disables Jira Recon; also settable as JIRA_URL; credentials come only from the environment: JIRA_TOKEN, or JIRA_OAUTH_*)")
+	jiraRestURL := flag.String("jira-rest-url", strings.TrimSpace(os.Getenv("JIRA_REST_URL")),
+		"where the Jira REST API answers, if that is not -jira-url (also settable as JIRA_REST_URL)")
 	flag.Parse()
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -88,7 +90,7 @@ func run() error {
 		return err
 	}
 	if *jiraURL != "" {
-		opt, err := jiraTracker(*jiraURL)
+		opt, err := jiraTracker(*jiraURL, *jiraRestURL)
 		if err != nil {
 			return err
 		}
@@ -196,24 +198,14 @@ func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duratio
 	return []server.Option{server.WithAuth(a)}, nil
 }
 
-// jiraTracker builds the Jira Recon client for a deployment base URL.
+// jiraTracker builds the Jira Recon client. baseURL is the deployment a browser
+// reaches and is what issue links are built from; restURL defaults to it.
 //
-// Credentials come from the environment only, never flags, which are visible in
-// ps and in OpenShift workload definitions while env values can come from a
-// Secret:
-//
-//	JIRA_TOKEN                 a Jira personal access token
-//	JIRA_OAUTH_TOKEN_URL       the authorization server's token endpoint
-//	JIRA_OAUTH_CLIENT_ID       \ the client-credentials grant, used instead of
-//	JIRA_OAUTH_CLIENT_SECRET   / JIRA_TOKEN when the token URL is set
-//	JIRA_OAUTH_SCOPES          optional, space-separated
-//
-// Unlike -auth, there is no mode to declare: a Jira misconfiguration degrades one
-// view rather than leaving the server unauthenticated, and both credentials are
-// legitimately absent against the dev mock. What is not allowed to pass silently
-// is either of them being *half* set — that is a startup failure, or a warning
-// naming the variable being ignored.
-func jiraTracker(baseURL string) (server.Option, error) {
+// Credentials are env-only, never flags, which are visible in ps: JIRA_TOKEN, or
+// JIRA_OAUTH_TOKEN_URL plus JIRA_OAUTH_CLIENT_ID/_SECRET (and optional
+// space-separated JIRA_OAUTH_SCOPES), which then wins. Absent credentials are
+// legitimate against the dev mock; half-set ones never pass silently.
+func jiraTracker(baseURL, restURL string) (server.Option, error) {
 	token := strings.TrimSpace(os.Getenv("JIRA_TOKEN"))
 	oauth := jiradc.OAuthConfig{
 		ClientID:     os.Getenv("JIRA_OAUTH_CLIENT_ID"),
@@ -221,7 +213,12 @@ func jiraTracker(baseURL string) (server.Option, error) {
 		TokenURL:     strings.TrimSpace(os.Getenv("JIRA_OAUTH_TOKEN_URL")),
 		Scopes:       strings.Fields(os.Getenv("JIRA_OAUTH_SCOPES")),
 	}
-	jira, err := jiradc.New(jiradc.Config{BaseURL: baseURL, Token: token, OAuth: oauth})
+	jira, err := jiradc.New(jiradc.Config{
+		BaseURL: baseURL,
+		RestURL: restURL,
+		Token:   token,
+		OAuth:   oauth,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("jira: %w", err)
 	}
@@ -238,12 +235,14 @@ func jiraTracker(baseURL string) (server.Option, error) {
 			log.Print("jira: WARNING — ignoring JIRA_TOKEN because JIRA_OAUTH_TOKEN_URL is set")
 		}
 	case oauth.ClientID != "" || oauth.ClientSecret != "":
-		// The other half of the same promise: an unset or mistyped token URL
-		// leaves the client credentials inert, which otherwise surfaces only as
-		// Recon failing against a Jira that rejects whatever it fell back to.
+		// A mistyped token URL otherwise shows up only as Recon failing.
 		log.Print("jira: WARNING — ignoring JIRA_OAUTH_CLIENT_ID/JIRA_OAUTH_CLIENT_SECRET because JIRA_OAUTH_TOKEN_URL is not set")
 	}
 	log.Printf("jira: reconciliation enabled for %s (%s)", baseURL, credentials)
+	// Only when they differ; otherwise it says the same URL twice.
+	if restURL != "" && restURL != baseURL {
+		log.Printf("jira: REST API at %s; issue links keep pointing at %s", restURL, baseURL)
+	}
 	return server.WithTracker(jira), nil
 }
 

@@ -106,8 +106,14 @@ and never in production.
 
 ## Jira reconciliation
 
-Set `JIRA_URL` to enable the read-only Jira Data Center client, plus credentials
-in one of two forms. Credentials have no flag equivalents.
+Set `JIRA_URL` to enable the read-only Jira Data Center client. It is the
+deployment as a browser reaches it, and is what issue links are built from — the
+frontend matches the links in an item's description against the URL an issue
+carries, so this must be the host people actually open. If the REST API answers
+somewhere else, set `JIRA_REST_URL` to that base URL; it defaults to `JIRA_URL`,
+and the startup line names both whenever they differ.
+
+Then credentials, in one of two forms. Credentials have no flag equivalents.
 
 A Jira personal access token:
 

@@ -365,10 +365,78 @@ func TestOAuthValidation(t *testing.T) {
 	}
 }
 
+// An organisation can publish the REST API on a different host from the web UI.
+// Requests must then go to the REST host while issue links keep naming the web
+// one — a link into the API host would be unreachable for a person, and would
+// reconcile against nothing, since the frontend matches an item's description
+// links against the URL an issue carries.
+func TestSplitRESTAndWebHosts(t *testing.T) {
+	web := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("web host received %s %s; only the REST host may be called", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer web.Close()
+	rest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api-context/rest/api/2/search":
+			w.Write([]byte(`{"startAt":0,"maxResults":50,"total":1,"issues":[{"id":"1","key":"PAY-1","fields":{"summary":"Payment flow","issuetype":{"name":"Epic"},"status":{"name":"In Progress"}}}]}`))
+		case "/api-context/rest/api/2/issue/PAY-1":
+			w.Write([]byte(`{"id":"1","key":"PAY-1","fields":{"summary":"Payment flow","issuetype":{"name":"Epic"},"status":{"name":"To Do"}}}`))
+		default:
+			t.Errorf("unexpected REST path %q", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer rest.Close()
+
+	c, err := New(Config{BaseURL: web.URL + "/jira/", RestURL: rest.URL + "/api-context"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := c.Search(context.Background(), "project = PAY", "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := web.URL + "/jira/browse/PAY-1"
+	if len(page.Issues) != 1 || page.Issues[0].URL != want {
+		t.Fatalf("search issue = %+v, want URL %q", page.Issues, want)
+	}
+	issue, err := c.GetIssue(context.Background(), "PAY-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.URL != want {
+		t.Fatalf("issue URL = %q, want %q", issue.URL, want)
+	}
+}
+
+// With no REST URL configured, one host serves both — the single-host default.
+func TestRESTDefaultsToBaseURL(t *testing.T) {
+	c, err := New(Config{BaseURL: "https://jira.example.com/jira"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := c.restEndpoint("rest", "api", "2", "search").String(), "https://jira.example.com/jira/rest/api/2/search"; got != want {
+		t.Fatalf("REST endpoint = %q, want %q", got, want)
+	}
+	if got, want := c.browseURL("PAY-1"), "https://jira.example.com/jira/browse/PAY-1"; got != want {
+		t.Fatalf("browse URL = %q, want %q", got, want)
+	}
+}
+
 func TestValidation(t *testing.T) {
-	for _, base := range []string{"", "jira.example.com", "ftp://jira.example.com", "https://jira.example.com?q=x", "https://user:pass@jira.example.com"} {
+	bad := []string{"", "jira.example.com", "ftp://jira.example.com", "https://jira.example.com?q=x", "https://user:pass@jira.example.com"}
+	for _, base := range bad {
 		if _, err := New(Config{BaseURL: base}); err == nil {
-			t.Errorf("New(%q) succeeded", base)
+			t.Errorf("New(base %q) succeeded", base)
+		}
+	}
+	// Both URLs are held to the same rules; an empty REST URL is the one
+	// difference, since that is how a single-host deployment is expressed.
+	for _, rest := range bad[1:] {
+		if _, err := New(Config{BaseURL: "https://jira.example.com", RestURL: rest}); err == nil {
+			t.Errorf("New(REST %q) succeeded", rest)
 		}
 	}
 	c, err := New(Config{BaseURL: "https://jira.example.com"})
