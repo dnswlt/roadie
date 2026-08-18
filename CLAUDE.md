@@ -87,8 +87,9 @@ Never hard-code per-color CSS. Text on a lane bar is `--ink`, never `#000`.
 Darkening the fill to win contrast is what loses the warning — thicken the ring
 instead.
 
-**Render invalidation has exactly two scopes.** `notify()` = full chart re-render,
-for anything that can change geometry. `notifySelection()` = project `.selected`
+**Render invalidation has exactly two scopes.** `notify()` = reconcile selection
+against the rendered projection, then fully re-render the chart, for anything
+that can change geometry or visibility. `notifySelection()` = project `.selected`
 onto existing DOM + re-render the panel, for pure selection changes (a rebuild
 destroys the node identity click gestures need). Full is always a safe superset.
 A third scope means designing a real invalidation model — ask first.
@@ -143,7 +144,8 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **Anything that hides an entity must be undone before selecting it.** Hidden
   lane, folded parent, active filter: `revealAndSelect` clears all three, and
   `addItem` clears the filter a new item cannot match. Selecting what isn't
-  rendered scrolls nowhere.
+  rendered scrolls nowhere. Conversely, narrowing the view drops selections it
+  removes, so the edit rail never operates on an invisible item.
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement
   `applyItemPatch`'s invariant logic as a second source of truth.
 - **Schedule is single-track** (sprints *or* PIs, not both nested).

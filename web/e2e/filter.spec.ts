@@ -63,6 +63,42 @@ test("filtering removes non-matching bars from the timeline", async ({ page, req
   await expect(bar(page, childId)).toBeVisible();
 });
 
+test("filtering reconciles selection and can be cleared after its last match is removed", async ({
+  page,
+  request,
+}) => {
+  const alpha = seeded.items[0]!;
+  const beta = seeded.items[1]!;
+  await markFlagged(request, alpha.id);
+  await open(page, "timeline");
+
+  await bar(page, alpha.id).click();
+  await bar(page, beta.id).click({ modifiers: ["Shift"] });
+  await expect(page.locator("#panel")).toContainText("2 items selected");
+
+  await pickFilter(page, /^Flagged \(/);
+  await expect(bar(page, beta.id)).toHaveCount(0);
+  await expect(page.locator("#panel .panel-title-input")).toHaveValue("Alpha");
+
+  const saved = page.waitForResponse(
+    (res) => res.url().endsWith(`/api/items/${alpha.id}`) && res.request().method() === "PATCH",
+  );
+  await page.locator("#panel .flag-btn").click();
+  await saved;
+  const roadmap = (await (await request.get(`/api/roadmaps/${seeded.roadmapId}`)).json()) as {
+    lanes: { items: { id: number; flagged: boolean }[] }[];
+  };
+  expect(
+    roadmap.lanes.flatMap((lane) => lane.items).find((item) => item.id === alpha.id)?.flagged,
+  ).toBe(false);
+  await expect(bar(page, alpha.id)).toHaveCount(0);
+  await expect(page.locator("#panel .panel-title-input")).toHaveCount(0);
+
+  await pickFilter(page, "Show all items");
+  await expect(bar(page, alpha.id)).toBeVisible();
+  await expect(bar(page, beta.id)).toBeVisible();
+});
+
 test("filtering removes non-matching rows from the WBS", async ({ page, request }) => {
   await markFlagged(request, seeded.items[1]!.id); // Beta
   await open(page, "wbs");

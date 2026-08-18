@@ -1,5 +1,6 @@
 // Actions mutate the client state and keep the server in sync. Updates and
-// deletes are optimistic: apply locally, call the API, roll back on failure.
+// deletes are optimistic: apply locally, call the API, and restore roadmap data
+// on failure. Transient view state such as selection is not transactional.
 // Creates wait for the server (it assigns the ID).
 
 import { api } from "./api";
@@ -34,7 +35,7 @@ async function optimistic(mutate: () => void, call: () => Promise<unknown>): Pro
   // IDs are historical and could hit the wrong live row). Silently no-op — the
   // snapshot banner already explains why edits don't take.
   if (state.preview) return false;
-  const snap = state.snapshot();
+  const snap = state.snapshot(); // Roadmap data only; selection/view state is not part of rollback.
   mutate();
   state.notify();
   try {

@@ -195,6 +195,75 @@ test("an active filter forces every parent open without losing the saved fold", 
   state.setCollapsed(parent.id, false);
 });
 
+test("a full render drops selections the filter removes but keeps a retained parent", () => {
+  const parent = item(1, [], false, [item(2, ["keep"], false)]);
+  const removed = item(3, [], false);
+  const matching = item(4, ["keep"], false);
+  state.current = roadmap([parent, removed, matching]);
+  state.selectedItemIds = new Set([parent.id, removed.id, matching.id]);
+  state.filter = { kind: "labels", labels: ["keep"] };
+
+  state.notify();
+
+  assert.deepEqual([...state.selectedItemIds].sort(), [parent.id, matching.id]);
+});
+
+test("a full render drops a selected item that stops matching the active filter", () => {
+  const selected = item(1, [], true);
+  state.current = roadmap([selected]);
+  state.selectedItemIds = new Set([selected.id]);
+  state.filter = { kind: "flagged" };
+
+  selected.flagged = false;
+  state.notify();
+
+  assert.equal(state.selectedItemId, null);
+});
+
+test("hiding contexts drops their item and milestone selections", () => {
+  const first = lane(1, [item(1, [], false)]);
+  first.milestones.push({
+    id: 10,
+    laneId: first.id,
+    title: "M",
+    description: "",
+    date: "2026-01-01",
+  });
+  const second = lane(2, [item(2, [], false)]);
+  state.current = roadmapOf([first, second]);
+  state.filter = null;
+  state.selectedItemIds = new Set([1, 2]);
+
+  state.setLaneHidden(first.id, true);
+  assert.deepEqual([...state.selectedItemIds], [2]);
+
+  state.selectedMilestoneId = 10;
+  state.isolateLane(second.id);
+  assert.equal(state.selectedMilestoneId, null);
+
+  state.hiddenLanes = new Set();
+  state.selectedItemIds = new Set();
+});
+
+test("folding a WBS milestone group drops its selected milestone locally", () => {
+  const only = lane(1);
+  only.milestones.push({
+    id: 10,
+    laneId: only.id,
+    title: "M",
+    description: "",
+    date: "2026-01-01",
+  });
+  state.current = roadmapOf([only]);
+  state.hiddenLanes = new Set();
+  state.selectedMilestoneId = 10;
+
+  state.setMilestonesCollapsed(only.id, true);
+
+  assert.equal(state.selectedMilestoneId, null);
+  state.wbsMsCollapsed = new Set();
+});
+
 test("atRiskCount counts children as well as top-level items", () => {
   state.current = roadmap([
     item(1, [], false, [item(2, [], false, [], true), item(3, [], true)], true),

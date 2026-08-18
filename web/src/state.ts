@@ -1,5 +1,5 @@
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
-import { matchesFilter, type Filter } from "./filter";
+import { filterItems, matchesFilter, type Filter } from "./filter";
 import type {
   Contributor,
   Item,
@@ -140,7 +140,36 @@ class AppState {
   }
 
   notify(): void {
+    this.reconcileSelectionVisibility();
     for (const fn of this.listeners) fn();
+  }
+
+  // A full notification follows anything that can change chart geometry or
+  // item eligibility. Reconcile selection before subscribers render so the
+  // edit rail never keeps operating on something the chart just removed.
+  //
+  // A non-matching parent with a matching child deliberately survives as a
+  // dimmed hierarchy breadcrumb, so it survives here too. Children themselves
+  // must match, and saved folds only hide them while no filter is active.
+  private reconcileSelectionVisibility(): void {
+    const renderedItems = new Set<number>();
+    for (const lane of this.current?.lanes ?? []) {
+      if (this.isLaneHidden(lane.id)) continue;
+      for (const item of filterItems(lane.items, this.filter)) {
+        renderedItems.add(item.id);
+        if (!this.rendersCollapsed(item.id)) {
+          for (const child of item.children) renderedItems.add(child.id);
+        }
+      }
+    }
+    for (const id of [...this.selectedItemIds]) {
+      if (!renderedItems.has(id)) this.selectedItemIds.delete(id);
+    }
+
+    if (this.selectedMilestoneId !== null) {
+      const loc = this.findMilestone(this.selectedMilestoneId);
+      if (!loc || this.isLaneHidden(loc.lane.id)) this.selectedMilestoneId = null;
+    }
   }
 
   // The narrower of the two invalidation scopes: selection-only changes,
@@ -270,38 +299,22 @@ class AppState {
     }
   }
 
-  // setCollapsed folds or unfolds one parent. Collapsing hides the selected
-  // item when it is one of the folded children, so the panel never edits
-  // something that isn't on screen.
+  // setCollapsed folds or unfolds one parent. The full notification reconciles
+  // any selected child the fold removes from both chart projections.
   setCollapsed(id: number, collapsed: boolean): void {
     if (collapsed) this.collapsed.add(id);
     else this.collapsed.delete(id);
     const key = this.collapsedKey();
     if (key) localStorage.setItem(key, JSON.stringify([...this.collapsed]));
-    if (collapsed) {
-      // Drop any selected item that is a child of the just-folded parent, so
-      // the panel never edits something that isn't on screen.
-      for (const selId of [...this.selectedItemIds]) {
-        if (this.findItem(selId)?.parent?.id === id) this.selectedItemIds.delete(selId);
-      }
-    }
     this.notify();
   }
 
-  // Fold or unfold every parent in one state change. Collapsing also drops
-  // selected children, exactly as setCollapsed does for one parent, but saves
-  // and renders once rather than once per parent.
+  // Fold or unfold every parent in one saved state change and full render.
   setAllParentsCollapsed(collapsed: boolean): void {
     const parents = this.parentItems();
     this.collapsed = collapsed ? new Set(parents.map((item) => item.id)) : new Set();
     const key = this.collapsedKey();
     if (key) localStorage.setItem(key, JSON.stringify([...this.collapsed]));
-    if (collapsed) {
-      const childIDs = new Set(parents.flatMap((item) => item.children.map((child) => child.id)));
-      for (const id of [...this.selectedItemIds]) {
-        if (childIDs.has(id)) this.selectedItemIds.delete(id);
-      }
-    }
     this.notify();
   }
 
@@ -396,8 +409,9 @@ class AppState {
   }
 
   // setMilestonesCollapsed folds or unfolds one lane's WBS milestone group.
-  // Folding deselects a selected milestone of that lane — the setCollapsed
-  // rule: the panel never edits something that isn't on screen.
+  // This deselection must stay local: the fold hides milestones only in WBS;
+  // timeline still renders their diamonds, so the view-independent full-render
+  // reconciliation can only enforce their lane visibility.
   setMilestonesCollapsed(laneId: number, collapsed: boolean): void {
     if (collapsed) this.wbsMsCollapsed.add(laneId);
     else this.wbsMsCollapsed.delete(laneId);

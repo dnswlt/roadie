@@ -846,13 +846,6 @@ function buildFilterMenu(pop: HTMLElement): void {
   const labels = state.allLabels();
   const flagged = state.flaggedCount();
   const atRisk = state.atRiskCount();
-  if (labels.length === 0 && flagged === 0 && atRisk === 0) {
-    const empty = document.createElement("div");
-    empty.className = "menu-empty";
-    empty.textContent = "No labels, flags or at-risk items to filter by yet.";
-    pop.append(empty);
-    return;
-  }
 
   const row = (
     labelText: string,
@@ -878,6 +871,24 @@ function buildFilterMenu(pop: HTMLElement): void {
     });
     return b;
   };
+
+  if (labels.length === 0 && flagged === 0 && atRisk === 0) {
+    // The last matching signal can be removed from the panel while its filter
+    // remains active. Keep the exit visible even though there are no longer
+    // any filter candidates to list.
+    if (state.filter !== null) {
+      pop.append(
+        row("Show all items", false, () => {
+          state.filter = null;
+        }),
+      );
+    }
+    const empty = document.createElement("div");
+    empty.className = "menu-empty";
+    empty.textContent = "No labels, flags or at-risk items to filter by yet.";
+    pop.append(empty);
+    return;
+  }
 
   pop.append(
     row("Show all items", state.filter === null, () => {
