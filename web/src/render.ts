@@ -3,6 +3,7 @@
 
 import { laneColorValue } from "./colors";
 import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
+import { filterLane, hasMatch } from "./focus";
 import { icons } from "./icons";
 import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
 import { extractLinks } from "./links";
@@ -109,6 +110,12 @@ export function renderChart(container: HTMLElement): void {
   } else if (visibleLanes.length === 0) {
     const hint = div("lanes-hint");
     hint.textContent = "All contexts are hidden — use the eye menu to show them.";
+    lanesEl.append(hint);
+  } else if (!hasMatch(visibleLanes, state.focus)) {
+    // Filtering removes non-matches outright, so a filter that matches nothing
+    // leaves empty contexts that would otherwise read as lost data.
+    const hint = div("lanes-hint");
+    hint.textContent = "No items match this filter — use the tag menu to change or clear it.";
     lanesEl.append(hint);
   }
 
@@ -242,7 +249,8 @@ export function laneLabel(lane: LaneFull): HTMLElement {
 }
 
 function renderLane(lane: LaneFull, chartW: number): HTMLElement {
-  const layout = layoutLane(lane, scale, (id) => state.isCollapsed(id));
+  const visibleLane = filterLane(lane, state.focus);
+  const layout = layoutLane(visibleLane, scale, (id) => state.rendersCollapsed(id));
   const laneEl = div("lane");
   laneEl.dataset.laneId = String(lane.id);
   laneEl.style.setProperty("--c", laneColorValue(lane.color));
@@ -342,9 +350,11 @@ function renderMilestone(m: Milestone, labelPx: number): HTMLElement {
 function renderBlock(block: PlacedBlock): HTMLElement {
   const { item } = block;
   // Note: block.children is empty while collapsed, so parenthood is read from
-  // the model, not from the layout.
+  // the item, not from the layout. Under a filter that item is the projection
+  // (filterLane), so a parent whose children were all filtered out is drawn as
+  // the plain bar it now is.
   const hasChildren = item.children.length > 0;
-  const collapsed = hasChildren && state.isCollapsed(item.id);
+  const collapsed = hasChildren && state.rendersCollapsed(item.id);
   const isSelected = state.isItemSelected(item.id);
   let blockClass = hasChildren ? "block has-children" : "block";
   if (isSelected) blockClass += " selected";
@@ -356,7 +366,10 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   el.style.height = `${block.h}px`;
 
   const bar = div("bar");
-  if (state.isDimmed(item)) bar.classList.add("dimmed");
+  if (state.focus !== null) bar.classList.add("move-disabled");
+  // The only non-match that survives filtering is the parent of a matching
+  // child. It stays readable as hierarchy, but recedes behind the result.
+  if (!state.matchesFocus(item)) bar.classList.add("dimmed");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
   fillBar(
@@ -364,13 +377,13 @@ function renderBlock(block: PlacedBlock): HTMLElement {
     el,
     item,
     { left: block.w, top: 0, height: PARENT_BAR_H, width: block.w },
-    hasChildren ? disclosure(item, collapsed) : null,
+    hasChildren && state.focus === null ? disclosure(item, collapsed) : null,
   );
   el.append(bar);
 
   for (const child of block.children) {
     const c = div(state.isItemSelected(child.item.id) ? "child-bar selected" : "child-bar");
-    if (state.isDimmed(child.item)) c.classList.add("dimmed");
+    if (state.focus !== null) c.classList.add("move-disabled");
     c.dataset.itemId = String(child.item.id);
     c.title = child.item.title;
     c.style.left = `${child.x}px`;
@@ -456,7 +469,7 @@ export function disclosure(item: ItemFull, collapsed: boolean): HTMLElement {
 // link icon re-enables clicks, via CSS).
 function barOutside(item: Item, geom: BarGeom, lead: HTMLElement | null = null): HTMLElement {
   const lbl = div("bar-outside");
-  if (state.isDimmed(item)) lbl.classList.add("dimmed");
+  if (!state.matchesFocus(item)) lbl.classList.add("dimmed");
   lbl.style.left = `${geom.left + OUTSIDE_GAP}px`;
   lbl.style.top = `${geom.top}px`;
   lbl.style.height = `${geom.height}px`;

@@ -1,4 +1,5 @@
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
+import { matchesFocus, type Focus } from "./focus";
 import type {
   Contributor,
   Item,
@@ -28,15 +29,7 @@ export interface MilestoneLocation {
   lane: LaneFull;
 }
 
-// What the focus menu is spotlighting: a set of labels, or the flag. A tagged
-// union rather than a bare list of strings, so "flagged" can never collide with
-// a user's own label of that name. `labels` is non-empty and duplicate-free —
-// an empty selection is `focus === null`, not a labels focus of nothing, so
-// "is anything focused" stays a single null check everywhere.
-export type Focus =
-  | { kind: "labels"; labels: string[] }
-  | { kind: "flagged" }
-  | { kind: "atRisk" };
+export type { Focus } from "./focus";
 
 // Which projection is on screen: the timeline chart (render.ts), the WBS
 // outline (wbs.ts), or the Jira Recon view (recon.ts). The chart modes render
@@ -97,11 +90,11 @@ class AppState {
   // an explicit edit does (see focusPanelTitle). Persisted in localStorage like
   // panelWidth (read at boot in app.ts).
   panelCollapsed = false;
-  // Focus mode: when set, items that don't match are dimmed. A transient
-  // "what's relevant right now" view, not persisted. Several labels can be
-  // focused at once (matching is OR — an item needs any one of them), but
-  // labels and the flag stay exclusive: they are one field, not two, since
-  // focusing on both at once has no meaning.
+  // Focus mode: when set, chart views filter down to matching items. A
+  // transient "what's relevant right now" view, not persisted. Several labels
+  // can be focused at once (matching is OR — an item needs any one of them),
+  // but labels and either attention signal stay exclusive: they are one field,
+  // not two, since focusing on both at once has no meaning.
   focus: Focus | null = null;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
@@ -219,6 +212,15 @@ class AppState {
   private persistHiddenLanes(): void {
     const key = this.hiddenKey();
     if (key) localStorage.setItem(key, JSON.stringify([...this.hiddenLanes]));
+  }
+
+  // rendersCollapsed is the fold state the views actually draw, as opposed to
+  // isCollapsed's saved preference. An active filter forces every retained
+  // parent open: each surviving child is a direct match, and folding one away
+  // would drop it from the result the user asked for. Every renderer and the
+  // snap-target collector ask this one, so none can answer it differently.
+  rendersCollapsed(id: number): boolean {
+    return this.focus === null && this.isCollapsed(id);
   }
 
   isCollapsed(id: number): boolean {
@@ -457,15 +459,10 @@ class AppState {
     return this.countItems((i) => i.atRisk);
   }
 
-  // isDimmed reports whether an item should be grayed out under the current
-  // focus (false when no focus is active). Several focused labels match as OR:
-  // the menu is a "show me these" pick list, and AND would make each extra pick
-  // shrink the result, which is the opposite of what adding one reads as.
-  isDimmed(item: { labels: string[]; flagged: boolean; atRisk: boolean }): boolean {
-    if (this.focus === null) return false;
-    if (this.focus.kind === "flagged") return !item.flagged;
-    if (this.focus.kind === "atRisk") return !item.atRisk;
-    return !this.focus.labels.some((l) => item.labels.includes(l));
+  // matchesFocus backs both chart projections and the one exception to hiding:
+  // a non-matching parent retained as the breadcrumb for a matching child.
+  matchesFocus(item: Item): boolean {
+    return matchesFocus(item, this.focus);
   }
 
   isFocusedLabel(label: string): boolean {
@@ -567,10 +564,19 @@ class AppState {
   // precede selection: selecting something unrendered scrolls nowhere, so a
   // hidden lane is unhidden and a folded parent unfolded. Ends in a full
   // notify — revealing changes geometry, and only a full render honours the
-  // scroll request. Returns false if the target no longer exists.
+  // scroll request. An active item filter is the third way a target can be
+  // off-screen, and it is cleared for the same reason a lane is unhidden: every
+  // caller here means "take me to this". A parent retained only as a matching
+  // child's breadcrumb is still a non-match, so it clears the filter too —
+  // navigation lands on one coherent chart rather than an exception. Callers
+  // that want to report the clearing compare `focus` across the call (find.ts).
+  // Milestones are never filtered, so only items can trigger it. Returns false
+  // if the target no longer exists.
   revealAndSelect(kind: "item" | "milestone", id: number): boolean {
-    const loc = kind === "item" ? this.findItem(id) : this.findMilestone(id);
+    const itemLoc = kind === "item" ? this.findItem(id) : null;
+    const loc = kind === "item" ? itemLoc : this.findMilestone(id);
     if (!loc) return false;
+    if (itemLoc && !this.matchesFocus(itemLoc.item)) this.focus = null;
     if (this.isLaneHidden(loc.lane.id)) this.setLaneHidden(loc.lane.id, false);
     if ("parent" in loc && loc.parent && this.isCollapsed(loc.parent.id)) {
       this.setCollapsed(loc.parent.id, false);

@@ -95,7 +95,7 @@ Roadie keeps item metadata deliberately limited:
   that an item matters more or less relative to other roadmap items; it is not
   execution status.
 - **Labels** are free-form terms shared across a roadmap. They classify items
-  and can be used to focus the current view.
+  and can be used to filter the current view down to them.
 - A **flag** means that an item needs human attention. It is intentionally a
   single, lightweight marker with no type, owner, due date, or workflow.
 - **Tentative timing** means that an item's dates are an estimate rather than a

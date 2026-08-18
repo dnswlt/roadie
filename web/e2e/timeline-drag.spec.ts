@@ -8,7 +8,14 @@
 // reaches that arithmetic, including the Alt/Option bypass handled by dnd.ts.
 
 import { expect, test, type Page } from "@playwright/test";
-import { addLane, laneItems, purgeRoadmap, seedRoadmap, type Seeded } from "./support";
+import {
+  addLane,
+  laneItems,
+  markFlagged,
+  purgeRoadmap,
+  seedRoadmap,
+  type Seeded,
+} from "./support";
 
 let seeded: Seeded;
 let targetLaneId: number;
@@ -63,6 +70,16 @@ async function openTimeline(page: Page): Promise<void> {
   });
   await page.goto(`/?roadmap=${seeded.roadmapId}`);
   await expect(bar(page, seeded.items[0]!.id)).toBeVisible();
+}
+
+// Picking a focus leaves the menu open (it rebuilds in place), so it is closed
+// again before any gesture: a popover over the chart would swallow the
+// pointerdown, and a blocked-drag test would then pass for the wrong reason.
+async function filterToFlagged(page: Page): Promise<void> {
+  await page.locator("#focus-menu").click();
+  await page.getByRole("button", { name: /^Flagged \(/ }).click();
+  await page.locator("#focus-menu").click();
+  await expect(page.locator("#focus-pop")).toBeHidden();
 }
 
 async function dragFourDays(page: Page, itemId: number, modifier: "Shift" | "Alt"): Promise<void> {
@@ -154,6 +171,23 @@ test("holding Alt while resizing a timeline bar bypasses snapping", async ({ pag
   await openTimeline(page);
   await resizeFourDays(page, seeded.items[0]!.id, "Alt");
 
+  await expect
+    .poll(() => dates(request))
+    .toEqual([iso(monday), iso(addDays(monday, 31))]);
+});
+
+test("filtering blocks bar moves but keeps resize handles active", async ({ page, request }) => {
+  const id = seeded.items[0]!.id;
+  await markFlagged(request, id);
+  await openTimeline(page);
+  await filterToFlagged(page);
+
+  await dragFourDays(page, id, "Alt");
+  // The resize is the barrier as well as the second half of the assertion: by
+  // the time its PATCH has landed, a move mistakenly started by the drag above
+  // would have landed too. A move shifts both dates, so the unchanged start is
+  // what says the drag was refused — no fixed wait needed to prove the absence.
+  await resizeFourDays(page, id, "Alt");
   await expect
     .poll(() => dates(request))
     .toEqual([iso(monday), iso(addDays(monday, 31))]);

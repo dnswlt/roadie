@@ -13,6 +13,7 @@
 import { openPopover, type PopoverHandle } from "./popover";
 import { createSearchList, type SearchList } from "./search-list";
 import { state } from "./state";
+import { toast } from "./toast";
 
 let popEl: HTMLElement | null = null;
 let listUI: SearchList | null = null;
@@ -37,13 +38,21 @@ function shell(): SearchList {
     maxRows: 50,
     emptyHint: "Type to search titles, labels, notes and context names.",
     showCount: true,
+    showFilterState: true,
     // Close before revealing: a match may have moved or vanished since the
     // list was drawn (an SSE refresh mid-search is not deferred for this
     // popup — events.ts defers only for the edit panel); revealAndSelect
     // resolves against live state and handles both.
     onCommit: (m) => {
       closeFind();
-      state.revealAndSelect(m.kind, m.id);
+      // revealAndSelect drops an active filter when the target is outside it.
+      // Reading `focus` across the call says so without a second lookup, and
+      // without this popup having to re-derive what "outside" means.
+      const wasFiltered = state.focus !== null;
+      const revealed = state.revealAndSelect(m.kind, m.id);
+      if (revealed && wasFiltered && state.focus === null) {
+        toast(`Filter cleared to show "${m.title || "(untitled)"}"`);
+      }
     },
     onDismiss: closeFind,
   });

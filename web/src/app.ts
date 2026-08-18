@@ -131,13 +131,19 @@ function renderTopbar(): void {
   // Find searches the loaded roadmap, so it has nothing to do without one.
   ($("find-menu") as HTMLButtonElement).disabled = !state.current;
   // Bulk folding follows the action-label convention: when every parent is
-  // folded it offers Expand; otherwise it offers Collapse. No child items
-  // means there is no operation, so the control stays visible but disabled.
+  // folded it offers Expand; otherwise it offers Collapse. An active filter
+  // owns expansion for matching children, so folding pauses until it is
+  // cleared (the saved fold preferences remain intact).
   const foldAll = $("fold-all") as HTMLButtonElement;
   const expandAll = state.allParentsCollapsed();
   foldAll.replaceChildren(expandAll ? icons.expandAll(18) : icons.collapseAll(18));
-  foldAll.title = expandAll ? "Expand all child items" : "Collapse all child items";
-  foldAll.disabled = !state.hasParentItems();
+  foldAll.title =
+    state.focus !== null
+      ? "Child items are expanded while filtering"
+      : expandAll
+        ? "Expand all child items"
+        : "Collapse all child items";
+  foldAll.disabled = !state.hasParentItems() || state.focus !== null;
   renderVisibilityItem();
   // Surface active focus even while the dropdown is closed.
   $("focus-menu").classList.toggle("active", state.focus !== null);
@@ -812,23 +818,24 @@ function text(s: string): HTMLElement {
   return span;
 }
 
-// Focus menu: pick labels — or the flag — to spotlight. Anything that matches
-// none of the picks is dimmed (see state.isDimmed / render.ts); "Show all
-// items" clears the focus. Rebuilt after each pick so the checks stay current
-// while the menu is open.
+// The filter menu: pick labels — or an attention signal — to narrow the chart
+// to them. A matching child's parent remains as a dimmed hierarchy breadcrumb;
+// all other non-matches are hidden. "Show all items" clears the filter.
+// Rebuilt after each pick so the checks stay current while the menu is open.
 //
 // Labels are a multi-select: a click toggles one, and several focused labels
 // match as OR. Alt-click is the shortcut back to a single label (isolateClick),
 // which is what a plain click used to do — so the eye menu and this one now
 // read the same way: click toggles, Alt-click isolates.
 //
-// The focus button's tooltip, which states the active focus while the menu is
-// closed.
+// The button's tooltip, which states the active filter while the menu is
+// closed. "Filter", not "focus": non-matches are gone from the chart, and the
+// internal name (state.focus) is the older word, not a second concept.
 function focusTitle(): string {
-  if (state.focus === null) return "Focus on labels, flagged or at-risk items";
-  if (state.focus.kind === "flagged") return "Focus: flagged items";
-  if (state.focus.kind === "atRisk") return "Focus: at-risk items";
-  return `Focus: ${state.focus.labels.join(", ")}`;
+  if (state.focus === null) return "Filter to labels, flagged or at-risk items";
+  if (state.focus.kind === "flagged") return "Filter: flagged items";
+  if (state.focus.kind === "atRisk") return "Filter: at-risk items";
+  return `Filter: ${state.focus.labels.join(", ")}`;
 }
 
 // Flagged and At risk are pinned above the labels rather than sorted among
@@ -843,7 +850,7 @@ function buildFocusMenu(pop: HTMLElement): void {
   if (labels.length === 0 && flagged === 0 && atRisk === 0) {
     const empty = document.createElement("div");
     empty.className = "menu-empty";
-    empty.textContent = "No labels, flags or at-risk items to focus on yet.";
+    empty.textContent = "No labels, flags or at-risk items to filter by yet.";
     pop.append(empty);
     return;
   }

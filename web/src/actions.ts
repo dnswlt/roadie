@@ -439,6 +439,11 @@ export const actions = {
         insertItem(lane.items, { ...item, children: [] });
       }
     }
+    // The same hazard one branch up, from the other direction: a new item
+    // carries no labels and neither signal, so it matches no filter and would
+    // be created invisible — and selected for editing, which the panel would
+    // then show off-chart.
+    if (!state.matchesFocus(item)) state.focus = null;
     state.selectItem(item.id);
     state.notify();
     return item;

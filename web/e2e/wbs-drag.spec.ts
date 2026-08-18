@@ -14,7 +14,7 @@
 // never a renamed label or a restyle.
 
 import { expect, test, type Page } from "@playwright/test";
-import { laneItems, purgeRoadmap, seedRoadmap, type Seeded } from "./support";
+import { laneItems, markFlagged, purgeRoadmap, seedRoadmap, type Seeded } from "./support";
 
 let seeded: Seeded;
 
@@ -88,4 +88,41 @@ test("dropping a row onto a top-level row nests it under that item", async ({ pa
   expect(child.parentId).toBe(alpha!.id);
   expect(child.laneId).toBe(seeded.laneId); // a child's lane always equals its parent's
   expect(items.map((i) => i.title)).toEqual(["Alpha", "Gamma"]); // Beta left the top level
+});
+
+// The focus menu stays open after a pick (it rebuilds in place), so it is
+// closed again before any gesture: a popover over the rows would swallow the
+// pointerdown, and this test would then pass for the wrong reason.
+async function pickFocus(page: Page, name: RegExp | string): Promise<void> {
+  await page.locator("#focus-menu").click();
+  await page.getByRole("button", { name }).click();
+  await page.locator("#focus-menu").click();
+  await expect(page.locator("#focus-pop")).toBeHidden();
+}
+
+test("filtering blocks WBS item rearrangement", async ({ page, request }) => {
+  const [alpha, beta, gamma] = seeded.items;
+  await markFlagged(request, alpha!.id);
+  await markFlagged(request, gamma!.id);
+  await openWbs(page);
+  await pickFocus(page, /^Flagged \(/);
+
+  // Alpha below the last block — the same gesture the reorder test above pins,
+  // so a failure here is the filter, not the geometry.
+  const g = (await row(page, gamma!.id).boundingBox())!;
+  await dragTo(page, alpha!.id, g.x + g.width / 2, g.y + g.height + 4);
+
+  // Proving nothing happened needs a later something that did. Clearing the
+  // filter and reordering Beta gives an order that is only reachable if Alpha
+  // never moved: had the blocked drag landed, the model would read
+  // ["Beta", "Gamma", "Alpha"] here and this same gesture would end
+  // ["Gamma", "Alpha", "Beta"] instead.
+  await pickFocus(page, "Show all items");
+  await expect(row(page, beta!.id)).toBeVisible();
+  const g2 = (await row(page, gamma!.id).boundingBox())!;
+  await dragTo(page, beta!.id, g2.x + g2.width / 2, g2.y + g2.height + 4);
+
+  await expect
+    .poll(async () => (await laneItems(request, seeded.roadmapId, seeded.laneId)).map((i) => i.title))
+    .toEqual(["Alpha", "Gamma", "Beta"]);
 });

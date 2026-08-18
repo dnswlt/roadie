@@ -3,17 +3,21 @@
 //  - drag a bar's edge handles to adjust start/end date
 //  - drag a lane's grip to reorder swimlanes
 // All previews are visual only; the model is updated once on drop.
+// While an item filter is active, bar moves pause because the hidden structure
+// makes a drop ambiguous; resize handles and lane grips remain active.
 //
 // The snapping math lives in snap.ts (DOM-free, tested); this file collects the
 // candidate boundaries, reads the modifier keys, and applies the result.
 
 import { actions } from "./actions";
+import { canDrag, DRAG_BLOCKED_HINT, filterLane } from "./focus";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
 import { DoubleClickDetector } from "./gesture";
 import { focusPanelTitle } from "./panel";
 import { scheduleBounds } from "./schedule";
 import { gridSnapper, snapBoundary, snapMoveDelta } from "./snap";
 import { state } from "./state";
+import { toast } from "./toast";
 import { currentScale } from "./render";
 import { dayOf, formatDay, isoOf, todayDay, xOf } from "./timescale";
 import type { ItemFull, ItemPatch, LaneFull } from "./types";
@@ -51,6 +55,8 @@ interface ItemDrag {
   isGroup: boolean;
   members: HTMLElement[];
   memberIds: number[];
+  moveSuppressed: boolean; // this move was disabled by the active item filter at pointer-down
+  suppressedDragRecognized: boolean; // crossed 4px; pointer-up must not synthesize a click
 }
 
 interface LaneDrag {
@@ -137,8 +143,17 @@ function onPointerDown(e: PointerEvent): void {
   const loc = state.findItem(id);
   if (!loc) return;
 
-  // Grabbing any member of a multi-selection drags the whole group in time.
-  const isGroup = state.hasMultiSelection() && state.isItemSelected(id);
+  // Grabbing any visible member of a multi-selection drags the visible group
+  // in time. A filter or hidden lane can leave only one selected item on the
+  // chart; in that case it keeps the normal single-item resize/structure
+  // gestures rather than acting like an invisible group still exists.
+  const visibleSelected = [...state.selectedItemIds].filter((selectedId) =>
+    chartEl?.querySelector(
+      `.block[data-item-id="${selectedId}"], .child-bar[data-item-id="${selectedId}"]`,
+    ),
+  );
+  const isGroup =
+    state.hasMultiSelection() && state.isItemSelected(id) && visibleSelected.length > 1;
   // A group drag is move-only; a resize handle grabbed on a member still moves.
   const mode: Mode = isGroup
     ? "move"
@@ -187,6 +202,8 @@ function onPointerDown(e: PointerEvent): void {
     isGroup,
     members,
     memberIds: [...exclude],
+    moveSuppressed: !canDrag(state.focus, mode === "move" ? "move" : "resize"),
+    suppressedDragRecognized: false,
   };
   // Capture is deferred to drag start (onPointerMove) so a plain click isn't
   // captured — otherwise Safari/Firefox retarget the click to the capture
@@ -200,9 +217,10 @@ function onPointerDown(e: PointerEvent): void {
 // and `end + 1` (its right edge). Snapping edges in this domain makes "A's end
 // meets B's start" come out flush instead of overlapping by the shared day.
 //
-// Targets are the lane's other items (top-level and children alike), its
-// milestones (a point in time, so one boundary each), and today. Two kinds of
-// edge are deliberately left off the grid:
+// Targets are the lane's other visible items (top-level and children alike),
+// its milestones (a point in time, so one boundary each), and today. The same
+// focus projection as the renderer removes filtered-out bars. Two other kinds
+// of edge are deliberately left off the grid:
 //
 //  - the children of a folded parent, which are not on screen; a bar sticking
 //    to an edge the user cannot see reads as a broken snap
@@ -213,12 +231,12 @@ function onPointerDown(e: PointerEvent): void {
 //    children stay put and remain valid targets.)
 function collectSnapBounds(lane: LaneFull, exclude: Set<number>): number[] {
   const bounds = new Set<number>();
-  for (const it of lane.items) {
+  for (const it of filterLane(lane, state.focus).items) {
     if (!exclude.has(it.id)) {
       bounds.add(dayOf(it.startDate));
       bounds.add(dayOf(it.endDate) + 1);
     }
-    if (state.isCollapsed(it.id)) continue;
+    if (state.rendersCollapsed(it.id)) continue;
     for (const c of it.children) {
       if (!exclude.has(c.id)) {
         bounds.add(dayOf(c.startDate));
@@ -263,19 +281,24 @@ function collectDragMembers(
   for (const selId of state.selectedItemIds) {
     const loc = state.findItem(selId);
     if (!loc) continue;
-    exclude.add(selId);
     if (loc.parent === null) {
+      const block = chart.querySelector<HTMLElement>(`.block[data-item-id="${selId}"]`);
+      // A selection can become hidden after it was made (focus or lane
+      // visibility). It must not join a group drag whose preview cannot show it.
+      if (!block) continue;
+      exclude.add(selId);
       // Children aren't in the selection but travel with their parent: exclude
       // their edges from snapping and shift their dates on drop.
       for (const c of (loc.item as ItemFull).children) exclude.add(c.id);
-      const block = chart.querySelector<HTMLElement>(`.block[data-item-id="${selId}"]`);
-      if (block) members.push(block);
+      members.push(block);
     } else {
       // A selected child never has a selected parent (toggleItem's invariant),
       // so it always moves on its own bar — never doubly, via a parent block
       // that would also carry it.
       const bar = chart.querySelector<HTMLElement>(`.child-bar[data-item-id="${selId}"]`);
-      if (bar) members.push(bar);
+      if (!bar) continue;
+      exclude.add(selId);
+      members.push(bar);
     }
   }
   return { exclude, members };
@@ -292,6 +315,17 @@ function onPointerMove(e: PointerEvent): void {
   const d = drag;
   const dx = e.clientX - d.px;
   const dy = e.clientY - d.py;
+  if (d.moveSuppressed) {
+    if (!d.suppressedDragRecognized && Math.hypot(dx, dy) >= 4) {
+      d.suppressedDragRecognized = true;
+      dblClick.reset();
+      toast(DRAG_BLOCKED_HINT);
+      // Capture only after this is clearly an attempted drag, so release is
+      // observed even if the pointer leaves the chart. No preview is started.
+      chartEl?.setPointerCapture(e.pointerId);
+    }
+    return;
+  }
   if (!d.started) {
     if (Math.hypot(dx, dy) < 4) return;
     d.started = true;
@@ -492,6 +526,8 @@ function onPointerUp(e: PointerEvent): void {
   const d = drag;
   resetItemVisuals(d);
   drag = null;
+
+  if (d.suppressedDragRecognized) return;
 
   if (!d.started) {
     // A click, not a drag. Shift-click toggles the item in the multi-selection;

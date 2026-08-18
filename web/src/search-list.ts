@@ -34,6 +34,10 @@ export interface SearchListSpec {
   // part of the answer; off for the picker, whose narrow panel wants only the
   // candidates.
   showCount?: boolean;
+  // Mark item rows that do not directly match the active item filter. Global
+  // Find enables this because committing such a row clears that filter; the
+  // dependency picker does neither.
+  showFilterState?: boolean;
   // Drops candidates before counting and drawing. The picker excludes the
   // entity itself and everything already linked to it.
   filter?: (m: Match) => boolean;
@@ -70,7 +74,12 @@ const TAG_TEXT: Record<Match["field"], string> = {
   context: "context",
 };
 
-function renderRow(m: Match, active: boolean, commit: (m: Match) => void): HTMLElement {
+function renderRow(
+  m: Match,
+  active: boolean,
+  commit: (m: Match) => void,
+  showFilterState: boolean,
+): HTMLElement {
   const row = document.createElement("button");
   row.className = active ? "find-row is-cursor" : "find-row";
   row.type = "button";
@@ -99,6 +108,13 @@ function renderRow(m: Match, active: boolean, commit: (m: Match) => void): HTMLE
   const meta = document.createElement("span");
   meta.className = "find-meta";
   meta.textContent = `${m.laneName} · ${dateText(m)}`;
+  if (showFilterState && m.kind === "item") {
+    const loc = state.findItem(m.id);
+    if (loc && !state.matchesFocus(loc.item)) {
+      meta.append(document.createTextNode(" · outside filter"));
+      row.title = "Selecting this item clears the current filter";
+    }
+  }
   // A match in a hidden context is the case the browser's own find cannot
   // reach at all, so say so rather than letting the row look like any other.
   if (state.isLaneHidden(m.laneId)) meta.append(icons.eyeOff(12));
@@ -165,7 +181,10 @@ export function createSearchList(spec: SearchListSpec): SearchList {
     if (spec.showCount) {
       head.textContent = total === 1 ? "1 match" : `${total} matches`;
     }
-    matches.forEach((m, i) => list.append(renderRow(m, i === cursor, spec.onCommit)));
+    // Resolving a row against the filter costs a findItem scan each, so the
+    // rows only ask when there is a filter to be outside of.
+    const markOutside = spec.showFilterState === true && state.focus !== null;
+    matches.forEach((m, i) => list.append(renderRow(m, i === cursor, spec.onCommit, markOutside)));
     if (total > matches.length) {
       list.append(note(`+${total - matches.length} more — narrow the query.`));
     }

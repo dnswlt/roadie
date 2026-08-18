@@ -74,6 +74,16 @@ export async function addLane(
   return lane.id;
 }
 
+// markFlagged gives gesture specs a filter result without using the panel —
+// filtering is arrangement for those tests; the pointer path is the act.
+export async function markFlagged(
+  request: APIRequestContext,
+  itemId: number,
+): Promise<void> {
+  const res = await request.patch(`/api/items/${itemId}`, { data: { flagged: true } });
+  expect(res.ok(), `PATCH item flag -> ${res.status()}`).toBe(true);
+}
+
 // setSchedule gives a seeded roadmap a schedule. PUT replaces the whole thing,
 // which is also how the app's editor saves it.
 export async function setSchedule(

@@ -6,7 +6,8 @@
 // hand-detected). All previews are visual only; the model is updated once on
 // drop, through the same ItemPatch vocabulary the timeline uses — rank,
 // parentId, laneId, never dates. A WBS move means "same time, different place
-// in the breakdown".
+// in the breakdown". Item moves pause while filtering because the breakdown
+// is then incomplete; rows remain selectable through the same controller.
 //
 // Deliberately blind to the timeline's DOM: this file matches only .wbs-*
 // classes, as dnd.ts matches only .bar/.child-bar/.lane-grip. Neither
@@ -14,9 +15,11 @@
 
 import { actions } from "./actions";
 import { elementsExcept, indexFromY } from "./dnd";
+import { canDrag, DRAG_BLOCKED_HINT } from "./focus";
 import { DoubleClickDetector } from "./gesture";
 import { focusPanelTitle } from "./panel";
 import { state } from "./state";
+import { toast } from "./toast";
 import type { ItemFull, ItemPatch } from "./types";
 
 interface WbsDrag {
@@ -32,6 +35,8 @@ interface WbsDrag {
   dropLaneId: number;
   dropParentId: number | null;
   dropRank: number | null; // insertion index in the drop container; null = keep/append
+  moveSuppressed: boolean; // this move was disabled by the active item filter at pointer-down
+  suppressedDragRecognized: boolean; // crossed 4px; pointer-up must not synthesize a click
 }
 
 // Vertical rhythm of .wbs-rows / .wbs-block, mirrored from styles.css: blocks
@@ -107,6 +112,8 @@ function onPointerDown(e: PointerEvent): void {
     dropLaneId: loc.item.laneId,
     dropParentId: loc.item.parentId,
     dropRank: null,
+    moveSuppressed: !canDrag(state.focus, "move"),
+    suppressedDragRecognized: false,
   };
   // As in dnd.ts: preventDefault here (drags must not start text selections),
   // which suppresses native click/dblclick on rows — so both are re-created
@@ -119,6 +126,15 @@ function onPointerMove(e: PointerEvent): void {
   if (!drag) return;
   const d = drag;
   const dy = e.clientY - d.py;
+  if (d.moveSuppressed) {
+    if (!d.suppressedDragRecognized && Math.hypot(e.clientX - d.px, dy) >= 4) {
+      d.suppressedDragRecognized = true;
+      dblClick.reset();
+      toast(DRAG_BLOCKED_HINT);
+      chartEl?.setPointerCapture(e.pointerId);
+    }
+    return;
+  }
   if (!d.started) {
     if (Math.hypot(e.clientX - d.px, dy) < 4) return;
     d.started = true;
@@ -234,6 +250,8 @@ function onPointerUp(e: PointerEvent): void {
   const d = drag;
   resetVisuals(d);
   drag = null;
+
+  if (d.suppressedDragRecognized) return;
 
   if (!d.started) {
     // A click, not a drag — same manual selection as dnd.ts's click branch.

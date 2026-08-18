@@ -16,6 +16,7 @@
 
 import { laneColorValue } from "./colors";
 import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
+import { filterLane, hasMatch } from "./focus";
 import { icons } from "./icons";
 import {
   barLink,
@@ -79,6 +80,10 @@ export function renderWbs(container: HTMLElement): void {
     const hint = div("lanes-hint");
     hint.textContent = "All contexts are hidden — use the eye menu to show them.";
     lanesEl.append(hint);
+  } else if (!hasMatch(visibleLanes, state.focus)) {
+    const hint = div("lanes-hint");
+    hint.textContent = "No items match this filter — use the tag menu to change or clear it.";
+    lanesEl.append(hint);
   }
 
   const addRow = div("lane-add-row");
@@ -122,7 +127,7 @@ function renderLaneSection(lane: LaneFull): HTMLElement {
 
   const rows = div("wbs-rows");
   if (lane.milestones.length > 0) rows.append(...renderMilestoneGroup(lane));
-  for (const item of lane.items) rows.append(renderItemBlock(item));
+  for (const item of filterLane(lane, state.focus).items) rows.append(renderItemBlock(item));
 
   laneEl.append(laneLabel(lane), rows);
   return laneEl;
@@ -180,10 +185,12 @@ function renderMilestoneRow(m: Milestone): HTMLElement {
 // draws, with the block's color spine bracketing the family.
 function renderItemBlock(item: ItemFull): HTMLElement {
   const hasChildren = item.children.length > 0;
-  const collapsed = hasChildren && state.isCollapsed(item.id);
+  const collapsed = hasChildren && state.rendersCollapsed(item.id);
   const block = div(hasChildren ? "wbs-block has-children" : "wbs-block");
   block.dataset.itemId = String(item.id); // wbs-dnd.ts resolves drop targets by it
-  block.append(renderRow(item, hasChildren ? disclosure(item, collapsed) : null, false));
+  block.append(
+    renderRow(item, hasChildren && state.focus === null ? disclosure(item, collapsed) : null, false),
+  );
   if (!collapsed) for (const c of item.children) block.append(renderRow(c, null, true));
   return block;
 }
@@ -197,7 +204,8 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   let cls = isChild ? "wbs-row wbs-child" : "wbs-row";
   if (state.isItemSelected(item.id)) cls += " selected";
   const row = div(cls);
-  if (state.isDimmed(item)) row.classList.add("dimmed");
+  if (state.focus !== null) row.classList.add("move-disabled");
+  if (!state.matchesFocus(item)) row.classList.add("dimmed");
   row.dataset.itemId = String(item.id);
   if (lead) row.append(lead);
   const main = div("wbs-main");

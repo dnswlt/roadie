@@ -1003,6 +1003,15 @@ kbd {
   background: color-mix(in oklab, var(--c) 45%, var(--surface));
 }
 
+/* Filtering removes the structural context a move/drop needs. Item bodies
+   therefore stop advertising a move while filtered; timeline resize handles
+   retain their own ew-resize cursor and remain active. */
+.bar.move-disabled,
+.child-bar.move-disabled,
+.wbs-row.move-disabled {
+  cursor: default;
+}
+
 /* Tentative timing: sawtooth ends, painted by .bar-shape — a clipped layer
    behind the bar's content. The bar itself stays rectangular, since clip-path
    would clip hit-testing and drag/resize must match a committed bar.
@@ -2961,22 +2970,17 @@ button.deps-node:hover {
   background: color-mix(in oklab, var(--focus) 26%, transparent);
 }
 
-/* Items that don't match the focus (label or flag) recede so the matching ones
-   pop. Grayscale drops their lane color too, not just opacity — the color is
-   what the eye sorts by, so losing it is most of the effect, which is why the
-   opacity can stay high enough to leave a readable ghost. It has to: a focus
-   dims in place rather than filtering, and that trade only pays if the items
-   still standing there can be seen. A ghost is a shape you can place in time,
-   not a name you can read — this number is where that line sits, and it was
-   found by eye between two stops that missed: 0.12 held the space and showed
-   nothing in it, 0.32 kept the titles readable enough that the eye stopped on
-   them. Below ~0.25 child bars dissolve into the lane tint and the nesting
-   goes with them, which is half of what dimming in place is for. */
+/* A non-matching parent remains only when one of its children matches the
+   active filter. All other non-matches are absent from the rendered lane
+   rather than styled here, which inverts what this number is for: the old
+   dimming wanted a ghost you could place in time but not read (0.27), while
+   the retained parent is kept precisely so its title can be read as the
+   child's breadcrumb. It must stay legible and still lose to the result
+   beside it — the surviving children render at full strength. */
 .bar.dimmed,
-.child-bar.dimmed,
 .bar-outside.dimmed,
 .wbs-row.dimmed {
-  opacity: 0.27;
+  opacity: 0.55;
   filter: grayscale(0.85);
 }
 
