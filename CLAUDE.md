@@ -60,7 +60,8 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`trash.go`) · visibility (`store/access.go`, `s.guard`) · contributors
 (`contributors.go`) · schedule (`schedule.go`, `schedule.ts`) · SSE
 (`server/events.go`, `events.ts`) · auth (`internal/auth`) · find
-(`search.ts` + `search-list.ts` + `find.ts`) · label/flag filter (`filter.ts`) ·
+(`search.ts` + `search-list.ts` + `find.ts`) · chart projection and item filter
+(`filter.ts`, held by `state.projection()`) ·
 Home dialog (`home.ts`, name-path
 folding in `tree.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
@@ -87,9 +88,10 @@ Never hard-code per-color CSS. Text on a lane bar is `--ink`, never `#000`.
 Darkening the fill to win contrast is what loses the warning — thicken the ring
 instead.
 
-**Render invalidation has exactly two scopes.** `notify()` = reconcile selection
-against the rendered projection, then fully re-render the chart, for anything
-that can change geometry or visibility. `notifySelection()` = project `.selected`
+**Render invalidation has exactly two scopes.** `notify()` = invalidate derived
+state, drop selections that fell off screen, then fully re-render, for anything
+that can change geometry or visibility. It commits a view state, so it mutates
+as well as announces. `notifySelection()` = project `.selected`
 onto existing DOM + re-render the panel, for pure selection changes (a rebuild
 destroys the node identity click gestures need). Full is always a safe superset.
 A third scope means designing a real invalidation model — ask first.
@@ -134,18 +136,28 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   `immutable`, everything else `no-store` (`cacheHeaders`, server.go).
 - **Find is a list, not a filter.** It never narrows the chart itself; jumping to
   a match outside the active filter clears that filter (`revealAndSelect`).
-- **The label/flag filter removes non-matches, it does not dim them**
+- **What is on screen is derived once, by `state.projection()`.** Hidden
+  context, folded parent, active filter: any reader that rebuilds that rule by
+  hand is a copy that will drift (zoom-to-fit was one, and ignored the filter).
+  Renderers draw `projection.lanes`; everyone else asks `drawnItemIds`.
+  Derived state has one invalidation point, `invalidateDerived`.
+- **Selection is a subset of what is on screen**, pruned in `notify()`.
+  Narrowing the view discards what it removed and widening never brings it
+  back — no program restores a selection across a filter, and the state to do
+  so is not worth carrying.
+- **The item filter removes non-matches, it does not dim them**
   (`filter.ts`): at 90% dimmed, finding the survivors is scrolling — that
   shipped, and users rejected it. The one non-match kept is a parent holding a
-  matching child, as its breadcrumb.
+  matching child, as its breadcrumb. Dependency-conflict membership comes from
+  `analyzeDependencies` and includes both item endpoints; milestones remain
+  unfiltered landmarks.
 - **Item moves pause while a filter is active**; resize, lane reorder and
   selection stay live. A drop's `rank` is counted from rendered siblings
   (`indexFromY`), which only equals rank on an unfiltered render.
 - **Anything that hides an entity must be undone before selecting it.** Hidden
   lane, folded parent, active filter: `revealAndSelect` clears all three, and
   `addItem` clears the filter a new item cannot match. Selecting what isn't
-  rendered scrolls nowhere. Conversely, narrowing the view drops selections it
-  removes, so the edit rail never operates on an invisible item.
+  rendered scrolls nowhere.
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement
   `applyItemPatch`'s invariant logic as a second source of truth.
 - **Schedule is single-track** (sprints *or* PIs, not both nested).

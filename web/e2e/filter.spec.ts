@@ -1,4 +1,4 @@
-// What the label/flag filter actually removes from the two chart projections.
+// What the item filter actually removes from the two chart projections.
 //
 // This is the one spec whose oracle is the DOM rather than the API, and the
 // reason is that filtering never touches the server: the roadmap still holds
@@ -14,7 +14,15 @@
 // — non-matches are gone, not dimmed — the least-guarded thing about it.
 
 import { expect, test, type Page } from "@playwright/test";
-import { addItem, markFlagged, purgeRoadmap, seedRoadmap, type Seeded } from "./support";
+import {
+  addItem,
+  addItemDependency,
+  markFlagged,
+  purgeRoadmap,
+  seedRoadmap,
+  setItemDates,
+  type Seeded,
+} from "./support";
 import { pickFilter } from "./ui";
 
 let seeded: Seeded;
@@ -97,6 +105,43 @@ test("filtering reconciles selection and can be cleared after its last match is 
   await pickFilter(page, "Show all items");
   await expect(bar(page, alpha.id)).toBeVisible();
   await expect(bar(page, beta.id)).toBeVisible();
+});
+
+test("dependency conflicts filter both item endpoints in timeline and WBS", async ({
+  page,
+  request,
+}) => {
+  const alpha = seeded.items[0]!;
+  const beta = seeded.items[1]!;
+  const gamma = await addItem(request, seeded.laneId, "Gamma");
+  await setItemDates(request, alpha.id, "2026-01-05", "2026-03-01");
+  await addItemDependency(request, seeded.roadmapId, alpha.id, beta.id);
+  await open(page, "timeline");
+
+  await pickFilter(page, /^In conflict \(/);
+  await expect(bar(page, alpha.id)).toBeVisible();
+  await expect(bar(page, beta.id)).toBeVisible();
+  await expect(bar(page, gamma)).toHaveCount(0);
+
+  await page.keyboard.press("v");
+  await expect(row(page, alpha.id)).toBeVisible();
+  await expect(row(page, beta.id)).toBeVisible();
+  await expect(row(page, gamma)).toHaveCount(0);
+});
+
+// The empty-result hint is about the filter, so it must not appear for a
+// roadmap that simply has no items yet — the two states look identical from
+// the drawn set alone.
+test("a context with no items says nothing about filters", async ({ page, request }) => {
+  const empty = await seedRoadmap(request, []);
+  try {
+    await page.addInitScript(() => localStorage.setItem("roadie.view", "timeline"));
+    await page.goto(`/?roadmap=${empty.roadmapId}`);
+    await expect(page.locator("#add-lane")).toBeVisible(); // the chart has rendered
+    await expect(page.locator(".lanes-hint")).toHaveCount(0);
+  } finally {
+    await purgeRoadmap(request, empty.roadmapId);
+  }
 });
 
 test("filtering removes non-matching rows from the WBS", async ({ page, request }) => {

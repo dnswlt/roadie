@@ -10,7 +10,7 @@
 // candidate boundaries, reads the modifier keys, and applies the result.
 
 import { actions } from "./actions";
-import { canDrag, DRAG_BLOCKED_HINT, filterLane } from "./filter";
+import { canDrag, DRAG_BLOCKED_HINT } from "./filter";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
 import { DoubleClickDetector } from "./gesture";
 import { focusPanelTitle } from "./panel";
@@ -218,9 +218,10 @@ function onPointerDown(e: PointerEvent): void {
 // meets B's start" come out flush instead of overlapping by the shared day.
 //
 // Targets are the lane's other visible items (top-level and children alike),
-// its milestones (a point in time, so one boundary each), and today. The same
-// filter projection as the renderer removes filtered-out bars. Two other kinds
-// of edge are deliberately left off the grid:
+// its milestones (a point in time, so one boundary each), and today. "Visible"
+// is asked of the projection rather than recomputed, so a magnet can never
+// disagree with what was drawn. Two other kinds of edge are deliberately left
+// off the grid:
 //
 //  - the children of a folded parent, which are not on screen; a bar sticking
 //    to an edge the user cannot see reads as a broken snap
@@ -231,14 +232,15 @@ function onPointerDown(e: PointerEvent): void {
 //    children stay put and remain valid targets.)
 function collectSnapBounds(lane: LaneFull, exclude: Set<number>): number[] {
   const bounds = new Set<number>();
-  for (const it of filterLane(lane, state.filter).items) {
+  const drawn = state.projection().drawnItemIds;
+  for (const it of lane.items) {
+    if (!drawn.has(it.id)) continue;
     if (!exclude.has(it.id)) {
       bounds.add(dayOf(it.startDate));
       bounds.add(dayOf(it.endDate) + 1);
     }
-    if (state.rendersCollapsed(it.id)) continue;
     for (const c of it.children) {
-      if (!exclude.has(c.id)) {
+      if (drawn.has(c.id) && !exclude.has(c.id)) {
         bounds.add(dayOf(c.startDate));
         bounds.add(dayOf(c.endDate) + 1);
       }

@@ -1,5 +1,12 @@
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
-import { filterItems, matchesFilter, type Filter } from "./filter";
+import { analyzeDependencies, type DependencyAnalysis } from "./deps-graph";
+import {
+  itemPredicate,
+  project,
+  type Filter,
+  type Projection,
+  type SignalFilterKind,
+} from "./filter";
 import type {
   Contributor,
   Item,
@@ -43,7 +50,20 @@ export type ViewMode = ChartMode | "recon";
 // the server.
 class AppState {
   roadmaps: Roadmap[] = [];
-  current: RoadmapFull | null = null;
+
+  // The open roadmap. Assigning one invalidates everything derived from it, so
+  // a reader can never be handed a projection or dependency graph belonging to
+  // the roadmap before it; in-place edits are covered by notify().
+  private currentValue: RoadmapFull | null = null;
+
+  get current(): RoadmapFull | null {
+    return this.currentValue;
+  }
+
+  set current(next: RoadmapFull | null) {
+    this.currentValue = next;
+    this.invalidateDerived();
+  }
   // Identity and runtime capabilities from /api/me, fetched once at boot —
   // neither can change without a page load. Visibility decisions still arrive
   // on each roadmap as `visibility`/`owned`; auth mode is not a permission
@@ -93,9 +113,21 @@ class AppState {
   // The item filter: when set, chart views show only matching items. A
   // transient "what's relevant right now" view, not persisted. Several labels
   // can be picked at once (matching is OR — an item needs any one of them),
-  // but labels and either attention signal stay exclusive: they are one field,
+  // but labels and each attention signal stay exclusive: they are one field,
   // not two, since filtering on both at once has no meaning.
-  filter: Filter | null = null;
+  //
+  // Assignment invalidates what is derived from it, so no caller has to
+  // remember to notify before the next read.
+  private filterValue: Filter | null = null;
+
+  get filter(): Filter | null {
+    return this.filterValue;
+  }
+
+  set filter(next: Filter | null) {
+    this.filterValue = next;
+    this.invalidateDerived();
+  }
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
   // Set when a selection should be scrolled into view once (e.g. a deep link
@@ -139,33 +171,58 @@ class AppState {
     this.listeners.push(fn);
   }
 
+  // notify() commits a view state rather than only announcing one: what is
+  // derived from the model is dropped, selections that fell off screen go with
+  // it, then every subscriber redraws. Both steps live here because this is the
+  // one boundary meaning "the model or the view prefs changed".
   notify(): void {
-    this.reconcileSelectionVisibility();
+    this.invalidateDerived();
+    this.pruneSelection();
     for (const fn of this.listeners) fn();
   }
 
-  // A full notification follows anything that can change chart geometry or
-  // item eligibility. Reconcile selection before subscribers render so the
-  // edit rail never keeps operating on something the chart just removed.
-  //
-  // A non-matching parent with a matching child deliberately survives as a
-  // dimmed hierarchy breadcrumb, so it survives here too. Children themselves
-  // must match, and saved folds only hide them while no filter is active.
-  private reconcileSelectionVisibility(): void {
-    const renderedItems = new Set<number>();
-    for (const lane of this.current?.lanes ?? []) {
-      if (this.isLaneHidden(lane.id)) continue;
-      for (const item of filterItems(lane.items, this.filter)) {
-        renderedItems.add(item.id);
-        if (!this.rendersCollapsed(item.id)) {
-          for (const child of item.children) renderedItems.add(child.id);
-        }
-      }
-    }
-    for (const id of [...this.selectedItemIds]) {
-      if (!renderedItems.has(id)) this.selectedItemIds.delete(id);
-    }
+  // Everything derived from the model and the view prefs, dropped together.
+  // Reached three ways — a new roadmap, a new filter, a notify after an
+  // in-place edit — so no caller needs to know what the list holds.
+  private invalidateDerived(): void {
+    this.depAnalysis = null;
+    this.proj = null;
+  }
 
+  // The roadmap's dependency graph. The timeline, the WBS, the overlay and the
+  // conflict filter all want it within one pass, so it is computed once per
+  // change rather than once per caller. notifySelection() does not invalidate
+  // it: a selection change cannot move a date or an edge.
+  private depAnalysis: DependencyAnalysis | null = null;
+
+  dependencyAnalysis(): DependencyAnalysis {
+    return (this.depAnalysis ??= analyzeDependencies(this.current));
+  }
+
+  // What the chart views draw. Every reader asks here rather than rebuilding
+  // the rule from the model, the hidden contexts, the folds and the filter.
+  private proj: Projection | null = null;
+
+  projection(): Projection {
+    return (this.proj ??= project(this.current?.lanes ?? [], {
+      isLaneHidden: (id) => this.isLaneHidden(id),
+      isFolded: (id) => this.rendersCollapsed(id),
+      match: itemPredicate(this.filter, this.dependencyConflictItemIds()),
+    }));
+  }
+
+  // Selection is a subset of what is on screen: narrowing the view discards
+  // what it removed, and widening never brings it back.
+  //
+  // Milestones are never filtered, so only a hidden context or a vanished
+  // milestone takes one off screen. The WBS milestone fold is view-local — the
+  // timeline always draws milestones — so it drops its own selection as it
+  // folds (setMilestonesCollapsed) instead of being answered here.
+  private pruneSelection(): void {
+    const drawn = this.projection().drawnItemIds;
+    for (const id of [...this.selectedItemIds]) {
+      if (!drawn.has(id)) this.selectedItemIds.delete(id);
+    }
     if (this.selectedMilestoneId !== null) {
       const loc = this.findMilestone(this.selectedMilestoneId);
       if (!loc || this.isLaneHidden(loc.lane.id)) this.selectedMilestoneId = null;
@@ -462,9 +519,9 @@ class AppState {
     return n;
   }
 
-  // These drive the filter menu's "Flagged (n)" and "At risk (n)" rows, each
-  // both the filter and the only place its total is visible — a mark nobody
-  // can see never gets dealt with.
+  // These drive the filter menu's signal rows, each both the filter and the
+  // only place its total is visible — a mark nobody can see never gets dealt
+  // with.
   flaggedCount(): number {
     return this.countItems((i) => i.flagged);
   }
@@ -473,10 +530,33 @@ class AppState {
     return this.countItems((i) => i.atRisk);
   }
 
-  // matchesFilter backs both chart projections and the one exception to hiding:
-  // a non-matching parent retained as the breadcrumb for a matching child.
+  // Both item ends of every conflicting edge, which is the rule itself: the
+  // contradiction belongs to the pair (deps-graph.ts). A milestone end is
+  // skipped rather than missing — milestones are never filtered.
+  private dependencyConflictItemIds(): Set<number> {
+    const { conflictingEdges } = this.dependencyAnalysis();
+    const ids = new Set<number>();
+    for (const d of this.current?.dependencies ?? []) {
+      if (!conflictingEdges.has(d.id)) continue;
+      if (d.from.kind === "item") ids.add(d.from.id);
+      if (d.to.kind === "item") ids.add(d.to.id);
+    }
+    return ids;
+  }
+
+  dependencyConflictCount(): number {
+    return this.dependencyConflictItemIds().size;
+  }
+
+  toggleFilterSignal(kind: SignalFilterKind): void {
+    this.filter = this.filter?.kind === kind ? null : { kind };
+  }
+
+  // Whether an item matches the filter directly, which is stricter than being
+  // on screen: a non-matching parent is retained as a breadcrumb. Find and
+  // revealAndSelect want the strict answer.
   matchesFilter(item: Item): boolean {
-    return matchesFilter(item, this.filter);
+    return this.projection().matches(item);
   }
 
   isFilterLabel(label: string): boolean {
@@ -484,7 +564,7 @@ class AppState {
   }
 
   // toggleFilterLabel adds or removes one label from the filter. Picking a label
-  // while the flag is picked replaces it — labels and the flag are exclusive
+  // while a signal is picked replaces it — labels and signals are exclusive
   // (see `filter`). Removing the last label clears the filter entirely.
   toggleFilterLabel(label: string): void {
     const current = this.filter?.kind === "labels" ? this.filter.labels : [];

@@ -3,8 +3,8 @@ import { test } from "node:test";
 import { state } from "./state";
 import type { ItemFull, LaneFull, RoadmapFull } from "./types";
 
-// Minimal fixtures: the filter logic only reads labels and the flag, so every
-// other field gets a throwaway value.
+// Minimal fixtures: scalar filters read labels/signals; dependency conflicts
+// additionally read the dates below. Every other field gets a throwaway value.
 function item(
   id: number,
   labels: string[],
@@ -149,13 +149,45 @@ test("at-risk filter excludes items that are not at risk, flagged or not", () =>
 });
 
 // The filter holds labels or one signal, never a mix, so each pick drops the other.
-test("the two signal focuses and labels replace one another", () => {
-  state.filter = { kind: "flagged" };
+test("signal filters toggle exclusively and labels replace them", () => {
+  state.filter = null;
+  state.toggleFilterSignal("flagged");
+  assert.deepEqual(state.filter, { kind: "flagged" });
+  state.toggleFilterSignal("atRisk");
+  assert.deepEqual(state.filter, { kind: "atRisk" });
+  state.toggleFilterSignal("atRisk");
+  assert.equal(state.filter, null);
+
+  state.filter = { kind: "dependencyConflicts" };
   state.toggleFilterLabel("a");
   assert.deepEqual(state.filter, { kind: "labels", labels: ["a"] });
-  state.filter = { kind: "atRisk" };
-  state.toggleFilterLabel("a");
-  assert.deepEqual(state.filter, { kind: "labels", labels: ["a"] });
+});
+
+test("dependency-conflict filter derives both item endpoints and refreshes with dates", () => {
+  const prerequisite = item(1, [], false);
+  prerequisite.endDate = "2026-02-01";
+  const dependent = item(2, [], false);
+  const unrelated = item(3, [], false);
+  state.current = roadmap([prerequisite, dependent, unrelated]);
+  state.current.dependencies = [
+    {
+      id: 1,
+      from: { kind: "item", id: prerequisite.id },
+      to: { kind: "item", id: dependent.id },
+    },
+  ];
+
+  assert.equal(state.dependencyConflictCount(), 2);
+  state.toggleFilterSignal("dependencyConflicts");
+  assert.equal(state.matchesFilter(prerequisite), true);
+  assert.equal(state.matchesFilter(dependent), true);
+  assert.equal(state.matchesFilter(unrelated), false);
+
+  prerequisite.endDate = dependent.endDate;
+  state.notify();
+  assert.equal(state.dependencyConflictCount(), 0);
+  assert.equal(state.matchesFilter(prerequisite), false);
+  state.filter = null;
 });
 
 test("reveal clears filter for a non-matching item, including a retained parent", () => {

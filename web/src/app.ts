@@ -6,6 +6,7 @@ import { confirmDialog, promptDialog } from "./dialogs";
 import { initDnd } from "./dnd";
 import { initEvents, refreshNow } from "./events";
 import { initFind } from "./find";
+import type { SignalFilterKind } from "./filter";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { initHome, openHome } from "./home";
@@ -831,21 +832,23 @@ function text(s: string): HTMLElement {
 // The button's tooltip, which states the active filter while the menu is
 // closed.
 function filterTitle(): string {
-  if (state.filter === null) return "Filter to labels, flagged or at-risk items";
+  if (state.filter === null) return "Filter items by labels, flags, risk or dependency conflicts";
   if (state.filter.kind === "flagged") return "Filter: flagged items";
   if (state.filter.kind === "atRisk") return "Filter: at-risk items";
+  if (state.filter.kind === "dependencyConflicts") return "Filter: items in conflict";
   return `Filter: ${state.filter.labels.join(", ")}`;
 }
 
-// Flagged and At risk are pinned above the labels rather than sorted among
-// them: they aren't tags of many, and their counts are the only place the
-// totals are visible. Both stay single-pick, because the filter holds labels or one
+// Signals are pinned above the labels rather than sorted among them: they
+// aren't tags of many, and their counts are the only place the totals are
+// visible. They stay single-pick, because the filter holds labels or one
 // signal, never a mix.
 function buildFilterMenu(pop: HTMLElement): void {
   pop.replaceChildren();
   const labels = state.allLabels();
   const flagged = state.flaggedCount();
   const atRisk = state.atRiskCount();
+  const dependencyConflicts = state.dependencyConflictCount();
 
   const row = (
     labelText: string,
@@ -872,7 +875,7 @@ function buildFilterMenu(pop: HTMLElement): void {
     return b;
   };
 
-  if (labels.length === 0 && flagged === 0 && atRisk === 0) {
+  if (labels.length === 0 && flagged === 0 && atRisk === 0 && dependencyConflicts === 0) {
     // The last matching signal can be removed from the panel while its filter
     // remains active. Keep the exit visible even though there are no longer
     // any filter candidates to list.
@@ -885,7 +888,7 @@ function buildFilterMenu(pop: HTMLElement): void {
     }
     const empty = document.createElement("div");
     empty.className = "menu-empty";
-    empty.textContent = "No labels, flags or at-risk items to filter by yet.";
+    empty.textContent = "No labels, flags, at-risk items or dependency conflicts to filter by yet.";
     pop.append(empty);
     return;
   }
@@ -895,14 +898,12 @@ function buildFilterMenu(pop: HTMLElement): void {
       state.filter = null;
     }),
   );
-  const signalRow = (text: string, kind: "flagged" | "atRisk", icon: Node): HTMLButtonElement => {
+  const signalRow = (text: string, kind: SignalFilterKind, icon: Node): HTMLButtonElement => {
     const active = state.filter?.kind === kind;
     return row(
       text,
       active,
-      () => {
-        state.filter = active ? null : { kind };
-      },
+      () => state.toggleFilterSignal(kind),
       icon,
     );
   };
@@ -910,7 +911,18 @@ function buildFilterMenu(pop: HTMLElement): void {
   if (atRisk > 0) {
     pop.append(signalRow(`At risk (${atRisk})`, "atRisk", icons.alertTriangle(14)));
   }
-  if ((flagged > 0 || atRisk > 0) && labels.length > 0) {
+  if (dependencyConflicts > 0) {
+    // "In conflict", not "Conflicts": the count is items, like the two rows
+    // above it, and one bad edge puts both of its ends in the list.
+    pop.append(
+      signalRow(
+        `In conflict (${dependencyConflicts})`,
+        "dependencyConflicts",
+        icons.diagramMerge(14),
+      ),
+    );
+  }
+  if ((flagged > 0 || atRisk > 0 || dependencyConflicts > 0) && labels.length > 0) {
     const sep = document.createElement("div");
     sep.className = "menu-sep";
     pop.append(sep);

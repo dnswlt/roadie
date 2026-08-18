@@ -15,8 +15,8 @@
 // mark, link, chevron) come from render.ts.
 
 import { laneColorValue } from "./colors";
-import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
-import { filterLane, hasMatch } from "./filter";
+import { type DepSummary, refKey } from "./deps-graph";
+
 import { icons } from "./icons";
 import {
   barLink,
@@ -63,12 +63,12 @@ export function renderWbs(container: HTMLElement): void {
     return;
   }
 
-  depSums = analyzeDependencies(rm).summaries;
+  depSums = state.dependencyAnalysis().summaries;
   extent = contentRange(rm.lanes);
 
   const lanesEl = div("lanes");
-  const visibleLanes = rm.lanes.filter((l) => !state.isLaneHidden(l.id));
-  for (const lane of visibleLanes) {
+  const projection = state.projection();
+  for (const lane of projection.lanes) {
     lanesEl.append(renderLaneSection(lane));
   }
   // Same hints as the timeline (render.ts) — the situations are identical.
@@ -76,11 +76,11 @@ export function renderWbs(container: HTMLElement): void {
     const hint = div("lanes-hint");
     hint.textContent = "This roadmap has no contexts yet — add one below.";
     lanesEl.append(hint);
-  } else if (visibleLanes.length === 0) {
+  } else if (projection.lanes.length === 0) {
     const hint = div("lanes-hint");
     hint.textContent = "All contexts are hidden — use the eye menu to show them.";
     lanesEl.append(hint);
-  } else if (!hasMatch(visibleLanes, state.filter)) {
+  } else if (state.filter !== null && projection.drawnItemIds.size === 0) {
     const hint = div("lanes-hint");
     hint.textContent = "No items match this filter — use the filter menu to change or clear it.";
     lanesEl.append(hint);
@@ -127,7 +127,7 @@ function renderLaneSection(lane: LaneFull): HTMLElement {
 
   const rows = div("wbs-rows");
   if (lane.milestones.length > 0) rows.append(...renderMilestoneGroup(lane));
-  for (const item of filterLane(lane, state.filter).items) rows.append(renderItemBlock(item));
+  for (const item of lane.items) rows.append(renderItemBlock(item)); // lane is projected
 
   laneEl.append(laneLabel(lane), rows);
   return laneEl;

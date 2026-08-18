@@ -84,6 +84,21 @@ export async function markFlagged(
   expect(res.ok(), `PATCH item flag -> ${res.status()}`).toBe(true);
 }
 
+// addItemDependency creates the one graph edge kind: `to` needs `from`.
+// Dependency-filter specs arrange edges through the API because the filter,
+// not the panel picker, is the interaction under test.
+export async function addItemDependency(
+  request: APIRequestContext,
+  roadmapId: number,
+  fromId: number,
+  toId: number,
+): Promise<void> {
+  await post(request, `/api/roadmaps/${roadmapId}/dependencies`, {
+    from: { kind: "item", id: fromId },
+    to: { kind: "item", id: toId },
+  });
+}
+
 // addItem appends one item to a lane seedRoadmap did not fill, or nests one
 // under parentId. Children are the structural case the filter treats specially
 // (a matching child keeps its parent on screen as a breadcrumb), and a second

@@ -56,8 +56,9 @@ export function zoomToFit(): void {
   if (state.viewMode !== "timeline") return;
   const chart = chartEl();
   if (!chart) return;
-  const lanes = (state.current?.lanes ?? []).filter((lane) => !state.isLaneHidden(lane.id));
-  const range = contentRange(lanes);
+  // Fit what is drawn, not what exists: an active filter narrows the span the
+  // same way a hidden context does.
+  const range = contentRange(state.projection().lanes);
   if (!range) return;
   const days = range.endDay - range.startDay + 1; // end dates are inclusive
   const avail = chart.clientWidth - LABEL_W - FIT_GUTTER_PX;

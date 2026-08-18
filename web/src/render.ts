@@ -2,8 +2,8 @@
 // on every state change; scroll position is preserved across rebuilds.
 
 import { laneColorValue } from "./colors";
-import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
-import { filterLane, hasMatch } from "./filter";
+import { type DepSummary, refKey } from "./deps-graph";
+
 import { icons } from "./icons";
 import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
 import { extractLinks } from "./links";
@@ -52,7 +52,7 @@ export function renderChart(container: HTMLElement): void {
   const range = computeRange(rm, today);
   scale = { ...range, pxPerDay: state.pxPerDay };
 
-  depSums = analyzeDependencies(rm).summaries;
+  depSums = state.dependencyAnalysis().summaries;
 
   const scrollLeft = container.scrollLeft;
   const scrollTop = container.scrollTop;
@@ -99,19 +99,19 @@ export function renderChart(container: HTMLElement): void {
 
   // Lanes (hidden ones are skipped — see the eye menu in the topbar).
   const lanesEl = div("lanes");
-  const visibleLanes = rm.lanes.filter((l) => !state.isLaneHidden(l.id));
-  for (const lane of visibleLanes) {
+  const projection = state.projection();
+  for (const lane of projection.lanes) {
     lanesEl.append(renderLane(lane, w));
   }
   if (rm.lanes.length === 0) {
     const hint = div("lanes-hint");
     hint.textContent = "This roadmap has no contexts yet — add one below.";
     lanesEl.append(hint);
-  } else if (visibleLanes.length === 0) {
+  } else if (projection.lanes.length === 0) {
     const hint = div("lanes-hint");
     hint.textContent = "All contexts are hidden — use the eye menu to show them.";
     lanesEl.append(hint);
-  } else if (!hasMatch(visibleLanes, state.filter)) {
+  } else if (state.filter !== null && projection.drawnItemIds.size === 0) {
     // Filtering removes non-matches outright, so a filter that matches nothing
     // leaves empty contexts that would otherwise read as lost data.
     const hint = div("lanes-hint");
@@ -248,9 +248,10 @@ export function laneLabel(lane: LaneFull): HTMLElement {
   return label;
 }
 
+// `lane` arrives already projected (state.projection), so what it holds is
+// what this draws; the fold callback is what still removes children.
 function renderLane(lane: LaneFull, chartW: number): HTMLElement {
-  const visibleLane = filterLane(lane, state.filter);
-  const layout = layoutLane(visibleLane, scale, (id) => state.rendersCollapsed(id));
+  const layout = layoutLane(lane, scale, (id) => state.rendersCollapsed(id));
   const laneEl = div("lane");
   laneEl.dataset.laneId = String(lane.id);
   laneEl.style.setProperty("--c", laneColorValue(lane.color));

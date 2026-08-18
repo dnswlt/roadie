@@ -215,11 +215,11 @@ function openPicker(
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// This overlay's dependency analysis, rebuilt at the top of renderGraph —
-// which every path into the overlay goes through, including a recenter click.
-// The dates and the conflict verdicts both come from it rather than being
-// resolved here: one endpoint-resolution path for the whole app (see
-// analyzeDependencies).
+// This overlay's dependency analysis, taken at the top of renderGraph — which
+// every path into the overlay goes through, including a recenter click. The
+// dates and the conflict verdicts both come from it rather than being resolved
+// here: one endpoint-resolution path for the whole app (see
+// analyzeDependencies), and one computation of it per change (state).
 let analysis: DependencyAnalysis = analyzeDependencies(null);
 
 function spanText(ref: DependencyRef): string {
@@ -309,7 +309,7 @@ function nodeCard(
 }
 
 function renderGraph(dlg: HTMLDialogElement, ref: DependencyRef): void {
-  analysis = analyzeDependencies(state.current);
+  analysis = state.dependencyAnalysis();
   const center = nodeCard(dlg, ref, { center: true });
   if (!center) {
     // The entity vanished (stale ref under an SSE refresh): nothing to show.
