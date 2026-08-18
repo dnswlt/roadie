@@ -15,7 +15,7 @@
 
 import { actions } from "./actions";
 import { elementsExcept, indexFromY } from "./dnd";
-import { canDrag, DRAG_BLOCKED_HINT } from "./focus";
+import { canDrag, DRAG_BLOCKED_HINT } from "./filter";
 import { DoubleClickDetector } from "./gesture";
 import { focusPanelTitle } from "./panel";
 import { state } from "./state";
@@ -112,7 +112,7 @@ function onPointerDown(e: PointerEvent): void {
     dropLaneId: loc.item.laneId,
     dropParentId: loc.item.parentId,
     dropRank: null,
-    moveSuppressed: !canDrag(state.focus, "move"),
+    moveSuppressed: !canDrag(state.filter, "move"),
     suppressedDragRecognized: false,
   };
   // As in dnd.ts: preventDefault here (drags must not start text selections),

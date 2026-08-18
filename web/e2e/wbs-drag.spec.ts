@@ -90,14 +90,14 @@ test("dropping a row onto a top-level row nests it under that item", async ({ pa
   expect(items.map((i) => i.title)).toEqual(["Alpha", "Gamma"]); // Beta left the top level
 });
 
-// The focus menu stays open after a pick (it rebuilds in place), so it is
+// The filter menu stays open after a pick (it rebuilds in place), so it is
 // closed again before any gesture: a popover over the rows would swallow the
 // pointerdown, and this test would then pass for the wrong reason.
-async function pickFocus(page: Page, name: RegExp | string): Promise<void> {
-  await page.locator("#focus-menu").click();
+async function pickFilter(page: Page, name: RegExp | string): Promise<void> {
+  await page.locator("#filter-menu").click();
   await page.getByRole("button", { name }).click();
-  await page.locator("#focus-menu").click();
-  await expect(page.locator("#focus-pop")).toBeHidden();
+  await page.locator("#filter-menu").click();
+  await expect(page.locator("#filter-pop")).toBeHidden();
 }
 
 test("filtering blocks WBS item rearrangement", async ({ page, request }) => {
@@ -105,7 +105,7 @@ test("filtering blocks WBS item rearrangement", async ({ page, request }) => {
   await markFlagged(request, alpha!.id);
   await markFlagged(request, gamma!.id);
   await openWbs(page);
-  await pickFocus(page, /^Flagged \(/);
+  await pickFilter(page, /^Flagged \(/);
 
   // Alpha below the last block — the same gesture the reorder test above pins,
   // so a failure here is the filter, not the geometry.
@@ -117,7 +117,7 @@ test("filtering blocks WBS item rearrangement", async ({ page, request }) => {
   // never moved: had the blocked drag landed, the model would read
   // ["Beta", "Gamma", "Alpha"] here and this same gesture would end
   // ["Gamma", "Alpha", "Beta"] instead.
-  await pickFocus(page, "Show all items");
+  await pickFilter(page, "Show all items");
   await expect(row(page, beta!.id)).toBeVisible();
   const g2 = (await row(page, gamma!.id).boundingBox())!;
   await dragTo(page, beta!.id, g2.x + g2.width / 2, g2.y + g2.height + 4);

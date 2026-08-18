@@ -155,7 +155,7 @@ export const actions = {
       state.preview = null;
       state.contributors = []; // belong to the roadmap we just left
       state.stale = false; // a fresh load can't be stale
-      state.focus = null; // labels and flags are per-roadmap; don't carry focus across
+      state.filter = null; // labels and flags are per-roadmap; don't carry a filter across
       state.loadHiddenLanes();
       state.loadCollapsed();
       state.loadWbsMsCollapsed();
@@ -443,7 +443,7 @@ export const actions = {
     // carries no labels and neither signal, so it matches no filter and would
     // be created invisible — and selected for editing, which the panel would
     // then show off-chart.
-    if (!state.matchesFocus(item)) state.focus = null;
+    if (!state.matchesFilter(item)) state.filter = null;
     state.selectItem(item.id);
     state.notify();
     return item;

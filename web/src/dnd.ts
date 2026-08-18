@@ -10,7 +10,7 @@
 // candidate boundaries, reads the modifier keys, and applies the result.
 
 import { actions } from "./actions";
-import { canDrag, DRAG_BLOCKED_HINT, filterLane } from "./focus";
+import { canDrag, DRAG_BLOCKED_HINT, filterLane } from "./filter";
 import { LANE_PAD, PARENT_BAR_H, CHILD_GAP, BLOCK_GAP } from "./layout";
 import { DoubleClickDetector } from "./gesture";
 import { focusPanelTitle } from "./panel";
@@ -202,7 +202,7 @@ function onPointerDown(e: PointerEvent): void {
     isGroup,
     members,
     memberIds: [...exclude],
-    moveSuppressed: !canDrag(state.focus, mode === "move" ? "move" : "resize"),
+    moveSuppressed: !canDrag(state.filter, mode === "move" ? "move" : "resize"),
     suppressedDragRecognized: false,
   };
   // Capture is deferred to drag start (onPointerMove) so a plain click isn't
@@ -219,7 +219,7 @@ function onPointerDown(e: PointerEvent): void {
 //
 // Targets are the lane's other visible items (top-level and children alike),
 // its milestones (a point in time, so one boundary each), and today. The same
-// focus projection as the renderer removes filtered-out bars. Two other kinds
+// filter projection as the renderer removes filtered-out bars. Two other kinds
 // of edge are deliberately left off the grid:
 //
 //  - the children of a folded parent, which are not on screen; a bar sticking
@@ -231,7 +231,7 @@ function onPointerDown(e: PointerEvent): void {
 //    children stay put and remain valid targets.)
 function collectSnapBounds(lane: LaneFull, exclude: Set<number>): number[] {
   const bounds = new Set<number>();
-  for (const it of filterLane(lane, state.focus).items) {
+  for (const it of filterLane(lane, state.filter).items) {
     if (!exclude.has(it.id)) {
       bounds.add(dayOf(it.startDate));
       bounds.add(dayOf(it.endDate) + 1);
@@ -283,7 +283,7 @@ function collectDragMembers(
     if (!loc) continue;
     if (loc.parent === null) {
       const block = chart.querySelector<HTMLElement>(`.block[data-item-id="${selId}"]`);
-      // A selection can become hidden after it was made (focus or lane
+      // A selection can become hidden after it was made (the filter or lane
       // visibility). It must not join a group drag whose preview cannot show it.
       if (!block) continue;
       exclude.add(selId);

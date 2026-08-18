@@ -138,16 +138,16 @@ function renderTopbar(): void {
   const expandAll = state.allParentsCollapsed();
   foldAll.replaceChildren(expandAll ? icons.expandAll(18) : icons.collapseAll(18));
   foldAll.title =
-    state.focus !== null
+    state.filter !== null
       ? "Child items are expanded while filtering"
       : expandAll
         ? "Expand all child items"
         : "Collapse all child items";
-  foldAll.disabled = !state.hasParentItems() || state.focus !== null;
+  foldAll.disabled = !state.hasParentItems() || state.filter !== null;
   renderVisibilityItem();
-  // Surface active focus even while the dropdown is closed.
-  $("focus-menu").classList.toggle("active", state.focus !== null);
-  $("focus-menu").title = focusTitle();
+  // Surface an active filter even while the dropdown is closed.
+  $("filter-menu").classList.toggle("active", state.filter !== null);
+  $("filter-menu").title = filterTitle();
   // Highlight the snap button when a grid (not plain Day) is actually engaged.
   $("snap-menu").classList.toggle("active", snapActive());
   const snapLabel = snapActive() ? SNAP_LABELS[state.snapMode] : "Day";
@@ -167,13 +167,13 @@ function renderTopbar(): void {
   reconBtn.disabled = !state.current;
   $("snap-wrap").classList.toggle("hidden", state.viewMode !== "timeline");
   $("zoom-controls").classList.toggle("hidden", state.viewMode !== "timeline");
-  // Recon shows tracker results, not the chart: find, lane visibility, focus
+  // Recon shows tracker results, not the chart: find, lane visibility, filter
   // and folding all act on chart content, so they hide too (the snap/zoom
   // rule). All sit left of the spacer, so nothing in the right-hand button
   // cluster moves when they go.
   $("find-wrap").classList.toggle("hidden", recon);
   $("lane-vis-wrap").classList.toggle("hidden", recon);
-  $("focus-wrap").classList.toggle("hidden", recon);
+  $("filter-wrap").classList.toggle("hidden", recon);
   $("fold-all").classList.toggle("hidden", recon);
 }
 
@@ -346,7 +346,7 @@ function injectIcons(): void {
   $("home-btn").prepend(icons.house(16));
   $("find-menu").append(icons.search(18));
   $("lane-vis-menu").append(icons.eye(18));
-  $("focus-menu").append(icons.tag(18));
+  $("filter-menu").append(icons.tag(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
   $("rm-history").prepend(icons.history(14));
@@ -397,7 +397,7 @@ function closeTopbarMenu(pop: HTMLElement): void {
 function wireTopbar(): void {
   const menuPop = $("rm-menu-pop");
   const visPop = $("lane-vis-pop");
-  const focusPop = $("focus-pop");
+  const filterPop = $("filter-pop");
   const snapPop = $("snap-pop");
   const accountPop = $("account-pop");
   $("home-btn").addEventListener("click", () => void openHome());
@@ -405,8 +405,8 @@ function wireTopbar(): void {
   $("lane-vis-menu").addEventListener("click", () => {
     toggleTopbarMenu(visPop, $("lane-vis-menu"), () => buildLaneVisMenu(visPop));
   });
-  $("focus-menu").addEventListener("click", () => {
-    toggleTopbarMenu(focusPop, $("focus-menu"), () => buildFocusMenu(focusPop));
+  $("filter-menu").addEventListener("click", () => {
+    toggleTopbarMenu(filterPop, $("filter-menu"), () => buildFilterMenu(filterPop));
   });
   $("snap-menu").addEventListener("click", () => {
     toggleTopbarMenu(snapPop, $("snap-menu"), () => buildSnapMenu(snapPop));
@@ -652,7 +652,7 @@ function laneNameEl(laneId: number): HTMLElement | null {
 //
 // Alt-click isolates ("show only this one") — hiding the other five a row at a
 // time was the common case doing the most work. The way back out is the "Show
-// all contexts" row, not a second meaning for Alt-click: the focus menu already
+// all contexts" row, not a second meaning for Alt-click: the filter menu already
 // has that row, and one entry that always widens beats a modifier whose
 // direction depends on what is hidden.
 function buildLaneVisMenu(pop: HTMLElement): void {
@@ -823,26 +823,25 @@ function text(s: string): HTMLElement {
 // all other non-matches are hidden. "Show all items" clears the filter.
 // Rebuilt after each pick so the checks stay current while the menu is open.
 //
-// Labels are a multi-select: a click toggles one, and several focused labels
+// Labels are a multi-select: a click toggles one, and several picked labels
 // match as OR. Alt-click is the shortcut back to a single label (isolateClick),
 // which is what a plain click used to do — so the eye menu and this one now
 // read the same way: click toggles, Alt-click isolates.
 //
 // The button's tooltip, which states the active filter while the menu is
-// closed. "Filter", not "focus": non-matches are gone from the chart, and the
-// internal name (state.focus) is the older word, not a second concept.
-function focusTitle(): string {
-  if (state.focus === null) return "Filter to labels, flagged or at-risk items";
-  if (state.focus.kind === "flagged") return "Filter: flagged items";
-  if (state.focus.kind === "atRisk") return "Filter: at-risk items";
-  return `Filter: ${state.focus.labels.join(", ")}`;
+// closed.
+function filterTitle(): string {
+  if (state.filter === null) return "Filter to labels, flagged or at-risk items";
+  if (state.filter.kind === "flagged") return "Filter: flagged items";
+  if (state.filter.kind === "atRisk") return "Filter: at-risk items";
+  return `Filter: ${state.filter.labels.join(", ")}`;
 }
 
 // Flagged and At risk are pinned above the labels rather than sorted among
 // them: they aren't tags of many, and their counts are the only place the
-// totals are visible. Both stay single-pick, because focus holds labels or one
+// totals are visible. Both stay single-pick, because the filter holds labels or one
 // signal, never a mix.
-function buildFocusMenu(pop: HTMLElement): void {
+function buildFilterMenu(pop: HTMLElement): void {
   pop.replaceChildren();
   const labels = state.allLabels();
   const flagged = state.flaggedCount();
@@ -867,7 +866,7 @@ function buildFocusMenu(pop: HTMLElement): void {
     mark.className = "menu-check";
     if (active) mark.append(icons.check(14));
     const name = document.createElement("span");
-    name.className = "focus-label-name";
+    name.className = "filter-label-name";
     name.textContent = labelText;
     b.append(mark);
     if (icon) b.append(icon);
@@ -875,23 +874,23 @@ function buildFocusMenu(pop: HTMLElement): void {
     b.addEventListener("click", (e) => {
       onPick(e);
       state.notify();
-      buildFocusMenu(pop);
+      buildFilterMenu(pop);
     });
     return b;
   };
 
   pop.append(
-    row("Show all items", state.focus === null, () => {
-      state.focus = null;
+    row("Show all items", state.filter === null, () => {
+      state.filter = null;
     }),
   );
   const signalRow = (text: string, kind: "flagged" | "atRisk", icon: Node): HTMLButtonElement => {
-    const active = state.focus?.kind === kind;
+    const active = state.filter?.kind === kind;
     return row(
       text,
       active,
       () => {
-        state.focus = active ? null : { kind };
+        state.filter = active ? null : { kind };
       },
       icon,
     );
@@ -907,9 +906,9 @@ function buildFocusMenu(pop: HTMLElement): void {
   }
   for (const l of labels) {
     pop.append(
-      row(l, state.isFocusedLabel(l), (e) => {
-        if (e.altKey) state.isolateFocusLabel(l);
-        else state.toggleFocusLabel(l);
+      row(l, state.isFilterLabel(l), (e) => {
+        if (e.altKey) state.isolateFilterLabel(l);
+        else state.toggleFilterLabel(l);
       }),
     );
   }

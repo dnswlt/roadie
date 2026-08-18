@@ -72,14 +72,14 @@ async function openTimeline(page: Page): Promise<void> {
   await expect(bar(page, seeded.items[0]!.id)).toBeVisible();
 }
 
-// Picking a focus leaves the menu open (it rebuilds in place), so it is closed
+// Picking a filter leaves the menu open (it rebuilds in place), so it is closed
 // again before any gesture: a popover over the chart would swallow the
 // pointerdown, and a blocked-drag test would then pass for the wrong reason.
 async function filterToFlagged(page: Page): Promise<void> {
-  await page.locator("#focus-menu").click();
+  await page.locator("#filter-menu").click();
   await page.getByRole("button", { name: /^Flagged \(/ }).click();
-  await page.locator("#focus-menu").click();
-  await expect(page.locator("#focus-pop")).toBeHidden();
+  await page.locator("#filter-menu").click();
+  await expect(page.locator("#filter-pop")).toBeHidden();
 }
 
 async function dragFourDays(page: Page, itemId: number, modifier: "Shift" | "Alt"): Promise<void> {

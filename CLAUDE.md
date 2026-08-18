@@ -60,7 +60,8 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`trash.go`) · visibility (`store/access.go`, `s.guard`) · contributors
 (`contributors.go`) · schedule (`schedule.go`, `schedule.ts`) · SSE
 (`server/events.go`, `events.ts`) · auth (`internal/auth`) · find
-(`search.ts` + `search-list.ts` + `find.ts`) · Home dialog (`home.ts`, name-path
+(`search.ts` + `search-list.ts` + `find.ts`) · label/flag filter (`filter.ts`) ·
+Home dialog (`home.ts`, name-path
 folding in `tree.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`) ·
@@ -131,17 +132,17 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **Assets are content-hashed, and nothing else is cached.** `/assets/*` is
   `immutable`, everything else `no-store` (`cacheHeaders`, server.go).
 - **Find is a list, not a filter.** It never narrows the chart itself; jumping to
-  a match outside the active focus clears that focus (`revealAndSelect`).
-- **Focus filters, it does not dim** (`focus.ts`). Non-matches are absent, not
-  greyed: at 90% dimmed, finding the survivors is scrolling — that shipped, and
-  users rejected it. The one non-match kept is a parent holding a matching
-  child, as its breadcrumb.
-- **Item moves pause while a focus is active**; resize, lane reorder and
+  a match outside the active filter clears that filter (`revealAndSelect`).
+- **The label/flag filter removes non-matches, it does not dim them**
+  (`filter.ts`): at 90% dimmed, finding the survivors is scrolling — that
+  shipped, and users rejected it. The one non-match kept is a parent holding a
+  matching child, as its breadcrumb.
+- **Item moves pause while a filter is active**; resize, lane reorder and
   selection stay live. A drop's `rank` is counted from rendered siblings
   (`indexFromY`), which only equals rank on an unfiltered render.
 - **Anything that hides an entity must be undone before selecting it.** Hidden
-  lane, folded parent, active focus: `revealAndSelect` clears all three, and
-  `addItem` clears the focus a new item cannot match. Selecting what isn't
+  lane, folded parent, active filter: `revealAndSelect` clears all three, and
+  `addItem` clears the filter a new item cannot match. Selecting what isn't
   rendered scrolls nowhere.
 - **SSE sends a doorbell, not the data.** Diffing over the wire would reimplement
   `applyItemPatch`'s invariant logic as a second source of truth.

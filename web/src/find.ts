@@ -46,11 +46,11 @@ function shell(): SearchList {
     onCommit: (m) => {
       closeFind();
       // revealAndSelect drops an active filter when the target is outside it.
-      // Reading `focus` across the call says so without a second lookup, and
+      // Reading `filter` across the call says so without a second lookup, and
       // without this popup having to re-derive what "outside" means.
-      const wasFiltered = state.focus !== null;
+      const wasFiltered = state.filter !== null;
       const revealed = state.revealAndSelect(m.kind, m.id);
-      if (revealed && wasFiltered && state.focus === null) {
+      if (revealed && wasFiltered && state.filter === null) {
         toast(`Filter cleared to show "${m.title || "(untitled)"}"`);
       }
     },

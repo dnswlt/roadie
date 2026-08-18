@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { canDrag, filterItems, filterLane, hasMatch, matchesFocus, type Focus } from "./focus";
+import { canDrag, filterItems, filterLane, hasMatch, matchesFilter, type Filter } from "./filter";
 import type { ItemFull, LaneFull, Milestone } from "./types";
 
 function item(
@@ -32,16 +32,16 @@ function ids(items: ItemFull[]): Array<[number, number[]]> {
   return items.map((parent) => [parent.id, parent.children.map((child) => child.id)]);
 }
 
-test("no focus preserves the original item array", () => {
+test("no filter preserves the original item array", () => {
   const items = [item(1, ["a"]), item(2)];
   assert.equal(filterItems(items, null), items);
-  assert.equal(matchesFocus(items[1]!, null), true);
+  assert.equal(matchesFilter(items[1]!, null), true);
 });
 
 test("label filtering keeps direct matches and matching labels combine as OR", () => {
-  const focus: Focus = { kind: "labels", labels: ["a", "b"] };
+  const filter: Filter = { kind: "labels", labels: ["a", "b"] };
   const items = [item(1, ["a"]), item(2, ["b", "c"]), item(3, ["c"]), item(4)];
-  assert.deepEqual(ids(filterItems(items, focus)), [
+  assert.deepEqual(ids(filterItems(items, filter)), [
     [1, []],
     [2, []],
   ]);
@@ -54,7 +54,7 @@ test("a matching child keeps its non-matching parent and filters its siblings", 
   const result = filterItems([parent, item(4)], { kind: "labels", labels: ["keep"] });
 
   assert.deepEqual(ids(result), [[1, [2]]]);
-  assert.equal(matchesFocus(result[0]!, { kind: "labels", labels: ["keep"] }), false);
+  assert.equal(matchesFilter(result[0]!, { kind: "labels", labels: ["keep"] }), false);
   assert.equal(parent.children.length, 2, "the roadmap model is not mutated");
 });
 
@@ -98,11 +98,11 @@ test("an empty filtered lane remains present with its milestones", () => {
 });
 
 test("item moves pause while filtering but timeline resizing remains available", () => {
-  const focus: Focus = { kind: "flagged" };
+  const filter: Filter = { kind: "flagged" };
   assert.equal(canDrag(null, "move"), true);
   assert.equal(canDrag(null, "resize"), true);
-  assert.equal(canDrag(focus, "move"), false);
-  assert.equal(canDrag(focus, "resize"), true);
+  assert.equal(canDrag(filter, "move"), false);
+  assert.equal(canDrag(filter, "resize"), true);
 });
 
 test("hasMatch sees a lane's own match, a child's match, and neither", () => {
@@ -115,10 +115,10 @@ test("hasMatch sees a lane's own match, a child's match, and neither", () => {
     items,
     milestones: [],
   });
-  const focus: Focus = { kind: "labels", labels: ["keep"] };
-  assert.equal(hasMatch([laneOf([item(1, ["keep"])])], focus), true);
-  assert.equal(hasMatch([laneOf([item(1, [], false, [item(2, ["keep"])])])], focus), true);
-  assert.equal(hasMatch([laneOf([item(1, ["other"])])], focus), false);
+  const filter: Filter = { kind: "labels", labels: ["keep"] };
+  assert.equal(hasMatch([laneOf([item(1, ["keep"])])], filter), true);
+  assert.equal(hasMatch([laneOf([item(1, [], false, [item(2, ["keep"])])])], filter), true);
+  assert.equal(hasMatch([laneOf([item(1, ["other"])])], filter), false);
   // Without a filter the question does not arise: nothing is ever filtered out.
   assert.equal(hasMatch([laneOf([])], null), true);
 });

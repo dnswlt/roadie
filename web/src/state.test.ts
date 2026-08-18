@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { state } from "./state";
 import type { ItemFull, LaneFull, RoadmapFull } from "./types";
 
-// Minimal fixtures: the focus logic only reads labels and the flag, so every
+// Minimal fixtures: the filter logic only reads labels and the flag, so every
 // other field gets a throwaway value.
 function item(
   id: number,
@@ -72,125 +72,125 @@ function roadmap(items: ItemFull[]): RoadmapFull {
   return roadmapOf([lane(1, items)]);
 }
 
-test("no focus matches every item", () => {
-  state.focus = null;
-  assert.equal(state.matchesFocus(item(1, [], false)), true);
-  assert.equal(state.matchesFocus(item(2, ["a"], true)), true);
+test("no filter matches every item", () => {
+  state.filter = null;
+  assert.equal(state.matchesFilter(item(1, [], false)), true);
+  assert.equal(state.matchesFilter(item(2, ["a"], true)), true);
 });
 
-test("label focus matches items carrying that label", () => {
-  state.focus = { kind: "labels", labels: ["a"] };
-  assert.equal(state.matchesFocus(item(1, ["a", "b"], false)), true);
-  assert.equal(state.matchesFocus(item(2, ["b"], false)), false);
-  // A flagged item is not exempt: the two focus kinds are independent.
-  assert.equal(state.matchesFocus(item(3, [], true)), false);
+test("label filter matches items carrying that label", () => {
+  state.filter = { kind: "labels", labels: ["a"] };
+  assert.equal(state.matchesFilter(item(1, ["a", "b"], false)), true);
+  assert.equal(state.matchesFilter(item(2, ["b"], false)), false);
+  // A flagged item is not exempt: the two filter kinds are independent.
+  assert.equal(state.matchesFilter(item(3, [], true)), false);
 });
 
-// Several focused labels match as OR: adding one widens the filter result.
-test("multi-label focus excludes items carrying none of the labels", () => {
-  state.focus = { kind: "labels", labels: ["a", "b"] };
-  assert.equal(state.matchesFocus(item(1, ["a"], false)), true);
-  assert.equal(state.matchesFocus(item(2, ["b", "c"], false)), true);
-  assert.equal(state.matchesFocus(item(3, ["c"], false)), false);
-  assert.equal(state.matchesFocus(item(4, [], false)), false);
+// Several picked labels match as OR: adding one widens the filter result.
+test("multi-label filter excludes items carrying none of the labels", () => {
+  state.filter = { kind: "labels", labels: ["a", "b"] };
+  assert.equal(state.matchesFilter(item(1, ["a"], false)), true);
+  assert.equal(state.matchesFilter(item(2, ["b", "c"], false)), true);
+  assert.equal(state.matchesFilter(item(3, ["c"], false)), false);
+  assert.equal(state.matchesFilter(item(4, [], false)), false);
 });
 
-test("toggling labels builds and empties the focus", () => {
-  state.focus = null;
-  state.toggleFocusLabel("a");
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
-  state.toggleFocusLabel("b");
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["a", "b"] });
-  assert.equal(state.isFocusedLabel("b"), true);
+test("toggling labels builds and empties the filter", () => {
+  state.filter = null;
+  state.toggleFilterLabel("a");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["a"] });
+  state.toggleFilterLabel("b");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["a", "b"] });
+  assert.equal(state.isFilterLabel("b"), true);
 
   // Alt-click narrows to one label, never back out — "Show all items" does that.
-  state.isolateFocusLabel("b");
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["b"] });
-  state.isolateFocusLabel("b");
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["b"] });
+  state.isolateFilterLabel("b");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["b"] });
+  state.isolateFilterLabel("b");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["b"] });
 
-  // Un-picking the last label is the same state as no focus at all.
-  state.toggleFocusLabel("b");
-  assert.equal(state.focus, null);
-  assert.equal(state.isFocusedLabel("b"), false);
+  // Un-picking the last label is the same state as no filter at all.
+  state.toggleFilterLabel("b");
+  assert.equal(state.filter, null);
+  assert.equal(state.isFilterLabel("b"), false);
 });
 
 // Labels and the flag are one exclusive field, so picking either drops the other.
-test("picking a label replaces a flag focus", () => {
-  state.focus = { kind: "flagged" };
-  state.toggleFocusLabel("a");
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
+test("picking a label replaces a flag filter", () => {
+  state.filter = { kind: "flagged" };
+  state.toggleFilterLabel("a");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["a"] });
 });
 
-test("flag focus excludes unflagged items regardless of labels", () => {
-  state.focus = { kind: "flagged" };
-  assert.equal(state.matchesFocus(item(1, [], true)), true);
-  assert.equal(state.matchesFocus(item(2, ["a"], false)), false);
+test("flag filter excludes unflagged items regardless of labels", () => {
+  state.filter = { kind: "flagged" };
+  assert.equal(state.matchesFilter(item(1, [], true)), true);
+  assert.equal(state.matchesFilter(item(2, ["a"], false)), false);
 });
 
 // A user's own label literally named "flagged" must not act as the flag —
-// the whole reason the focus target is a tagged union and not a string.
+// the whole reason the filter target is a tagged union and not a string.
 test("a label named 'flagged' is not the flag", () => {
-  state.focus = { kind: "flagged" };
-  assert.equal(state.matchesFocus(item(1, ["flagged"], false)), false);
-  state.focus = { kind: "labels", labels: ["flagged"] };
-  assert.equal(state.matchesFocus(item(2, ["flagged"], false)), true);
-  assert.equal(state.matchesFocus(item(3, [], true)), false);
+  state.filter = { kind: "flagged" };
+  assert.equal(state.matchesFilter(item(1, ["flagged"], false)), false);
+  state.filter = { kind: "labels", labels: ["flagged"] };
+  assert.equal(state.matchesFilter(item(2, ["flagged"], false)), true);
+  assert.equal(state.matchesFilter(item(3, [], true)), false);
 });
 
-test("at-risk focus excludes items that are not at risk, flagged or not", () => {
-  state.focus = { kind: "atRisk" };
-  assert.equal(state.matchesFocus(item(1, [], false, [], true)), true);
-  assert.equal(state.matchesFocus(item(2, ["a"], false, [], false)), false);
+test("at-risk filter excludes items that are not at risk, flagged or not", () => {
+  state.filter = { kind: "atRisk" };
+  assert.equal(state.matchesFilter(item(1, [], false, [], true)), true);
+  assert.equal(state.matchesFilter(item(2, ["a"], false, [], false)), false);
   // The two signals are independent: a flagged item is not spared, and an
   // at-risk one is included even when it lacks the flag.
-  assert.equal(state.matchesFocus(item(3, [], true, [], false)), false);
-  assert.equal(state.matchesFocus(item(4, [], true, [], true)), true);
+  assert.equal(state.matchesFilter(item(3, [], true, [], false)), false);
+  assert.equal(state.matchesFilter(item(4, [], true, [], true)), true);
 });
 
-// The focus holds labels or one signal, never a mix, so each pick drops the other.
+// The filter holds labels or one signal, never a mix, so each pick drops the other.
 test("the two signal focuses and labels replace one another", () => {
-  state.focus = { kind: "flagged" };
-  state.toggleFocusLabel("a");
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
-  state.focus = { kind: "atRisk" };
-  state.toggleFocusLabel("a");
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["a"] });
+  state.filter = { kind: "flagged" };
+  state.toggleFilterLabel("a");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["a"] });
+  state.filter = { kind: "atRisk" };
+  state.toggleFilterLabel("a");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["a"] });
 });
 
-test("reveal clears focus for a non-matching item, including a retained parent", () => {
+test("reveal clears filter for a non-matching item, including a retained parent", () => {
   const parent = item(1, [], false, [item(2, ["keep"], false)]);
   state.current = roadmap([parent]);
-  state.focus = { kind: "labels", labels: ["keep"] };
+  state.filter = { kind: "labels", labels: ["keep"] };
 
-  assert.equal(state.matchesFocus(parent), false, "the parent is only a hierarchy breadcrumb");
+  assert.equal(state.matchesFilter(parent), false, "the parent is only a hierarchy breadcrumb");
   assert.equal(state.revealAndSelect("item", parent.id), true);
-  assert.equal(state.focus, null);
+  assert.equal(state.filter, null);
   assert.equal(state.selectedItemId, parent.id);
 });
 
-test("reveal preserves focus for a direct match", () => {
+test("reveal preserves filter for a direct match", () => {
   const matching = item(1, ["keep"], false);
   state.current = roadmap([matching]);
-  state.focus = { kind: "labels", labels: ["keep"] };
+  state.filter = { kind: "labels", labels: ["keep"] };
 
   assert.equal(state.revealAndSelect("item", matching.id), true);
-  assert.deepEqual(state.focus, { kind: "labels", labels: ["keep"] });
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["keep"] });
   assert.equal(state.selectedItemId, matching.id);
 });
 
 test("an active filter forces every parent open without losing the saved fold", () => {
   const parent = item(1, [], false, [item(2, ["keep"], false)]);
   state.current = roadmap([parent]);
-  state.focus = null;
+  state.filter = null;
   state.setCollapsed(parent.id, true);
   assert.equal(state.rendersCollapsed(parent.id), true);
 
-  state.focus = { kind: "labels", labels: ["keep"] };
+  state.filter = { kind: "labels", labels: ["keep"] };
   assert.equal(state.rendersCollapsed(parent.id), false);
   assert.equal(state.isCollapsed(parent.id), true, "the preference survives the filter");
 
-  state.focus = null;
+  state.filter = null;
   assert.equal(state.rendersCollapsed(parent.id), true);
   state.setCollapsed(parent.id, false);
 });

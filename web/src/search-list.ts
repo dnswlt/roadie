@@ -110,7 +110,7 @@ function renderRow(
   meta.textContent = `${m.laneName} · ${dateText(m)}`;
   if (showFilterState && m.kind === "item") {
     const loc = state.findItem(m.id);
-    if (loc && !state.matchesFocus(loc.item)) {
+    if (loc && !state.matchesFilter(loc.item)) {
       meta.append(document.createTextNode(" · outside filter"));
       row.title = "Selecting this item clears the current filter";
     }
@@ -183,7 +183,7 @@ export function createSearchList(spec: SearchListSpec): SearchList {
     }
     // Resolving a row against the filter costs a findItem scan each, so the
     // rows only ask when there is a filter to be outside of.
-    const markOutside = spec.showFilterState === true && state.focus !== null;
+    const markOutside = spec.showFilterState === true && state.filter !== null;
     matches.forEach((m, i) => list.append(renderRow(m, i === cursor, spec.onCommit, markOutside)));
     if (total > matches.length) {
       list.append(note(`+${total - matches.length} more — narrow the query.`));

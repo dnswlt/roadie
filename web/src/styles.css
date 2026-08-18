@@ -2944,7 +2944,7 @@ button.deps-node:hover {
   margin: 0;
 }
 
-/* Focus dropdown rows: a fixed-width check column keeps labels aligned whether
+/* Filter dropdown rows: a fixed-width check column keeps labels aligned whether
    or not a row is the active one. */
 .menu-check {
   flex: none;
@@ -2958,7 +2958,7 @@ button.deps-node:hover {
   font-weight: 600;
 }
 
-.focus-label-name {
+.filter-label-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

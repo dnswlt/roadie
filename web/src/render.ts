@@ -3,7 +3,7 @@
 
 import { laneColorValue } from "./colors";
 import { analyzeDependencies, type DepSummary, refKey } from "./deps-graph";
-import { filterLane, hasMatch } from "./focus";
+import { filterLane, hasMatch } from "./filter";
 import { icons } from "./icons";
 import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
 import { extractLinks } from "./links";
@@ -111,7 +111,7 @@ export function renderChart(container: HTMLElement): void {
     const hint = div("lanes-hint");
     hint.textContent = "All contexts are hidden — use the eye menu to show them.";
     lanesEl.append(hint);
-  } else if (!hasMatch(visibleLanes, state.focus)) {
+  } else if (!hasMatch(visibleLanes, state.filter)) {
     // Filtering removes non-matches outright, so a filter that matches nothing
     // leaves empty contexts that would otherwise read as lost data.
     const hint = div("lanes-hint");
@@ -249,7 +249,7 @@ export function laneLabel(lane: LaneFull): HTMLElement {
 }
 
 function renderLane(lane: LaneFull, chartW: number): HTMLElement {
-  const visibleLane = filterLane(lane, state.focus);
+  const visibleLane = filterLane(lane, state.filter);
   const layout = layoutLane(visibleLane, scale, (id) => state.rendersCollapsed(id));
   const laneEl = div("lane");
   laneEl.dataset.laneId = String(lane.id);
@@ -301,10 +301,10 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   return laneEl;
 }
 
-// Milestones are never dimmed by a focus, here or in the WBS. They carry
+// Milestones are never removed by the filter, here or in the WBS. They carry
 // neither labels nor a flag, so they could never match one — they are the
 // chart's landmarks, not candidates that lost. Fading them took the calendar
-// anchors away exactly when a focus is on and the eye needs them most.
+// anchors away exactly when a filter is on and the eye needs them most.
 function renderMilestoneLine(m: Milestone): HTMLElement {
   const line = div("milestone-line");
   line.style.left = `${xOf(scale, dayOf(m.date))}px`;
@@ -366,10 +366,10 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   el.style.height = `${block.h}px`;
 
   const bar = div("bar");
-  if (state.focus !== null) bar.classList.add("move-disabled");
+  if (state.filter !== null) bar.classList.add("move-disabled");
   // The only non-match that survives filtering is the parent of a matching
   // child. It stays readable as hierarchy, but recedes behind the result.
-  if (!state.matchesFocus(item)) bar.classList.add("dimmed");
+  if (!state.matchesFilter(item)) bar.classList.add("dimmed");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
   fillBar(
@@ -377,13 +377,13 @@ function renderBlock(block: PlacedBlock): HTMLElement {
     el,
     item,
     { left: block.w, top: 0, height: PARENT_BAR_H, width: block.w },
-    hasChildren && state.focus === null ? disclosure(item, collapsed) : null,
+    hasChildren && state.filter === null ? disclosure(item, collapsed) : null,
   );
   el.append(bar);
 
   for (const child of block.children) {
     const c = div(state.isItemSelected(child.item.id) ? "child-bar selected" : "child-bar");
-    if (state.focus !== null) c.classList.add("move-disabled");
+    if (state.filter !== null) c.classList.add("move-disabled");
     c.dataset.itemId = String(child.item.id);
     c.title = child.item.title;
     c.style.left = `${child.x}px`;
@@ -469,7 +469,7 @@ export function disclosure(item: ItemFull, collapsed: boolean): HTMLElement {
 // link icon re-enables clicks, via CSS).
 function barOutside(item: Item, geom: BarGeom, lead: HTMLElement | null = null): HTMLElement {
   const lbl = div("bar-outside");
-  if (!state.matchesFocus(item)) lbl.classList.add("dimmed");
+  if (!state.matchesFilter(item)) lbl.classList.add("dimmed");
   lbl.style.left = `${geom.left + OUTSIDE_GAP}px`;
   lbl.style.top = `${geom.top}px`;
   lbl.style.height = `${geom.height}px`;

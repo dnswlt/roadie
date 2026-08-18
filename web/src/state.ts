@@ -1,5 +1,5 @@
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
-import { matchesFocus, type Focus } from "./focus";
+import { matchesFilter, type Filter } from "./filter";
 import type {
   Contributor,
   Item,
@@ -29,7 +29,7 @@ export interface MilestoneLocation {
   lane: LaneFull;
 }
 
-export type { Focus } from "./focus";
+export type { Filter } from "./filter";
 
 // Which projection is on screen: the timeline chart (render.ts), the WBS
 // outline (wbs.ts), or the Jira Recon view (recon.ts). The chart modes render
@@ -90,12 +90,12 @@ class AppState {
   // an explicit edit does (see focusPanelTitle). Persisted in localStorage like
   // panelWidth (read at boot in app.ts).
   panelCollapsed = false;
-  // Focus mode: when set, chart views filter down to matching items. A
+  // The item filter: when set, chart views show only matching items. A
   // transient "what's relevant right now" view, not persisted. Several labels
-  // can be focused at once (matching is OR — an item needs any one of them),
+  // can be picked at once (matching is OR — an item needs any one of them),
   // but labels and either attention signal stay exclusive: they are one field,
-  // not two, since focusing on both at once has no meaning.
-  focus: Focus | null = null;
+  // not two, since filtering on both at once has no meaning.
+  filter: Filter | null = null;
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
   // Set when a selection should be scrolled into view once (e.g. a deep link
@@ -220,7 +220,7 @@ class AppState {
   // would drop it from the result the user asked for. Every renderer and the
   // snap-target collector ask this one, so none can answer it differently.
   rendersCollapsed(id: number): boolean {
-    return this.focus === null && this.isCollapsed(id);
+    return this.filter === null && this.isCollapsed(id);
   }
 
   isCollapsed(id: number): boolean {
@@ -423,7 +423,7 @@ class AppState {
   }
 
   // allLabels returns the distinct labels in use across the current roadmap,
-  // sorted — the source for the focus dropdown and the editor's autocomplete.
+  // sorted — the source for the filter dropdown and the editor's autocomplete.
   allLabels(): string[] {
     const set = new Set<string>();
     for (const lane of this.current?.lanes ?? []) {
@@ -448,7 +448,7 @@ class AppState {
     return n;
   }
 
-  // These drive the focus menu's "Flagged (n)" and "At risk (n)" rows, each
+  // These drive the filter menu's "Flagged (n)" and "At risk (n)" rows, each
   // both the filter and the only place its total is visible — a mark nobody
   // can see never gets dealt with.
   flaggedCount(): number {
@@ -459,32 +459,32 @@ class AppState {
     return this.countItems((i) => i.atRisk);
   }
 
-  // matchesFocus backs both chart projections and the one exception to hiding:
+  // matchesFilter backs both chart projections and the one exception to hiding:
   // a non-matching parent retained as the breadcrumb for a matching child.
-  matchesFocus(item: Item): boolean {
-    return matchesFocus(item, this.focus);
+  matchesFilter(item: Item): boolean {
+    return matchesFilter(item, this.filter);
   }
 
-  isFocusedLabel(label: string): boolean {
-    return this.focus?.kind === "labels" && this.focus.labels.includes(label);
+  isFilterLabel(label: string): boolean {
+    return this.filter?.kind === "labels" && this.filter.labels.includes(label);
   }
 
-  // toggleFocusLabel adds or removes one label from the focus. Picking a label
-  // while the flag is focused replaces it — labels and the flag are exclusive
-  // (see `focus`). Removing the last label clears the focus entirely.
-  toggleFocusLabel(label: string): void {
-    const current = this.focus?.kind === "labels" ? this.focus.labels : [];
+  // toggleFilterLabel adds or removes one label from the filter. Picking a label
+  // while the flag is picked replaces it — labels and the flag are exclusive
+  // (see `filter`). Removing the last label clears the filter entirely.
+  toggleFilterLabel(label: string): void {
+    const current = this.filter?.kind === "labels" ? this.filter.labels : [];
     const next = current.includes(label)
       ? current.filter((l) => l !== label)
       : [...current, label];
-    this.focus = next.length > 0 ? { kind: "labels", labels: next } : null;
+    this.filter = next.length > 0 ? { kind: "labels", labels: next } : null;
   }
 
-  // isolateFocusLabel drops the rest of the selection for this one label (the
-  // focus menu's Alt-click). Like isolateLane it only narrows; "Show all items"
+  // isolateFilterLabel drops the rest of the selection for this one label (the
+  // filter menu's Alt-click). Like isolateLane it only narrows; "Show all items"
   // is the way back.
-  isolateFocusLabel(label: string): void {
-    this.focus = { kind: "labels", labels: [label] };
+  isolateFilterLabel(label: string): void {
+    this.filter = { kind: "labels", labels: [label] };
   }
 
   findMilestone(id: number): MilestoneLocation | null {
@@ -569,14 +569,14 @@ class AppState {
   // caller here means "take me to this". A parent retained only as a matching
   // child's breadcrumb is still a non-match, so it clears the filter too —
   // navigation lands on one coherent chart rather than an exception. Callers
-  // that want to report the clearing compare `focus` across the call (find.ts).
+  // that want to report the clearing compare `filter` across the call (find.ts).
   // Milestones are never filtered, so only items can trigger it. Returns false
   // if the target no longer exists.
   revealAndSelect(kind: "item" | "milestone", id: number): boolean {
     const itemLoc = kind === "item" ? this.findItem(id) : null;
     const loc = kind === "item" ? itemLoc : this.findMilestone(id);
     if (!loc) return false;
-    if (itemLoc && !this.matchesFocus(itemLoc.item)) this.focus = null;
+    if (itemLoc && !this.matchesFilter(itemLoc.item)) this.filter = null;
     if (this.isLaneHidden(loc.lane.id)) this.setLaneHidden(loc.lane.id, false);
     if ("parent" in loc && loc.parent && this.isCollapsed(loc.parent.id)) {
       this.setCollapsed(loc.parent.id, false);
