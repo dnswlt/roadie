@@ -14,8 +14,10 @@ import {
   markFlagged,
   purgeRoadmap,
   seedRoadmap,
+  setItemDates,
   type Seeded,
 } from "./support";
+import { pickFilter } from "./ui";
 
 let seeded: Seeded;
 let targetLaneId: number;
@@ -61,25 +63,18 @@ function rightHandle(page: Page, itemId: number) {
 
 // Fix both view preferences that participate in the gesture. At 3 px/day a
 // 12px pointer move is exactly four unsnapped days; weekly snapping moves the
-// seeded Monday to the following Monday instead.
-async function openTimeline(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+// seeded Monday to the following Monday instead. "day" means no grid at all
+// (timescale.ts), which is what the feature-magnet tests want: with no grid,
+// SNAP_PX alone decides whether an edge is caught, so a magnet's presence or
+// absence is the only thing the result can be measuring.
+async function openTimeline(page: Page, snap: "week" | "day" = "week"): Promise<void> {
+  await page.addInitScript((mode) => {
     localStorage.setItem("roadie.view", "timeline");
     localStorage.setItem("roadie.zoom", "3");
-    localStorage.setItem("roadie.snap", "week");
-  });
+    localStorage.setItem("roadie.snap", mode);
+  }, snap);
   await page.goto(`/?roadmap=${seeded.roadmapId}`);
   await expect(bar(page, seeded.items[0]!.id)).toBeVisible();
-}
-
-// Picking a filter leaves the menu open (it rebuilds in place), so it is closed
-// again before any gesture: a popover over the chart would swallow the
-// pointerdown, and a blocked-drag test would then pass for the wrong reason.
-async function filterToFlagged(page: Page): Promise<void> {
-  await page.locator("#filter-menu").click();
-  await page.getByRole("button", { name: /^Flagged \(/ }).click();
-  await page.locator("#filter-menu").click();
-  await expect(page.locator("#filter-pop")).toBeHidden();
 }
 
 async function dragFourDays(page: Page, itemId: number, modifier: "Shift" | "Alt"): Promise<void> {
@@ -104,6 +99,18 @@ async function resizeFourDays(page: Page, itemId: number, modifier: "Shift" | "A
   await page.mouse.move(x + 12, y, { steps: 12 });
   await page.mouse.up();
   await page.keyboard.up(modifier);
+}
+
+// resizeBy drags the right handle by an exact pixel delta with no modifier
+// held, so snapping runs in full.
+async function resizeBy(page: Page, itemId: number, dx: number): Promise<void> {
+  const box = (await rightHandle(page, itemId).boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y, { steps: 12 });
+  await page.mouse.up();
 }
 
 async function dragToLane(page: Page, itemId: number, laneId: number): Promise<void> {
@@ -180,7 +187,7 @@ test("filtering blocks bar moves but keeps resize handles active", async ({ page
   const id = seeded.items[0]!.id;
   await markFlagged(request, id);
   await openTimeline(page);
-  await filterToFlagged(page);
+  await pickFilter(page, /^Flagged \(/);
 
   await dragFourDays(page, id, "Alt");
   // The resize is the barrier as well as the second half of the assertion: by
@@ -191,6 +198,48 @@ test("filtering blocks bar moves but keeps resize handles active", async ({ page
   await expect
     .poll(() => dates(request))
     .toEqual([iso(monday), iso(addDays(monday, 31))]);
+});
+
+// Feature magnets, and what the filter does to them. collectSnapBounds gathers
+// its targets from the same projection the renderer draws (dnd.ts), so a bar the
+// filter removed stops being a magnet — the rule a folded parent's children
+// already follow, since an edge sticking to something you cannot see reads as a
+// broken snap rather than as help.
+//
+// The arrangement puts Beta's start edge two days (6px at this zoom, inside
+// SNAP_PX) beyond where the pointer leaves Alpha's right edge, and runs the
+// identical pointer path in both tests. The first is the control: without it a
+// pass in the second would prove only that the magnet never worked.
+async function placeNeighbour(request: Parameters<typeof setItemDates>[0]): Promise<void> {
+  await setItemDates(
+    request,
+    seeded.items[1]!.id,
+    iso(addDays(monday, 40)),
+    iso(addDays(monday, 60)),
+  );
+}
+
+test("a resize snaps to a neighbouring bar's edge", async ({ page, request }) => {
+  await placeNeighbour(request);
+  await openTimeline(page, "day");
+
+  // +30px = 10 days, landing the edge at monday+38; Beta's start at monday+40
+  // catches it, so Alpha ends the day before Beta starts — flush, not overlapping.
+  await resizeBy(page, seeded.items[0]!.id, 30);
+  await expect.poll(() => dates(request)).toEqual([iso(monday), iso(addDays(monday, 39))]);
+});
+
+test("a resize does not snap to a bar the filter removed", async ({ page, request }) => {
+  await placeNeighbour(request);
+  await markFlagged(request, seeded.items[0]!.id); // Alpha survives, Beta does not
+  await openTimeline(page, "day");
+  await pickFilter(page, /^Flagged \(/);
+
+  // Same gesture as the control. With Beta off the chart its edge is no longer
+  // a target, so the edge stays where the pointer put it: monday+38, one day
+  // short of the snapped result above.
+  await resizeBy(page, seeded.items[0]!.id, 30);
+  await expect.poll(() => dates(request)).toEqual([iso(monday), iso(addDays(monday, 37))]);
 });
 
 test("dragging a timeline bar into another lane moves it across lanes", async ({ page, request }) => {

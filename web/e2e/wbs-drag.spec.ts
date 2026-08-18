@@ -15,6 +15,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { laneItems, markFlagged, purgeRoadmap, seedRoadmap, type Seeded } from "./support";
+import { pickFilter } from "./ui";
 
 let seeded: Seeded;
 
@@ -89,16 +90,6 @@ test("dropping a row onto a top-level row nests it under that item", async ({ pa
   expect(child.laneId).toBe(seeded.laneId); // a child's lane always equals its parent's
   expect(items.map((i) => i.title)).toEqual(["Alpha", "Gamma"]); // Beta left the top level
 });
-
-// The filter menu stays open after a pick (it rebuilds in place), so it is
-// closed again before any gesture: a popover over the rows would swallow the
-// pointerdown, and this test would then pass for the wrong reason.
-async function pickFilter(page: Page, name: RegExp | string): Promise<void> {
-  await page.locator("#filter-menu").click();
-  await page.getByRole("button", { name }).click();
-  await page.locator("#filter-menu").click();
-  await expect(page.locator("#filter-pop")).toBeHidden();
-}
 
 test("filtering blocks WBS item rearrangement", async ({ page, request }) => {
   const [alpha, beta, gamma] = seeded.items;

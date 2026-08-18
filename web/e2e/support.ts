@@ -84,6 +84,39 @@ export async function markFlagged(
   expect(res.ok(), `PATCH item flag -> ${res.status()}`).toBe(true);
 }
 
+// addItem appends one item to a lane seedRoadmap did not fill, or nests one
+// under parentId. Children are the structural case the filter treats specially
+// (a matching child keeps its parent on screen as a breadcrumb), and a second
+// lane is how a spec reaches a context it can hide.
+export async function addItem(
+  request: APIRequestContext,
+  laneId: number,
+  title: string,
+  parentId: number | null = null,
+): Promise<number> {
+  const item = await post<{ id: number }>(request, `/api/lanes/${laneId}/items`, {
+    title,
+    description: "",
+    startDate: "2026-01-05",
+    endDate: "2026-02-01",
+    parentId,
+  });
+  return item.id;
+}
+
+// setItemDates repositions a seeded item. Snapping specs use it to place one
+// bar's edge a known number of pixels from another's, which is the whole
+// arrangement a magnet test needs.
+export async function setItemDates(
+  request: APIRequestContext,
+  itemId: number,
+  startDate: string,
+  endDate: string,
+): Promise<void> {
+  const res = await request.patch(`/api/items/${itemId}`, { data: { startDate, endDate } });
+  expect(res.ok(), `PATCH item dates -> ${res.status()}`).toBe(true);
+}
+
 // setSchedule gives a seeded roadmap a schedule. PUT replaces the whole thing,
 // which is also how the app's editor saves it.
 export async function setSchedule(
