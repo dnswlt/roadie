@@ -341,12 +341,21 @@ body {
   display: none;
 }
 
+/* A menu built from user data has no natural length — the filter lists every
+   label in the roadmap, the eye menu every context — so it scrolls inside
+   itself rather than running off the bottom of the window, as .find-list does.
+   Contained so reaching the end scrolls the menu and not the chart behind it.
+   Anchored under the topbar, so 60vh always fits; the fixed-length lane menu
+   never reaches it. */
 .menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   z-index: 100;
   min-width: 190px;
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
