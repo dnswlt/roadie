@@ -82,7 +82,7 @@ export function renderWbs(container: HTMLElement): void {
     lanesEl.append(hint);
   } else if (!hasMatch(visibleLanes, state.filter)) {
     const hint = div("lanes-hint");
-    hint.textContent = "No items match this filter — use the tag menu to change or clear it.";
+    hint.textContent = "No items match this filter — use the filter menu to change or clear it.";
     lanesEl.append(hint);
   }
 

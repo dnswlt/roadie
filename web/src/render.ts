@@ -115,7 +115,7 @@ export function renderChart(container: HTMLElement): void {
     // Filtering removes non-matches outright, so a filter that matches nothing
     // leaves empty contexts that would otherwise read as lost data.
     const hint = div("lanes-hint");
-    hint.textContent = "No items match this filter — use the tag menu to change or clear it.";
+    hint.textContent = "No items match this filter — use the filter menu to change or clear it.";
     lanesEl.append(hint);
   }
 

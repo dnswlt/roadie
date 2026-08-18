@@ -346,7 +346,7 @@ function injectIcons(): void {
   $("home-btn").prepend(icons.house(16));
   $("find-menu").append(icons.search(18));
   $("lane-vis-menu").append(icons.eye(18));
-  $("filter-menu").append(icons.tag(18));
+  $("filter-menu").append(icons.filter(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
   $("rm-history").prepend(icons.history(14));

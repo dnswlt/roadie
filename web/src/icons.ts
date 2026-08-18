@@ -53,6 +53,13 @@ export const icons = {
         `<path d="M5 8.6V21h5v-6h4v6h5V8.6"/>`,
       size,
     ),
+  // The topbar's filter opener: three tapering bars, the most established
+  // filter mark there is. A tag named only the menu's label section, and a
+  // funnel at this size reads as a wedge or, drawn shallower, a cocktail glass.
+  // ganttChart is a similar triple but never seen beside this one — the spacer
+  // and the snap/zoom controls sit between them (index.html).
+  filter: (size = 16) =>
+    svg(`<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>`, size),
   tag: (size = 16) =>
     svg(
       `<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414` +
