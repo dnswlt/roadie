@@ -73,6 +73,66 @@ export function periodAtEdge(
   return periods.find((p) => (edge === "start" ? p.startDate : p.endDate) === date) ?? null;
 }
 
+// The WBS speaks in periods where it can. An item is named by the periods its
+// two edges fall *inside*, not only by the ones it is flush with: someone who
+// plans in PIs wants to read which PIs a piece of work occupies, and the exact
+// dates are a click away in the edit rail. The separator carries the
+// imprecision: the en dash the column has always put between the two ends of a
+// range still means the range fills them exactly, and a tilde in its place
+// means the range merely lies within them.
+//
+// This is the opposite trade from periodAtEdge, which the panel's picker uses:
+// a picker must state a fact, because re-picking what it shows would move the
+// date. Nothing here is actionable, so containment can be shown honestly.
+const RANGE_SEP = "–";
+const WITHIN_SEP = "~";
+
+// periodContaining returns the period whose inclusive span covers `date`.
+// Periods are disjoint (the store rejects overlaps) but need not be
+// contiguous, so a date can legitimately match none: before the first, after
+// the last, or in a gap.
+export function periodContaining(
+  periods: SchedulePeriod[],
+  date: string,
+): SchedulePeriod | null {
+  const d = dayOf(date);
+  return periods.find((p) => dayOf(p.startDate) <= d && d <= dayOf(p.endDate)) ?? null;
+}
+
+// periodRangeText names a range by the periods it occupies, or gives the plain
+// dates when it cannot. A range inside one period collapses to that label,
+// since the separator is the only thing a second copy of it would add.
+//
+// Falling back is all-or-nothing: an edge outside every period sends the whole
+// range back to dates rather than printing a date beside a period name, which
+// would read as two vocabularies in one cell.
+export function periodRangeText(
+  periods: SchedulePeriod[],
+  startDate: string,
+  endDate: string,
+  formatDate: (iso: string) => string,
+): string {
+  const from = periodContaining(periods, startDate);
+  const to = periodContaining(periods, endDate);
+  if (from === null || to === null) {
+    return `${formatDate(startDate)} ${RANGE_SEP} ${formatDate(endDate)}`;
+  }
+  if (from === to) return from.label;
+  const fills = from.startDate === startDate && to.endDate === endDate;
+  return `${from.label} ${fills ? RANGE_SEP : WITHIN_SEP} ${to.label}`;
+}
+
+// periodPointText is periodRangeText for a milestone's single date: the period
+// it falls in, or the date when it falls outside them all. There is no
+// separator to qualify, so a point is never marked as inexact.
+export function periodPointText(
+  periods: SchedulePeriod[],
+  date: string,
+  formatDate: (iso: string) => string,
+): string {
+  return periodContaining(periods, date)?.label ?? formatDate(date);
+}
+
 // periodDates sets one edge to a period and leaves the other alone — unless
 // that would invert the range, in which case the item collapses onto the chosen
 // period. The alternative is answering a deliberate pick with the store's

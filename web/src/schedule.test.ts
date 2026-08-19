@@ -4,7 +4,10 @@ import {
   nearestBoundary,
   parseSchedule,
   periodAtEdge,
+  periodContaining,
   periodDates,
+  periodPointText,
+  periodRangeText,
   periodsByStart,
   scheduleBounds,
   serializeSchedule,
@@ -135,4 +138,58 @@ test("periodDates collapses onto the period rather than inverting the range", ()
     periodDates("start", PIS[0]!, { startDate: "2026-02-01", endDate: "2026-03-02" }),
     { startDate: "2026-03-02", endDate: "2026-03-02" },
   );
+});
+
+// The WBS date column, which speaks in periods where it can. `iso` stands in
+// for the column's real date formatting, which is not this module's business.
+const iso = (d: string) => d;
+
+test("periodContaining finds the period a date lies in, and none in a gap", () => {
+  assert.equal(periodContaining(PIS, "2026-01-05")?.label, "PI2026-01"); // first day
+  assert.equal(periodContaining(PIS, "2026-02-10")?.label, "PI2026-01"); // inside
+  assert.equal(periodContaining(PIS, "2026-02-27")?.label, "PI2026-01"); // last day
+  // The two PIs are adjacent, but nothing requires that: 2026-02-28 falls in
+  // the one-day gap between them, and 2025 falls before them both.
+  assert.equal(periodContaining(PIS, "2026-02-28"), null);
+  assert.equal(periodContaining(PIS, "2025-12-31"), null);
+});
+
+test("a range inside one period collapses to that period", () => {
+  assert.equal(periodRangeText(PIS, "2026-01-05", "2026-02-27", iso), "PI2026-01");
+  // Merely inside, not filling it — the same answer, since the exact dates are
+  // in the edit rail and the WBS is about structure.
+  assert.equal(periodRangeText(PIS, "2026-01-20", "2026-02-10", iso), "PI2026-01");
+});
+
+test("a range filling its periods exactly uses the en dash", () => {
+  assert.equal(periodRangeText(PIS, "2026-01-05", "2026-04-24", iso), "PI2026-01 – PI2026-03");
+});
+
+// The marker is the whole point: without it "PI2026-01 – PI2026-03" would claim
+// a flush span the item does not have.
+test("a range merely lying within its periods is marked", () => {
+  assert.equal(periodRangeText(PIS, "2026-01-20", "2026-04-24", iso), "PI2026-01 ~ PI2026-03");
+  assert.equal(periodRangeText(PIS, "2026-01-05", "2026-04-10", iso), "PI2026-01 ~ PI2026-03");
+  assert.equal(periodRangeText(PIS, "2026-01-20", "2026-04-10", iso), "PI2026-01 ~ PI2026-03");
+});
+
+// Gaps are legal, so one edge can resolve and the other not. The cell then
+// speaks dates throughout rather than pairing a date with a period name.
+test("an edge outside every period sends the whole range back to dates", () => {
+  assert.equal(
+    periodRangeText(PIS, "2026-01-05", "2026-02-28", iso),
+    "2026-01-05 – 2026-02-28",
+  );
+  assert.equal(
+    periodRangeText(PIS, "2026-02-28", "2026-04-24", iso),
+    "2026-02-28 – 2026-04-24",
+  );
+  assert.equal(periodRangeText([], "2026-01-05", "2026-02-27", iso), "2026-01-05 – 2026-02-27");
+});
+
+test("periodPointText names the period a milestone falls in", () => {
+  assert.equal(periodPointText(PIS, "2026-01-05", iso), "PI2026-01");
+  assert.equal(periodPointText(PIS, "2026-02-10", iso), "PI2026-01");
+  assert.equal(periodPointText(PIS, "2026-02-28", iso), "2026-02-28"); // in the gap
+  assert.equal(periodPointText([], "2026-02-10", iso), "2026-02-10");
 });

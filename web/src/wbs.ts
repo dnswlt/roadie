@@ -29,6 +29,7 @@ import {
   prioPill,
   riskMark,
 } from "./render";
+import { periodPointText, periodRangeText } from "./schedule";
 import { state } from "./state";
 import { contentRange, dayOf, formatDay, spanFraction } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone } from "./types";
@@ -159,6 +160,12 @@ function renderMilestoneGroup(lane: LaneFull): HTMLElement[] {
   return out;
 }
 
+// The column's date form, as a function of the ISO string the schedule helpers
+// hand back, so an unaligned edge prints exactly what it printed before.
+function isoDate(iso: string): string {
+  return formatDay(dayOf(iso));
+}
+
 function renderMilestoneRow(m: Milestone): HTMLElement {
   // Never removed by the filter, as in the timeline (see render.ts).
   const el = div(state.selectedMilestoneId === m.id ? "wbs-milestone selected" : "wbs-milestone");
@@ -166,7 +173,7 @@ function renderMilestoneRow(m: Milestone): HTMLElement {
   const title = div("wbs-ms-title");
   title.textContent = m.title;
   const date = div("wbs-dates");
-  date.textContent = formatDay(dayOf(m.date));
+  date.textContent = periodPointText(state.current?.periods ?? [], m.date, isoDate);
   // Unlike the timeline's diamond, a row has room for the real mark, so a
   // milestone here says what an item says, the same way — including the
   // presence case the timeline has to leave out. That makes the warning ring
@@ -225,7 +232,11 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   // Tentative timing: a compact "≈" ahead of the range — the timeline's
   // sawtooth silhouette does not translate to a row, the prefix does.
   const approx = item.tentative ? "≈ " : "";
-  dates.textContent = `${approx}${formatDay(dayOf(item.startDate))} – ${formatDay(dayOf(item.endDate))}`;
+  // With a schedule defined the range is named by the periods it occupies
+  // rather than by its dates, the WBS being about structure more than about
+  // exact timing; the separator says whether it fills them (schedule.ts).
+  dates.textContent =
+    approx + periodRangeText(state.current?.periods ?? [], item.startDate, item.endDate, isoDate);
   // The sparkline gives back the one thing the outline throws away: *where* a
   // range lies. A track of its own, not a tint behind the dates — that was
   // tried, and a fill crossing the text reads as a highlight on whichever words
