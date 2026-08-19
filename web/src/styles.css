@@ -451,6 +451,13 @@ kbd {
   z-index: 110;
 }
 
+/* Here the colour swatch stands in the icon column rather than beside an icon
+   as it does in the eye menu, so it takes an icon's 16px footprint while
+   staying a 12px dot; without it this row's label sits 4px left of the rest. */
+.lane-menu .color-dot {
+  margin: 0 2px;
+}
+
 .menu-item {
   font: inherit;
   display: flex;

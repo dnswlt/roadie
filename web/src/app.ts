@@ -764,7 +764,7 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
 
   const addMs = document.createElement("button");
   addMs.className = "menu-item";
-  addMs.append(icons.flag(16), text("Add milestone"));
+  addMs.append(icons.milestone(16), text("Add milestone"));
   addMs.addEventListener("click", () => {
     closeLaneMenu();
     // Same as the lane's + button: the milestone is created selected, so put
