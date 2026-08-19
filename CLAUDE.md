@@ -70,6 +70,11 @@ Jira Recon view (`recon.ts`, server `tracker.go`).
 
 ## Rules
 
+**Comments address the next reader, not the last change.** State what the code
+does and the constraint behind it. Name a rejected alternative when that stops
+someone reinstating it, as a standing rule rather than as history. A sentence
+that only parses for someone who saw the previous version is a diary entry.
+
 **Migrations.** Add a new numbered `internal/store/migrations/00N_*.sql`; never edit
 an applied one. Then fold the same change into `internal/store/schema.sql`, which is
 the readable source of truth for the current schema and the path a fresh database

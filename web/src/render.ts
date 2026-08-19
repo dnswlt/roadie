@@ -5,7 +5,16 @@ import { laneColorValue } from "./colors";
 import { type DepSummary, refKey } from "./deps-graph";
 
 import { icons } from "./icons";
-import { LABEL_W, PARENT_BAR_H, layoutLane, type PlacedBlock } from "./layout";
+import {
+  LABEL_W,
+  MS_LABEL_CLEAR,
+  MS_LABEL_LEFT,
+  MS_ROW_H,
+  PARENT_BAR_H,
+  layoutLane,
+  packMilestoneRows,
+  type PlacedBlock,
+} from "./layout";
 import { extractLinks } from "./links";
 import { scheduleBounds } from "./schedule";
 import { state } from "./state";
@@ -251,7 +260,7 @@ export function laneLabel(lane: LaneFull): HTMLElement {
 // `lane` arrives already projected (state.projection), so what it holds is
 // what this draws; the fold callback is what still removes children.
 function renderLane(lane: LaneFull, chartW: number): HTMLElement {
-  const layout = layoutLane(lane, scale, (id) => state.rendersCollapsed(id));
+  const layout = layoutLane(lane, scale, labelWidth, (id) => state.rendersCollapsed(id));
   const laneEl = div("lane");
   laneEl.dataset.laneId = String(lane.id);
   laneEl.style.setProperty("--c", laneColorValue(lane.color));
@@ -288,14 +297,17 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
     canvas.append(renderBlock(block));
   }
 
-  // Milestone diamonds live in a reserved band at the lane top. Each carries
-  // its title to the right of its diamond, budgeted to the space before the
-  // next milestone (the model keeps them date-sorted); when even a sliver
-  // won't fit, the label stays hidden and hover/selection reveals it instead.
+  // Milestone diamonds live in a reserved band at the lane top, each on the row
+  // packMilestoneRows (layout.ts) gave it. A title prints to the right of its
+  // diamond, budgeted to the space before the next milestone sharing that row
+  // (the model keeps them date-sorted, so a forward scan finds it); when even a
+  // sliver won't fit, the label stays hidden and hover/selection reveals it.
+  const { rowOf } = packMilestoneRows(lane.milestones, scale, labelWidth);
   lane.milestones.forEach((m, i) => {
-    const next = lane.milestones[i + 1];
+    const row = rowOf.get(m.id) ?? 0;
+    const next = lane.milestones.slice(i + 1).find((n) => rowOf.get(n.id) === row);
     const limit = next ? xOf(scale, dayOf(next.date)) - MS_LABEL_CLEAR : chartW - 4;
-    canvas.append(renderMilestone(m, limit - (xOf(scale, dayOf(m.date)) + MS_LABEL_LEFT)));
+    canvas.append(renderMilestone(m, limit - (xOf(scale, dayOf(m.date)) + MS_LABEL_LEFT), row));
   });
 
   laneEl.append(laneLabel(lane), canvas);
@@ -312,13 +324,11 @@ function renderMilestoneLine(m: Milestone): HTMLElement {
   return line;
 }
 
-// Geometry of the band label, mirrored by .milestone-label in styles.css: its
-// left edge sits MS_LABEL_LEFT px right of the diamond's center (the 13px
-// diamond box plus a 6px gap, minus half the box); MS_LABEL_CLEAR keeps it
-// short of the next milestone's drop-line and diamond tip; below MS_LABEL_MIN
-// px of room the label is hidden rather than ellipsized down to nothing.
-const MS_LABEL_LEFT = 12.5;
-const MS_LABEL_CLEAR = 14;
+// Below this much room a label is hidden rather than ellipsized down to
+// nothing; hover/selection still reveals it. Packing normally prevents it —
+// this catches the leftovers, such as a title measured slightly narrower than
+// it renders. The rest of the band geometry lives in layout.ts, which needs it
+// to size the band.
 const MS_LABEL_MIN = 24;
 
 // renderMilestone builds a diamond plus its band label. `labelPx` is the
@@ -327,8 +337,10 @@ const MS_LABEL_MIN = 24;
 // over the neighbors (which also replaces the old native title tooltip — too
 // slow to be useful, and it would double up with the reveal). The budget rides
 // in a CSS custom property rather than an inline max-width so the stylesheet's
-// hover/selected rules can override it without !important.
-function renderMilestone(m: Milestone, labelPx: number): HTMLElement {
+// hover/selected rules can override it without !important. `row`
+// (packMilestoneRows) is the band row this milestone prints on; row 0 needs no
+// inline offset since it is the CSS default.
+function renderMilestone(m: Milestone, labelPx: number, row: number): HTMLElement {
   const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
   // A milestone has no furniture run to hold the dependency mark — it is a
   // diamond and an absolutely-positioned label — so it carries the warning on
@@ -340,6 +352,7 @@ function renderMilestone(m: Milestone, labelPx: number): HTMLElement {
   }
   el.dataset.milestoneId = String(m.id);
   el.style.left = `${xOf(scale, dayOf(m.date))}px`;
+  if (row > 0) el.style.top = `${row * MS_ROW_H}px`;
   const label = div("milestone-label");
   label.textContent = m.title;
   if (labelPx < MS_LABEL_MIN) label.classList.add("cramped");
@@ -519,25 +532,38 @@ function titleFits(item: Item, width: number, hasDisclosure = false, hasDeps = f
   return measureTitleWidth(item.title) <= width - reserved;
 }
 
-let measureCtx: CanvasRenderingContext2D | null = null;
+// One offscreen canvas per measured class, kept between passes. Measuring text
+// this way is exact for the font and, unlike reading scrollWidth, forces no
+// reflow — which is what lets the milestone packer ask for every title's width
+// before any of them is in the document. Each font is read once from a probe
+// element so it tracks the real stylesheet rule rather than restating it.
+const measureCtxByClass = new Map<string, CanvasRenderingContext2D | null>();
 
-// measureTitleWidth returns the rendered px width of `text` in the bar-title
-// font via an offscreen canvas — exact for the font and, unlike reading
-// scrollWidth, without forcing a reflow. The font is read once from a probe so
-// it always tracks the real .bar-title style.
-function measureTitleWidth(text: string): number {
-  if (!measureCtx) {
-    const probe = div("bar-title");
+function measureIn(className: string, text: string): number {
+  let ctx = measureCtxByClass.get(className);
+  if (ctx === undefined) {
+    const probe = div(className);
     probe.style.position = "absolute";
     probe.style.visibility = "hidden";
     document.body.append(probe);
     const cs = getComputedStyle(probe);
     const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
     probe.remove();
-    measureCtx = document.createElement("canvas").getContext("2d");
-    if (measureCtx) measureCtx.font = font;
+    ctx = document.createElement("canvas").getContext("2d");
+    if (ctx) ctx.font = font;
+    measureCtxByClass.set(className, ctx);
   }
-  return measureCtx ? measureCtx.measureText(text).width : 0;
+  return ctx ? ctx.measureText(text).width : 0;
+}
+
+function measureTitleWidth(text: string): number {
+  return measureIn("bar-title", text);
+}
+
+// The width a milestone's band label wants, which decides how many rows the
+// band needs (packMilestoneRows, layout.ts).
+function labelWidth(title: string): number {
+  return measureIn("milestone-label", title);
 }
 
 // A small P1..P4 badge shown at the right end of a bar. Non-interactive
