@@ -163,6 +163,46 @@ test("signal filters toggle exclusively and labels replace them", () => {
   assert.deepEqual(state.filter, { kind: "labels", labels: ["a"] });
 });
 
+test("the recent filter is session-only, singular, and discarded when stale", () => {
+  const tagged = item(1, ["keep"], true);
+  state.current = roadmap([tagged]);
+  state.filter = { kind: "labels", labels: ["keep"] };
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null);
+  state.toggleRecentFilter();
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["keep"] });
+
+  state.filter = { kind: "flagged" };
+  state.toggleRecentFilter();
+  state.toggleRecentFilter();
+  assert.deepEqual(state.filter, { kind: "flagged" }, "the latest filter wins globally");
+
+  state.toggleRecentFilter();
+  tagged.flagged = false;
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null, "a filter with no live matches is rejected");
+  tagged.flagged = true;
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null, "a rejected filter is forgotten, not merely skipped");
+});
+
+// resetFilter is selectRoadmap's leaving-this-roadmap call. A label filter
+// names a string scoped to one roadmap, so it must not resurface just because
+// an unrelated roadmap happens to reuse that label name.
+test("switching roadmaps forgets the recent filter, even by label-name coincidence", () => {
+  const here = item(1, ["urgent"], false);
+  state.current = roadmap([here]);
+  state.filter = { kind: "labels", labels: ["urgent"] };
+
+  state.resetFilter();
+  const elsewhere = item(2, ["urgent"], false); // same label name, different roadmap
+  state.current = roadmap([elsewhere]);
+
+  assert.equal(state.filter, null);
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null, "no memory survived the switch to reapply");
+});
+
 test("dependency-conflict filter derives both item endpoints and refreshes with dates", () => {
   const prerequisite = item(1, [], false);
   prerequisite.endDate = "2026-02-01";

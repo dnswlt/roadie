@@ -64,11 +64,13 @@ test("filtering removes non-matching bars from the timeline", async ({ page, req
   await expect(bar(page, seeded.items[0]!.id)).toHaveCount(0);
   await expect(bar(page, childId)).toHaveCount(0);
 
-  // Clearing restores every row: the filter is a view, and it left the model
-  // alone (the afterEach purge would fail loudly if it had not).
-  await pickFilter(page, "Show all items");
+  // `f` clears and restores the recent filter without touching the model.
+  await page.keyboard.press("f");
   await expect(bar(page, seeded.items[0]!.id)).toBeVisible();
   await expect(bar(page, childId)).toBeVisible();
+  await page.keyboard.press("f");
+  await expect(bar(page, seeded.items[0]!.id)).toHaveCount(0);
+  await expect(bar(page, seeded.items[1]!.id)).toBeVisible();
 });
 
 test("filtering reconciles selection and can be cleared after its last match is removed", async ({

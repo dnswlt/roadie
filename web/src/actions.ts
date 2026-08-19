@@ -156,7 +156,7 @@ export const actions = {
       state.preview = null;
       state.contributors = []; // belong to the roadmap we just left
       state.stale = false; // a fresh load can't be stale
-      state.filter = null; // labels and flags are per-roadmap; don't carry a filter across
+      state.resetFilter(); // labels and dependency conflicts are per-roadmap; forget the last one too
       state.loadHiddenLanes();
       state.loadCollapsed();
       state.loadWbsMsCollapsed();

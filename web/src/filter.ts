@@ -15,10 +15,10 @@ import type { Item, ItemFull, LaneFull } from "./types";
 // filter at all is null. Nothing derived is stored here — conflict membership
 // is resolved where the projection is built — so a Filter cannot go stale.
 export type Filter =
-  | { kind: "labels"; labels: string[] }
-  | { kind: "flagged" }
-  | { kind: "atRisk" }
-  | { kind: "dependencyConflicts" };
+  | { readonly kind: "labels"; readonly labels: readonly string[] }
+  | { readonly kind: "flagged" }
+  | { readonly kind: "atRisk" }
+  | { readonly kind: "dependencyConflicts" };
 
 export type SignalFilterKind = Exclude<Filter["kind"], "labels">;
 

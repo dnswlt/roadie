@@ -117,15 +117,29 @@ class AppState {
   // not two, since filtering on both at once has no meaning.
   //
   // Assignment invalidates what is derived from it, so no caller has to
-  // remember to notify before the next read.
+  // remember to notify before the next read. Every active filter also becomes
+  // the recent filter for `f` (see resetFilter, which forgets it too).
   private filterValue: Filter | null = null;
+  private recentFilter: Filter | null = null;
 
   get filter(): Filter | null {
     return this.filterValue;
   }
 
   set filter(next: Filter | null) {
+    if (next !== null) this.recentFilter = next;
     this.filterValue = next;
+    this.invalidateDerived();
+  }
+
+  // resetFilter is selectRoadmap's "leaving this roadmap" call. `f` is a quick
+  // toggle for switching views back and forth while working a single roadmap —
+  // a filter naming a label or referring to that roadmap's own dependency
+  // conflicts has no meaning on a different one, so the memory goes with the
+  // switch rather than resurfacing on whatever roadmap is opened next.
+  resetFilter(): void {
+    this.filterValue = null;
+    this.recentFilter = null;
     this.invalidateDerived();
   }
   // Set after loading a roadmap so the chart scrolls to today once.
@@ -550,6 +564,29 @@ class AppState {
 
   toggleFilterSignal(kind: SignalFilterKind): void {
     this.filter = this.filter?.kind === kind ? null : { kind };
+  }
+
+  // `f` is a quick toggle within one roadmap, not a saved preference: it does
+  // not survive switching roadmaps (resetFilter) or a reload. Before restoring
+  // it, resolve it against the live roadmap: a label deleted or a signal
+  // resolved while it was off silently discards a now-useless memory instead
+  // of opening an empty view.
+  toggleRecentFilter(): void {
+    if (!this.current || this.viewMode === "recon") return;
+    if (this.filter !== null) {
+      this.filter = null;
+      this.notify();
+      return;
+    }
+    const recent = this.recentFilter;
+    if (!recent) return;
+    const match = itemPredicate(recent, this.dependencyConflictItemIds());
+    if (match === null || this.countItems(match) === 0) {
+      this.recentFilter = null;
+      return;
+    }
+    this.filter = recent;
+    this.notify();
   }
 
   // Whether an item matches the filter directly, which is stricter than being

@@ -120,6 +120,12 @@ export const bindings: Binding[] = [
     run: () => openDepsForSelection(),
   },
   {
+    key: "f",
+    label: "f",
+    description: "*Toggle* between Show all items and the most recently used filter.",
+    run: () => state.toggleRecentFilter(),
+  },
+  {
     key: "/",
     label: "/",
     description: "*Find* items, milestones, and contexts.",
