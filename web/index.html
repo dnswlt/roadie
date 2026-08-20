@@ -14,12 +14,13 @@
         <img class="brand-logo" src="{{FAVICON}}" alt="" width="20" height="20">
         Roadie
       </span>
-      <!-- The house opens Home (list, preview, new/import, trash); the name
-           button drops the menu of actions on the roadmap it names. Two
-           affordances, each honest: icon = go somewhere, name+chevron = menu. -->
-      <button id="home-btn" class="home-trigger" title="Roadmaps"><span>Home</span></button>
+      <!-- The roadmap's name is the door into Home (list, new/import, trash):
+           clicking the roadmap you are in to reach the others is what everyone
+           reaches for, so its chevron is honest. It stays live with no roadmap
+           open — that is when Home is needed most. Actions hang off the "…". -->
+      <button id="rm-picker" class="rm-trigger" title="Roadmaps"></button>
       <div class="menu-wrap">
-        <button id="rm-picker" class="rm-trigger" aria-label="Roadmap actions"></button>
+        <button id="rm-actions" class="icon-btn" title="Roadmap actions"></button>
         <div id="rm-menu-pop" class="menu hidden">
           <button id="rm-rename" class="menu-item">Rename</button>
           <button id="rm-schedule" class="menu-item">Edit schedule</button>

@@ -39,6 +39,7 @@ const panelResize = $("panel-resize");
 const historyEl = $("history");
 const snapshotBanner = $("snapshot-banner");
 const rmPicker = $("rm-picker") as HTMLButtonElement;
+const rmActions = $("rm-actions") as HTMLButtonElement;
 
 // Human labels for the drag-snap grids, in menu order.
 const SNAP_LABELS: Record<SnapMode, string> = {
@@ -113,22 +114,15 @@ function renderVisibilityItem(): void {
 }
 
 function renderTopbar(): void {
-  // The name button drops the actions menu for the roadmap it names, so it is
-  // disabled when nothing is open — Home stays reachable via the house button,
-  // which is never disabled (with no roadmaps, Home is where New/Import live).
+  // The name opens Home, so it stays live with no roadmap loaded ("No
+  // roadmap" is then itself the invitation). The "…" is what goes dead: its
+  // rows all act on a roadmap, and disabling the opener puts them out of
+  // reach, so none of them disables itself.
   const name = document.createElement("span");
   name.className = "rm-trigger-name";
   name.textContent = state.current?.name ?? "No roadmap";
   rmPicker.replaceChildren(name, icons.chevronDown(14));
-  rmPicker.title = state.current?.name ?? "";
-  rmPicker.disabled = !state.current;
-  ($("rm-rename") as HTMLButtonElement).disabled = !state.current;
-  ($("rm-duplicate") as HTMLButtonElement).disabled = !state.current;
-  ($("rm-history") as HTMLButtonElement).disabled = !state.current;
-  ($("rm-schedule") as HTMLButtonElement).disabled = !state.current;
-  ($("rm-export") as HTMLButtonElement).disabled = !state.current;
-  ($("rm-copy-md") as HTMLButtonElement).disabled = !state.current;
-  ($("rm-delete") as HTMLButtonElement).disabled = !state.current;
+  rmActions.disabled = !state.current;
   // Find searches the loaded roadmap, so it has nothing to do without one.
   ($("find-menu") as HTMLButtonElement).disabled = !state.current;
   // Bulk folding follows the action-label convention: when every parent is
@@ -344,7 +338,7 @@ function renderAccount(me: Me): void {
 }
 
 function injectIcons(): void {
-  $("home-btn").prepend(icons.house(16));
+  $("rm-actions").append(icons.dots(18));
   $("find-menu").append(icons.search(18));
   $("lane-vis-menu").append(icons.eye(18));
   $("filter-menu").append(icons.filter(18));
@@ -401,8 +395,8 @@ function wireTopbar(): void {
   const filterPop = $("filter-pop");
   const snapPop = $("snap-pop");
   const accountPop = $("account-pop");
-  $("home-btn").addEventListener("click", () => void openHome());
-  rmPicker.addEventListener("click", () => toggleTopbarMenu(menuPop, rmPicker));
+  rmPicker.addEventListener("click", () => void openHome());
+  rmActions.addEventListener("click", () => toggleTopbarMenu(menuPop, rmActions));
   $("lane-vis-menu").addEventListener("click", () => {
     toggleTopbarMenu(visPop, $("lane-vis-menu"), () => buildLaneVisMenu(visPop));
   });

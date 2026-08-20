@@ -46,7 +46,7 @@ async function selectItem(page: Page): Promise<void> {
 }
 
 test("opening one topbar menu dismisses another", async ({ page }) => {
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeVisible();
 
   await page.locator("#lane-vis-menu").click();
@@ -55,7 +55,7 @@ test("opening one topbar menu dismisses another", async ({ page }) => {
 });
 
 test("a topbar menu closes on a click outside it", async ({ page }) => {
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeVisible();
 
   await page.locator("#chart").click({ position: { x: 5, y: 5 } });
@@ -68,7 +68,7 @@ test("a topbar menu closes on a click outside it", async ({ page }) => {
 // about it either.
 test("opening the dependency picker dismisses a topbar menu", async ({ page }) => {
   await selectItem(page);
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeVisible();
 
   await page.locator(".dep-add").first().click();
@@ -83,7 +83,7 @@ test("opening a topbar menu dismisses the dependency picker", async ({ page }) =
   await page.locator(".dep-add").first().click();
   await expect(depPicker(page)).toBeVisible();
 
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeVisible();
   await expect(depPicker(page)).toHaveCount(0);
 });
@@ -93,7 +93,7 @@ test("the lane menu and a topbar menu dismiss each other", async ({ page }) => {
   await page.locator(".lane-menu-btn").first().click();
   await expect(laneMenu(page)).toBeVisible();
 
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeVisible();
   await expect(laneMenu(page)).toHaveCount(0);
 
@@ -105,9 +105,9 @@ test("the lane menu and a topbar menu dismiss each other", async ({ page }) => {
 // The opener is exempt from dismissal so that its own handler decides what a
 // second click means. Every one of these surfaces treats it as "close".
 test("clicking an opener a second time closes its own popover", async ({ page }) => {
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeVisible();
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeHidden();
 
   await page.locator(".lane-menu-btn").first().click();
@@ -125,7 +125,7 @@ test("the find popup joins the same exclusivity", async ({ page }) => {
   await page.keyboard.press("/");
   await expect(page.locator("#find-pop")).toBeVisible();
 
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(roadmapMenu(page)).toBeVisible();
   await expect(page.locator("#find-pop")).toBeHidden();
 });

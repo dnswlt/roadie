@@ -70,7 +70,7 @@ test("a topbar menu and the Saved menu dismiss each other", async ({ page }) => 
   await page.locator(".recon-fav-btn").click();
   await expect(savedMenu(page)).toBeVisible();
 
-  await page.locator("#rm-picker").click();
+  await page.locator("#rm-actions").click();
   await expect(page.locator("#rm-menu-pop")).toBeVisible();
   await expect(savedMenu(page)).toHaveCount(0);
 

@@ -101,8 +101,11 @@ body {
   flex: 1;
 }
 
-/* Roadmap picker: a menu trigger styled as a field, so it reads as the
-   primary control it is while behaving like every other popover here. */
+/* The open roadmap's name, styled as a field with a chevron — a combobox,
+   which is what everyone reads it as and reaches for: it opens Home, where the
+   other roadmaps are. Actions on the roadmap it names hang off the "…" beside
+   it, never on the name, which would put a menu behind a switcher's chrome.
+   The fixed width keeps the buttons right of it from shifting per roadmap. */
 .rm-trigger {
   font: inherit;
   font-weight: 600;
@@ -120,39 +123,6 @@ body {
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-/* The Home button is the app's front door — where roadmaps are opened,
-   created, imported and restored — so it is the one *colored* control in the
-   otherwise neutral topbar: a soft chip in the brand indigo of the favicon
-   tile (#4f46e5), with an explicit label because an icon-only house is too
-   easy to overlook or misread. Keep it the only tinted control up here; a
-   second one would dissolve exactly the emphasis it exists for. */
-.home-trigger {
-  font: inherit;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 12px;
-  border: 1px solid #c7d2fe;
-  border-radius: 8px;
-  background: #eef2ff;
-  color: #4338ca;
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
-}
-
-.home-trigger:hover {
-  background: #e0e7ff;
-  border-color: #a5b4fc;
-  box-shadow: var(--shadow);
-}
-
-.home-trigger:focus-visible {
-  outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
-}
-
 .rm-trigger-name {
   flex: 1;
   text-align: left;
@@ -166,7 +136,7 @@ body {
   flex: none;
 }
 
-.rm-trigger:hover:not(:disabled) {
+.rm-trigger:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow);
 }
@@ -177,19 +147,7 @@ body {
   box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
 }
 
-.rm-trigger:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* The roadmap list is the one menu that grows without bound — copies and
-   imports pile up — so it scrolls instead of running off the viewport. */
-#rm-pop {
-  max-width: 320px;
-  max-height: min(60vh, 420px);
-  overflow-y: auto;
-}
-
+/* A roadmap's name in Home's list. */
 .rm-item-name {
   overflow: hidden;
   text-overflow: ellipsis;
