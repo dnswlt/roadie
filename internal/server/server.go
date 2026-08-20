@@ -158,9 +158,15 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/contributors", s.guard(byRoadmapID, s.listContributors))
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/snapshots", s.guard(byRoadmapID, s.listSnapshots))
+	// Creating and naming a checkpoint add to a roadmap's history rather than
+	// changing its contents, so they take guard and not snap: there is no
+	// prior state worth capturing before one, and nothing for a subscriber to
+	// refetch after it.
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/snapshots", s.guard(byRoadmapID, s.createSnapshot))
 	// The snapshot routes take a snapshot id, so they resolve through it to the
 	// roadmap that owns it: a snapshot is as private as its roadmap.
 	s.mux.HandleFunc("GET /api/snapshots/{id}", s.guard(bySnapshotID, s.getSnapshot))
+	s.mux.HandleFunc("PATCH /api/snapshots/{id}", s.guard(bySnapshotID, s.renameSnapshot))
 	s.mux.HandleFunc("POST /api/snapshots/{id}/restore", s.guard(bySnapshotID, s.restoreSnapshot))
 	s.mux.HandleFunc("DELETE /api/snapshots/{id}", s.guard(bySnapshotID, s.deleteSnapshot))
 

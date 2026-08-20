@@ -3074,12 +3074,33 @@ button.deps-node:hover {
   text-overflow: ellipsis;
 }
 
+/* The tag marking a checkpoint's name. Inline rather than a flex child, so a
+   name too long for the sidebar still ellipsizes. */
+.history-when svg {
+  margin-right: 5px;
+  vertical-align: -2px;
+  color: var(--ink-2);
+}
+
 .history-sub {
   font-size: 12px;
   color: var(--ink-2);
   /* Carries a display name on the "Current version" row, and one long enough to
      overflow 280px has to wrap rather than spill out of the sidebar. */
   overflow-wrap: anywhere;
+}
+
+/* Section label: "Checkpoints" over the pinned rows, "Earlier versions" over
+   the day groups. Deliberately not a button — a day header collapses, and a
+   checkpoint that can be collapsed out of sight is not findable, which is the
+   only reason it is pinned up here. */
+.history-section {
+  padding: 10px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
 }
 
 /* Collapsible per-day group header in the history list. */
@@ -3124,6 +3145,7 @@ button.deps-node:hover {
 
 /* Snapshot rows sit under their day header, slightly indented to show nesting. */
 .history-day + .history-item,
+.history-section + .history-item,
 .history-item + .history-item {
   padding-left: 18px;
 }

@@ -3,7 +3,7 @@
 // code — this owns its own elements and reads only state.history / state.preview.
 
 import { actions } from "./actions";
-import { confirmDialog } from "./dialogs";
+import { confirmDialog, promptDialog } from "./dialogs";
 import { icons } from "./icons";
 import { state } from "./state";
 import type { Contributor, Snapshot } from "./types";
@@ -150,14 +150,25 @@ function snapshotRow(snap: Snapshot): HTMLButtonElement {
   const active = state.preview?.snapshotId === snap.id;
   const lines: HTMLElement[] = [];
   if (snap.name) {
-    lines.push(textSpan("history-when", snap.name));
-    lines.push(textSpan("history-sub", whenLabel(d)));
+    // A checkpoint leads with the name it was given: that is the thing being
+    // recognised, and its timestamp is only how to place it.
+    const title = textSpan("history-when", "");
+    title.append(icons.tag(12), document.createTextNode(snap.name));
+    lines.push(title, textSpan("history-sub", whenLabel(d)));
   } else {
     lines.push(textSpan("history-when", whenLabel(d)));
     const rel = relTime(d);
     if (rel) lines.push(textSpan("history-sub", rel));
   }
   return row(active, () => void actions.viewSnapshot(snap.id, snap.createdAt), lines);
+}
+
+// sectionHead labels a run of rows in the list ("Checkpoints", "Earlier versions").
+function sectionHead(text: string): HTMLElement {
+  const h = document.createElement("div");
+  h.className = "history-section";
+  h.textContent = text;
+  return h;
 }
 
 // renderHistory (re)draws the history side-list and the preview banner from
@@ -198,13 +209,27 @@ export function renderHistory(historyEl: HTMLElement, bannerEl: HTMLElement): vo
     empty.textContent = "No earlier versions yet.";
     list.append(empty);
   } else {
-    // Group by day; the most recent day is expanded, older days collapse so a
-    // long history reads as a short list of days (snaps are newest-first).
-    const latestKey = dayKey(new Date(snaps[0]!.createdAt));
-    for (const g of groupByDay(snaps)) {
-      const expanded = isDayExpanded(g.key, latestKey);
-      list.append(dayHeader(g, expanded));
-      if (expanded) for (const snap of g.snaps) list.append(snapshotRow(snap));
+    // Checkpoints are pinned above the day groups rather than sitting in them:
+    // they exist to be recognised, and one that has to be dug out of a
+    // collapsed day is not doing that job. The split is exclusive — a
+    // checkpoint appears here and not again below — so the day groups hold the
+    // unnamed captures only.
+    const checkpoints = snaps.filter((s) => s.name);
+    const rest = snaps.filter((s) => !s.name);
+    if (checkpoints.length > 0) {
+      list.append(sectionHead("Checkpoints"));
+      for (const snap of checkpoints) list.append(snapshotRow(snap));
+    }
+    if (rest.length > 0) {
+      if (checkpoints.length > 0) list.append(sectionHead("Earlier versions"));
+      // Group by day; the most recent day is expanded, older days collapse so a
+      // long history reads as a short list of days (snaps are newest-first).
+      const latestKey = dayKey(new Date(rest[0]!.createdAt));
+      for (const g of groupByDay(rest)) {
+        const expanded = isDayExpanded(g.key, latestKey);
+        list.append(dayHeader(g, expanded));
+        if (expanded) for (const snap of g.snaps) list.append(snapshotRow(snap));
+      }
     }
   }
 
@@ -222,11 +247,19 @@ function renderBanner(bannerEl: HTMLElement): void {
   bannerEl.classList.remove("hidden");
 
   const when = whenLabel(new Date(preview.createdAt));
+  // Preview is only ever entered from the list, so the list is loaded whenever
+  // this renders and the lookup always finds its row.
+  const named = state.history?.find((s) => s.id === preview.snapshotId)?.name ?? null;
   const lead = document.createElement("span");
   lead.className = "snapshot-banner-lead";
   lead.append(
     icons.eye(16),
-    textSpan("snapshot-banner-text", `Viewing a snapshot from ${when} — read only`),
+    textSpan(
+      "snapshot-banner-text",
+      named
+        ? `Viewing checkpoint "${named}" from ${when} — read only`
+        : `Viewing a snapshot from ${when} — read only`,
+    ),
   );
 
   const restore = document.createElement("button");
@@ -243,6 +276,21 @@ function renderBanner(bannerEl: HTMLElement): void {
     })();
   });
 
+  // Naming happens here rather than on a list row: you scrub until you
+  // recognise a state, and the moment you recognise it is the moment it is
+  // worth keeping. Naming an unnamed capture is also what saves it from being
+  // pruned, so this is the only way to keep an old auto snapshot.
+  const keep = document.createElement("button");
+  keep.className = "btn";
+  keep.append(icons.tag(14), textSpan("", named ? "Rename" : "Name this version"));
+  keep.addEventListener("click", () => {
+    void (async () => {
+      const title = named ? "Rename checkpoint" : "Name this version";
+      const next = await promptDialog(title, named ?? "", "Save");
+      if (next) void actions.nameSnapshot(preview.snapshotId, next);
+    })();
+  });
+
   const back = document.createElement("button");
   back.className = "btn";
   back.textContent = "Back to current";
@@ -250,7 +298,7 @@ function renderBanner(bannerEl: HTMLElement): void {
 
   const acts = document.createElement("div");
   acts.className = "snapshot-banner-actions";
-  acts.append(back, restore);
+  acts.append(keep, back, restore);
 
   bannerEl.replaceChildren(lead, acts);
 }

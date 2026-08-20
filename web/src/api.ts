@@ -118,7 +118,11 @@ export const api = {
     req<Contributor[]>("GET", `/api/roadmaps/${roadmapId}/contributors`),
   listSnapshots: (roadmapId: number) =>
     req<Snapshot[]>("GET", `/api/roadmaps/${roadmapId}/snapshots`),
+  createSnapshot: (roadmapId: number, name: string) =>
+    req<Snapshot>("POST", `/api/roadmaps/${roadmapId}/snapshots`, { name }),
   getSnapshot: (id: number) => req<RoadmapFull>("GET", `/api/snapshots/${id}`),
+  renameSnapshot: (id: number, name: string) =>
+    req<Snapshot>("PATCH", `/api/snapshots/${id}`, { name }),
   restoreSnapshot: (id: number) => req<Roadmap>("POST", `/api/snapshots/${id}/restore`),
   deleteSnapshot: (id: number) => req<void>("DELETE", `/api/snapshots/${id}`),
 

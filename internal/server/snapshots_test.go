@@ -156,3 +156,56 @@ func TestAutoSnapshotCollapsesBurst(t *testing.T) {
 		t.Fatalf("concurrent burst: want 1 snapshot, got %d", len(snaps))
 	}
 }
+
+// TestCheckpointEndpoints covers the two routes that make a snapshot a
+// checkpoint: capturing the live roadmap under a name, and naming a capture
+// that already exists (which promotes it, so it stops being prunable).
+func TestCheckpointEndpoints(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+
+	w := do(t, http.MethodPost, "/api/roadmaps/"+itoa(id)+"/snapshots", nameReq{Name: "v1.0"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("save checkpoint: status %d (%s)", w.Code, w.Body.String())
+	}
+	cp := decode[model.Snapshot](t, w)
+	if cp.Kind != model.SnapshotManual || cp.Name == nil || *cp.Name != "v1.0" {
+		t.Fatalf("checkpoint metadata: %+v", cp)
+	}
+
+	// It is a real capture, listed like any other version.
+	snaps := listSnaps(t, id)
+	if len(snaps) != 1 || snaps[0].ID != cp.ID {
+		t.Fatalf("after checkpoint: want just the checkpoint, got %d snapshots", len(snaps))
+	}
+
+	// Naming an auto capture promotes it in place — same id, now manual.
+	if w := do(t, http.MethodPost, "/api/roadmaps/"+itoa(id)+"/lanes", nameReq{Name: "New lane"}); w.Code != http.StatusCreated {
+		t.Fatalf("add lane: status %d (%s)", w.Code, w.Body.String())
+	}
+	auto := listSnaps(t, id)[0]
+	if auto.Kind != model.SnapshotAuto {
+		t.Fatalf("want an auto capture on top, got %+v", auto)
+	}
+	w = do(t, http.MethodPatch, "/api/snapshots/"+itoa(auto.ID), nameReq{Name: "Before the lane"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("name snapshot: status %d (%s)", w.Code, w.Body.String())
+	}
+	named := decode[model.Snapshot](t, w)
+	if named.ID != auto.ID || named.Kind != model.SnapshotManual || *named.Name != "Before the lane" {
+		t.Fatalf("naming did not promote in place: %+v", named)
+	}
+
+	// Errors.
+	if w := do(t, http.MethodPost, "/api/roadmaps/"+itoa(id)+"/snapshots", nameReq{Name: ""}); w.Code != http.StatusBadRequest {
+		t.Errorf("nameless checkpoint: want 400, got %d", w.Code)
+	}
+	if w := do(t, http.MethodPatch, "/api/snapshots/"+itoa(auto.ID), nameReq{Name: ""}); w.Code != http.StatusBadRequest {
+		t.Errorf("naming with an empty name: want 400, got %d", w.Code)
+	}
+	if w := do(t, http.MethodPost, "/api/roadmaps/0/snapshots", nameReq{Name: "x"}); w.Code != http.StatusNotFound {
+		t.Errorf("checkpoint on missing roadmap: want 404, got %d", w.Code)
+	}
+	if w := do(t, http.MethodPatch, "/api/snapshots/0", nameReq{Name: "x"}); w.Code != http.StatusNotFound {
+		t.Errorf("name missing snapshot: want 404, got %d", w.Code)
+	}
+}

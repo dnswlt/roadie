@@ -30,6 +30,13 @@ func (s *Store) CreateSnapshot(ctx context.Context, roadmapID int64, kind string
 	if kind != model.SnapshotAuto && kind != model.SnapshotManual {
 		return model.Snapshot{}, invalidf("invalid snapshot kind %q", kind)
 	}
+	// A manual snapshot is exempt from pruning, and the client shows its name in
+	// place of its timestamp. An unnamed one would therefore be a row that is
+	// kept forever and reads as an ordinary auto capture — so the name is what
+	// makes it manual, not a decoration on it.
+	if kind == model.SnapshotManual && (name == nil || *name == "") {
+		return model.Snapshot{}, invalidf("a manual snapshot must have a name")
+	}
 	// GetRoadmapFull reads a consistent snapshot, so the captured blob is never
 	// torn by a concurrent edit. Encoding the (immutable) value and inserting it
 	// in a separate transaction is fine: the snapshot represents that committed

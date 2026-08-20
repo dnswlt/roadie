@@ -63,7 +63,8 @@ func newPrivateFixture(t *testing.T) privateFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, nil)
+	cpName := "checkpoint"
+	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, &cpName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +92,7 @@ func (f privateFixture) calls() []apiCall {
 		{"GET /api/roadmaps/{id}/export", "GET", rm("/export"), ""},
 		{"GET /api/roadmaps/{id}/contributors", "GET", rm("/contributors"), ""},
 		{"GET /api/roadmaps/{id}/snapshots", "GET", rm("/snapshots"), ""},
+		{"POST /api/roadmaps/{id}/snapshots", "POST", rm("/snapshots"), `{"name":"v1.0"}`},
 		{"GET /api/roadmaps/{id}/events", "GET", rm("/events"), ""},
 		{"PATCH /api/roadmaps/{id}", "PATCH", rm(""), `{"name":"Stolen"}`},
 		{"PUT /api/roadmaps/{id}/visibility", "PUT", rm("/visibility"), `{"visibility":"public"}`},
@@ -120,6 +122,7 @@ func (f privateFixture) calls() []apiCall {
 		{"DELETE /api/dependencies/{id}", "DELETE", fmt.Sprintf("/api/dependencies/%d", f.dependency), ""},
 
 		{"GET /api/snapshots/{id}", "GET", fmt.Sprintf("/api/snapshots/%d", f.snapshot), ""},
+		{"PATCH /api/snapshots/{id}", "PATCH", fmt.Sprintf("/api/snapshots/%d", f.snapshot), `{"name":"v1.0"}`},
 		{"POST /api/snapshots/{id}/restore", "POST", fmt.Sprintf("/api/snapshots/%d/restore", f.snapshot), ""},
 		{"DELETE /api/snapshots/{id}", "DELETE", fmt.Sprintf("/api/snapshots/%d", f.snapshot), ""},
 

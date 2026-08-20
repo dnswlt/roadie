@@ -337,7 +337,7 @@ func TestRestoreSnapshotKeepsVisibility(t *testing.T) {
 	ctx := context.Background()
 	rm := newOwnedRoadmap(t, "test-"+t.Name(), model.VisibilityPublic, ada)
 
-	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, nil)
+	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, strPtr("checkpoint"))
 	if err != nil {
 		t.Fatal(err)
 	}

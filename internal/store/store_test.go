@@ -1053,7 +1053,7 @@ func TestRoadmapTrash(t *testing.T) {
 		Title: "Item", StartDate: date("2026-01-01"), EndDate: date("2026-02-01")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, nil); err != nil {
+	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, strPtr("checkpoint")); err != nil {
 		t.Fatal(err)
 	}
 

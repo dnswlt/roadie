@@ -686,6 +686,46 @@ export const actions = {
     }
   },
 
+  // saveCheckpoint captures the live roadmap under a name. A named snapshot is
+  // exempt from auto-pruning, so a checkpoint is the state you can still find
+  // and recognise long after the timestamps around it have been thinned out.
+  // Refused while previewing: the capture would be of the live roadmap, not of
+  // the older version on screen. Nothing on the chart changes, so this only
+  // refreshes an open history list.
+  async saveCheckpoint(name: string): Promise<boolean> {
+    if (!state.current || state.preview) return false;
+    try {
+      const snap = await api.createSnapshot(state.current.id, name);
+      // The list is newest-first and this capture is the newest.
+      if (state.history !== null) state.history = [snap, ...state.history];
+      toast(`Saved checkpoint "${name}"`);
+      state.notify();
+      return true;
+    } catch (e) {
+      toast(errMsg(e), true);
+      return false;
+    }
+  },
+
+  // nameSnapshot names a capture that already exists, from the preview banner:
+  // you scrub to a state, recognise it, and only then keep it. The server
+  // promotes it to a manual snapshot, so naming is what makes it survive
+  // pruning — not a label on something already permanent.
+  async nameSnapshot(snapshotId: number, name: string): Promise<boolean> {
+    try {
+      const named = await api.renameSnapshot(snapshotId, name);
+      if (state.history !== null) {
+        state.history = state.history.map((s) => (s.id === named.id ? named : s));
+      }
+      toast(`Saved checkpoint "${name}"`);
+      state.notify();
+      return true;
+    } catch (e) {
+      toast(errMsg(e), true);
+      return false;
+    }
+  },
+
   // closeHistory leaves history browsing entirely. If a snapshot was being
   // previewed, the live roadmap is reloaded to discard it.
   async closeHistory(): Promise<void> {

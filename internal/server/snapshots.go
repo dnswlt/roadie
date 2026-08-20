@@ -201,6 +201,49 @@ func (s *Server) getSnapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, full)
 }
 
+// createSnapshot captures the roadmap's current state as a named checkpoint —
+// a manual snapshot, which pruneAutoSnapshots never touches, so it survives
+// until someone deletes it.
+func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var req nameReq
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	snap, err := s.store.CreateSnapshot(r.Context(), id, model.SnapshotManual, &req.Name)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, snap)
+}
+
+// renameSnapshot names an existing snapshot, which promotes it to manual and so
+// exempts it from pruning: naming a capture is how it stops being disposable.
+func (s *Server) renameSnapshot(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	var req nameReq
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	snap, err := s.store.RenameSnapshot(r.Context(), id, req.Name)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
+}
+
 // restoreSnapshot replaces the snapshot's roadmap with the snapshot's contents.
 // The store captures the pre-restore state first, so this is itself reversible.
 func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) {

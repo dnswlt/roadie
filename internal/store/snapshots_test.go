@@ -298,3 +298,33 @@ func TestSnapshotDeleteAndCascade(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// A manual snapshot's name is what exempts it from pruning and what the client
+// shows in place of its timestamp, so an unnamed one would be kept forever
+// while reading as an ordinary auto capture. The store refuses to create one.
+func TestSnapshotManualRequiresName(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	seedSmallRoadmap(t, rm.ID)
+
+	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, nil); !isValidation(err) {
+		t.Errorf("manual with no name: want validation error, got %v", err)
+	}
+	empty := ""
+	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, &empty); !isValidation(err) {
+		t.Errorf("manual with empty name: want validation error, got %v", err)
+	}
+
+	name := "After the Q3 review"
+	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, &name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Kind != model.SnapshotManual || snap.Name == nil || *snap.Name != name {
+		t.Fatalf("checkpoint metadata: %+v", snap)
+	}
+	// An auto capture still needs no name — that asymmetry is the point.
+	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotAuto, nil); err != nil {
+		t.Fatalf("auto with no name: %v", err)
+	}
+}

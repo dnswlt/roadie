@@ -293,7 +293,7 @@ func TestDependencySnapshotRestore(t *testing.T) {
 	if _, err := testStore.CreateDependency(ctx, rm.ID, itemRef(a.ID), itemRef(b.ID)); err != nil {
 		t.Fatal(err)
 	}
-	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, nil)
+	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, strPtr("checkpoint"))
 	if err != nil {
 		t.Fatal(err)
 	}

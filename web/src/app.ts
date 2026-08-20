@@ -123,6 +123,20 @@ function renderTopbar(): void {
   name.textContent = state.current?.name ?? "No roadmap";
   rmPicker.replaceChildren(name, icons.chevronDown(14));
   rmActions.disabled = !state.current;
+  // A previewed snapshot puts old contents on screen under the live roadmap's
+  // id, so all five of these rows lie. Rename and Edit schedule are refused by
+  // the preview guard in actions.ts, and would offer a dialog that does
+  // nothing; Duplicate, Export and a checkpoint are not mutations, so nothing
+  // guards them from acting on the live roadmap behind the older view. The
+  // rest stay: Copy as Markdown renders what is on screen, visibility and
+  // delete are not snapshotted content, and version history is how you got here.
+  const previewing = state.preview !== null;
+  for (const id of ["rm-rename", "rm-schedule", "rm-duplicate", "rm-export", "rm-checkpoint"]) {
+    const b = $(id) as HTMLButtonElement;
+    b.disabled = previewing;
+    if (previewing) b.title = "Not available while viewing an older version";
+    else b.removeAttribute("title");
+  }
   // Find searches the loaded roadmap, so it has nothing to do without one.
   ($("find-menu") as HTMLButtonElement).disabled = !state.current;
   // Bulk folding follows the action-label convention: when every parent is
@@ -344,6 +358,7 @@ function injectIcons(): void {
   $("filter-menu").append(icons.filter(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
+  $("rm-checkpoint").prepend(icons.tag(14));
   $("rm-history").prepend(icons.history(14));
   $("rm-schedule").prepend(icons.calendar(14));
   $("rm-export").prepend(icons.download(14));
@@ -451,6 +466,13 @@ function wireTopbar(): void {
       false,
     );
     if (ok) void actions.setVisibility(goPrivate ? "private" : "public");
+  });
+  $("rm-checkpoint").addEventListener("click", () => {
+    closeTopbarMenu(menuPop);
+    void (async () => {
+      const name = await promptDialog("Save checkpoint", "", "Save");
+      if (name) void actions.saveCheckpoint(name);
+    })();
   });
   $("rm-history").addEventListener("click", () => {
     closeTopbarMenu(menuPop);

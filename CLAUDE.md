@@ -202,6 +202,8 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **Version history is "go back", not undo.**
+- **A checkpoint is a snapshot with a name**: the name is what promotes it to
+  `kind = manual` and exempts it from pruning. No separate table, flag or concept.
 - **E2E is a smoke layer, not a UI test suite** (`web/e2e`, `make test-e2e`).
   Playwright exists only for what a real browser answers and nothing else can —
   pointer gestures, panel flows whose bug *is* the focus behaviour, and popover
