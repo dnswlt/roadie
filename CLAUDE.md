@@ -227,6 +227,12 @@ Deliberate exceptions and scope limits, so they don't read as bugs:
 - The roadmap **list** is not live — only the open roadmap's contents.
 - **Import always creates a public roadmap** (the owner is recorded, so it can be
   flipped straight after).
+- **The edit rail is a form rendered like a projection.** A rebuild destroys caret,
+  uncommitted text and the drag-resized description height, so five places buy that
+  back: `renderedKey` + activeElement, closeButton's `preventDefault`,
+  `flushPendingEdit`, `events.ts isEditing`, the resize handler's `isConnected`.
+  Building only on selection change and updating values in place is the real fix —
+  it is an invalidation model, so ask first. Panel oddities are usually this seam.
 
 ## Ask first
 

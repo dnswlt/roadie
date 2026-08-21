@@ -339,6 +339,13 @@ function wireDescriptionResize(): void {
     window.addEventListener(
       "pointerup",
       () => {
+        // The panel can be rebuilt between the two events: clicking into the
+        // description commits a pending title edit, and renderPanel's "don't
+        // rebuild under the cursor" guard reads activeElement, which is still
+        // in transit during the blur. Measuring the detached textarea then
+        // yields 0, which would be stored as the height preference and leave
+        // every description at its min-height floor.
+        if (!ta.isConnected) return;
         const h = ta.offsetHeight;
         if (h === before) return;
         panel.style.setProperty("--desc-h", `${h}px`);
