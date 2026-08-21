@@ -163,7 +163,7 @@ function snapshotRow(snap: Snapshot): HTMLButtonElement {
   return row(active, () => void actions.viewSnapshot(snap.id, snap.createdAt), lines);
 }
 
-// sectionHead labels a run of rows in the list ("Checkpoints", "Earlier versions").
+// sectionHead labels a run of rows in the list ("Checkpoints", "Auto-saved").
 function sectionHead(text: string): HTMLElement {
   const h = document.createElement("div");
   h.className = "history-section";
@@ -213,7 +213,9 @@ export function renderHistory(historyEl: HTMLElement, bannerEl: HTMLElement): vo
     // they exist to be recognised, and one that has to be dug out of a
     // collapsed day is not doing that job. The split is exclusive — a
     // checkpoint appears here and not again below — so the day groups hold the
-    // unnamed captures only.
+    // unnamed captures only. Pinning breaks chronology, so the second heading
+    // says what those captures are and never that they are older: a checkpoint
+    // saved last night sits above automatic ones taken this morning.
     const checkpoints = snaps.filter((s) => s.name);
     const rest = snaps.filter((s) => !s.name);
     if (checkpoints.length > 0) {
@@ -221,7 +223,7 @@ export function renderHistory(historyEl: HTMLElement, bannerEl: HTMLElement): vo
       for (const snap of checkpoints) list.append(snapshotRow(snap));
     }
     if (rest.length > 0) {
-      if (checkpoints.length > 0) list.append(sectionHead("Earlier versions"));
+      if (checkpoints.length > 0) list.append(sectionHead("Auto-saved"));
       // Group by day; the most recent day is expanded, older days collapse so a
       // long history reads as a short list of days (snaps are newest-first).
       const latestKey = dayKey(new Date(rest[0]!.createdAt));
