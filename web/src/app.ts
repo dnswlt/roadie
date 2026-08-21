@@ -24,7 +24,7 @@ import { parseSchedule, serializeSchedule } from "./schedule";
 import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, state } from "./state";
 import { type SnapMode } from "./timescale";
 import type { Me } from "./types";
-import { readUrl, type UrlTarget } from "./url";
+import { readUrl, syncUrl, type UrlView } from "./url";
 import { restoreZoom, setZoom, zoomToFit } from "./zoom";
 
 function $(id: string): HTMLElement {
@@ -65,7 +65,20 @@ function snapActive(): boolean {
   return true;
 }
 
+// syncUrlFromState keeps the address bar current, so copying the location bar
+// is all sharing takes. Called from both render scopes: a view switch or a
+// roadmap change is a full notify, a click is a selection notify, and both
+// change what the link should say.
+function syncUrlFromState(): void {
+  syncUrl({
+    roadmap: state.current,
+    view: state.viewMode,
+    selection: state.singleSelection(),
+  });
+}
+
 function render(): void {
+  syncUrlFromState();
   renderTopbar();
   if (state.viewMode === "recon") renderRecon(chart);
   else if (state.viewMode === "wbs") renderWbs(chart);
@@ -993,26 +1006,11 @@ function toggleColorPop(anchor: HTMLElement, laneId: number): void {
   colorPop = openPopover({ root: pop, onDismiss: () => pop.remove() });
 }
 
-// applySelection restores a deep-linked item/milestone selection after its
-// roadmap is loaded. It expands a collapsed parent so the target is on screen,
-// and asks the next render to scroll it into view. It does not notify — boot
-// does, once, at the end.
-function applySelection(sel: UrlTarget["selection"]): void {
-  if (!sel) return;
-  if (sel.kind === "item") {
-    const loc = state.findItem(sel.id);
-    if (!loc) return;
-    if (loc.parent) state.setCollapsed(loc.parent.id, false);
-    state.selectItem(sel.id);
-  } else if (!state.findMilestone(sel.id)) {
-    return;
-  } else {
-    state.selectMilestone(sel.id);
-  }
-  state.scrollToSelection = true;
-}
-
 async function boot(): Promise<void> {
+  // Capture the incoming link first: render() writes the address bar, so the
+  // first notify of the session would overwrite what we are here to read.
+  const target = readUrl();
+
   state.subscribe(render);
   // Selection scope: project onto the chart, re-render only the panel (which
   // guards itself against rebuilding under a focused field).
@@ -1023,6 +1021,7 @@ async function boot(): Promise<void> {
     // their own: they rebuild from state, preserving scroll and query caret.
     else renderRecon(chart);
     renderPanel(panel);
+    syncUrlFromState();
   });
   injectIcons();
   wireTopbar();
@@ -1047,8 +1046,6 @@ async function boot(): Promise<void> {
   ) {
     state.snapMode = storedSnap;
   }
-  // Timeline is the default; only the other value is worth reading back.
-  if (localStorage.getItem("roadie.view") === "wbs") state.viewMode = "wbs";
   const storedWidth = Number(localStorage.getItem("roadie.panelWidth"));
   if (storedWidth) {
     state.panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, storedWidth));
@@ -1059,14 +1056,22 @@ async function boot(): Promise<void> {
   const storedDescHeight = Number(localStorage.getItem("roadie.descriptionHeight"));
   if (storedDescHeight) panel.style.setProperty("--desc-h", `${storedDescHeight}px`);
 
-  // Capture the deep link before anything can rewrite the address bar.
-  const target = readUrl();
-
   // First call of the session, and on an authenticated deployment also the
   // gate: reaching the app with an expired session gets a 401 here, and the
   // api layer navigates to the login flow instead of returning.
   state.me = await api.me();
   renderAccount(state.me);
+
+  // The URL wins over the stored preference, but is not written back to it:
+  // following someone's link should not re-train which view you open in.
+  // Recon is resolved here rather than with the other prefs above because it
+  // needs a tracker — a link from a deployment that has one, or a preference
+  // from before it was removed, lands on the chart instead of on an empty view
+  // whose button isn't even shown.
+  const storedView = localStorage.getItem("roadie.view");
+  const wantView: UrlView =
+    target.view ?? (storedView === "wbs" || storedView === "recon" ? storedView : "timeline");
+  state.viewMode = wantView === "recon" && !state.me.trackerAvailable ? "timeline" : wantView;
 
   await actions.loadRoadmaps();
 
@@ -1080,9 +1085,11 @@ async function boot(): Promise<void> {
 
   if (initial) {
     await actions.selectRoadmap(initial.id);
-    // Only honour the hash selection if we actually landed on its roadmap;
-    // a stale/foreign roadmap id would point the selection at the wrong chart.
-    if (initial.id === target.roadmapId) applySelection(target.selection);
+    // Only honour the linked selection if we actually landed on its roadmap; a
+    // stale/foreign roadmap id would point the selection at the wrong chart.
+    // revealAndSelect, not jumpTo: boot renders once, below.
+    const sel = target.selection;
+    if (sel && initial.id === target.roadmapId) state.revealAndSelect(sel.kind, sel.id);
   }
 
   state.notify();

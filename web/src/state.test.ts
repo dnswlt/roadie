@@ -230,23 +230,23 @@ test("dependency-conflict filter derives both item endpoints and refreshes with 
   state.filter = null;
 });
 
-test("reveal clears filter for a non-matching item, including a retained parent", () => {
+test("jumpTo clears filter for a non-matching item, including a retained parent", () => {
   const parent = item(1, [], false, [item(2, ["keep"], false)]);
   state.current = roadmap([parent]);
   state.filter = { kind: "labels", labels: ["keep"] };
 
   assert.equal(state.matchesFilter(parent), false, "the parent is only a hierarchy breadcrumb");
-  assert.equal(state.revealAndSelect("item", parent.id), true);
+  assert.equal(state.jumpTo("item", parent.id), true);
   assert.equal(state.filter, null);
   assert.equal(state.selectedItemId, parent.id);
 });
 
-test("reveal preserves filter for a direct match", () => {
+test("jumpTo preserves filter for a direct match", () => {
   const matching = item(1, ["keep"], false);
   state.current = roadmap([matching]);
   state.filter = { kind: "labels", labels: ["keep"] };
 
-  assert.equal(state.revealAndSelect("item", matching.id), true);
+  assert.equal(state.jumpTo("item", matching.id), true);
   assert.deepEqual(state.filter, { kind: "labels", labels: ["keep"] });
   assert.equal(state.selectedItemId, matching.id);
 });

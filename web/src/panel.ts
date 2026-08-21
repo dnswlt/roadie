@@ -14,7 +14,6 @@ import { itemMarkdown } from "./markdown";
 import { periodAtEdge, periodDates, periodsByStart } from "./schedule";
 import { state, type MilestoneLocation } from "./state";
 import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./types";
-import { selectionLink } from "./url";
 
 const PANEL_TITLE_ID = "panel-item-title";
 
@@ -193,19 +192,15 @@ export function toggleFlagSelection(): void {
   );
 }
 
-// copyLinkButton builds a "copy shareable link" icon button for the panel head.
-// The link is generated on demand from the current roadmap + this selection —
-// the address bar itself never carries the selection (see url.ts).
-function copyLinkButton(kind: "item" | "milestone", id: number): HTMLButtonElement {
+// copyLinkButton copies the address bar, which already names this selection
+// (see url.ts) — it builds no link of its own. It exists because the location
+// bar is easy to overlook, not because it knows something the URL doesn't.
+function copyLinkButton(): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.className = "icon-btn";
-  btn.title = "Copy link";
+  btn.title = "Copy link to this selection";
   btn.append(icons.link(16));
-  btn.addEventListener("click", () => {
-    const roadmap = state.current;
-    if (!roadmap) return;
-    void copyText(selectionLink(roadmap, kind, id), "Link");
-  });
+  btn.addEventListener("click", () => void copyText(window.location.href, "Link"));
   return btn;
 }
 
@@ -721,7 +716,7 @@ export function renderPanel(panel: HTMLElement): void {
     parent ? "Child item" : "Item",
     depsGraphButton({ kind: "item", id: item.id }),
     copyMarkdownButton(item, lane, parent),
-    copyLinkButton("item", item.id),
+    copyLinkButton(),
     closeButton(),
   );
 
@@ -994,7 +989,7 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   const head = railHead(
     "Milestone",
     depsGraphButton({ kind: "milestone", id: milestone.id }),
-    copyLinkButton("milestone", milestone.id),
+    copyLinkButton(),
     closeButton(),
   );
 

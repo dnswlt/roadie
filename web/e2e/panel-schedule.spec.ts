@@ -60,7 +60,7 @@ async function shown(select: ReturnType<typeof startSelect>): Promise<string> {
 }
 
 async function openItem(page: Page): Promise<void> {
-  await page.goto(`/?roadmap=${seeded.roadmapId}#item-${seeded.items[0]!.id}`);
+  await page.goto(`/?roadmap=${seeded.roadmapId}&item=${seeded.items[0]!.id}`);
   await startSelect(page).waitFor();
 }
 
@@ -181,7 +181,7 @@ test("an invalid typed date stays local and is marked", async ({ page, request }
 
 test("a milestone's Due in lands on the period's last day", async ({ page, request }) => {
   const id = await addMilestone(request, seeded.laneId, "Cutoff", "2026-02-10");
-  await page.goto(`/?roadmap=${seeded.roadmapId}#milestone-${id}`);
+  await page.goto(`/?roadmap=${seeded.roadmapId}&milestone=${id}`);
   const due = page.locator('#panel select[aria-label="Due in period"]');
   await due.waitFor();
   expect(await shown(due)).toBe("—");

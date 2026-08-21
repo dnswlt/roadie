@@ -406,21 +406,20 @@ class AppState {
   // scrolled into view after the switch, so toggling between chart views reads
   // as re-projecting the same spot of the model, not as jumping to an
   // unrelated page. A selected milestone is always renderable in the WBS:
-  // selecting one unfolds its group (see selectMilestone). Recon is not
-  // persisted (see viewMode), so localStorage only ever holds a chart mode.
+  // selecting one unfolds its group (see selectMilestone).
   setViewMode(mode: ViewMode): void {
     if (mode === this.viewMode) return;
     const from = this.viewMode;
     this.viewMode = mode;
     if (mode === "recon") {
       // Captured on the way in rather than assumed to have been recorded
-      // earlier: boot restores a persisted WBS by assigning viewMode directly.
+      // earlier: boot restores a persisted view by assigning viewMode directly.
       // `from` cannot be "recon" — mode is, and the two differ.
       this.lastChartMode = from as ChartMode;
     } else {
       this.lastChartMode = mode;
-      localStorage.setItem("roadie.view", mode);
     }
+    localStorage.setItem("roadie.view", mode);
     if (this.selectedItemIds.size > 0 || this.selectedMilestoneId !== null) {
       this.scrollToSelection = true;
     }
@@ -679,6 +678,19 @@ class AppState {
     }
   }
 
+  // singleSelection is the one selected entity, or null when nothing or several
+  // are selected. The URL names a single target, and a multi-selection has no
+  // honest one — so it carries none rather than an arbitrary member. Item and
+  // milestone selection are mutually exclusive (see selectItem/selectMilestone).
+  singleSelection(): { kind: "item" | "milestone"; id: number } | null {
+    if (this.selectedMilestoneId !== null) {
+      return { kind: "milestone", id: this.selectedMilestoneId };
+    }
+    if (this.selectedItemIds.size !== 1) return null;
+    const [id] = this.selectedItemIds;
+    return { kind: "item", id: id! };
+  }
+
   clearSelection(): boolean {
     if (this.selectedItemIds.size === 0 && this.selectedMilestoneId === null) return false;
     this.selectedItemIds = new Set();
@@ -686,23 +698,27 @@ class AppState {
     return true;
   }
 
-  // revealAndSelect makes an item or milestone visible and selects it,
-  // scrolled into view — the one way to jump to an entity from somewhere else
-  // (the find popup, a dependency row). Resolving against live state first
-  // matters: the caller's reference may be stale (an SSE refresh between
-  // building a list and clicking it), and revealing before resolving would let
-  // a stale row unhide a lane on its way to finding nothing. Reveal must then
-  // precede selection: selecting something unrendered scrolls nowhere, so a
-  // hidden lane is unhidden and a folded parent unfolded. Ends in a full
-  // notify — revealing changes geometry, and only a full render honours the
-  // scroll request. An active item filter is the third way a target can be
-  // off-screen, and it is cleared for the same reason a lane is unhidden: every
-  // caller here means "take me to this". A parent retained only as a matching
-  // child's breadcrumb is still a non-match, so it clears the filter too —
-  // navigation lands on one coherent chart rather than an exception. Callers
-  // that want to report the clearing compare `filter` across the call (find.ts).
-  // Milestones are never filtered, so only items can trigger it. Returns false
-  // if the target no longer exists.
+  // revealAndSelect makes an item or milestone visible and selects it, marked
+  // to be scrolled into view — the shared body behind every jump to an entity
+  // from somewhere else (the find popup, a dependency row, a link opened at
+  // boot). Resolving against live state first matters: the caller's reference
+  // may be stale (an SSE refresh between building a list and clicking it), and
+  // revealing before resolving would let a stale row unhide a lane on its way
+  // to finding nothing. Reveal must then precede selection: selecting something
+  // unrendered scrolls nowhere, so a hidden lane is unhidden and a folded
+  // parent unfolded.
+  // An active item filter is the third way a target can be off-screen, and it
+  // is cleared for the same reason a lane is unhidden: every caller here means
+  // "take me to this". A parent retained only as a matching child's breadcrumb
+  // is still a non-match, so it clears the filter too — navigation lands on one
+  // coherent chart rather than an exception. Callers that want to report the
+  // clearing compare `filter` across the call (find.ts). Milestones are never
+  // filtered, so only items can trigger it. Returns false if the target no
+  // longer exists.
+  //
+  // Deliberately does not render: the scope is the caller's to choose, and boot
+  // has one render of its own at the end. Anything jumping *during* a session
+  // wants jumpTo below.
   revealAndSelect(kind: "item" | "milestone", id: number): boolean {
     const itemLoc = kind === "item" ? this.findItem(id) : null;
     const loc = kind === "item" ? itemLoc : this.findMilestone(id);
@@ -715,6 +731,14 @@ class AppState {
     if (kind === "item") this.selectItem(id);
     else this.selectMilestone(id);
     this.scrollToSelection = true;
+    return true;
+  }
+
+  // jumpTo is revealAndSelect plus a full notify — revealing changes geometry,
+  // and only a full render honours the scroll request. This is what every
+  // in-session "take me to this" calls.
+  jumpTo(kind: "item" | "milestone", id: number): boolean {
+    if (!this.revealAndSelect(kind, id)) return false;
     this.notify();
     return true;
   }

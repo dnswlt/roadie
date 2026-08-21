@@ -41,15 +41,15 @@ function shell(): SearchList {
     showFilterState: true,
     // Close before revealing: a match may have moved or vanished since the
     // list was drawn (an SSE refresh mid-search is not deferred for this
-    // popup — events.ts defers only for the edit panel); revealAndSelect
+    // popup — events.ts defers only for the edit panel); jumpTo
     // resolves against live state and handles both.
     onCommit: (m) => {
       closeFind();
-      // revealAndSelect drops an active filter when the target is outside it.
+      // jumpTo drops an active filter when the target is outside it.
       // Reading `filter` across the call says so without a second lookup, and
       // without this popup having to re-derive what "outside" means.
       const wasFiltered = state.filter !== null;
-      const revealed = state.revealAndSelect(m.kind, m.id);
+      const revealed = state.jumpTo(m.kind, m.id);
       if (revealed && wasFiltered && state.filter === null) {
         toast(`Filter cleared to show "${m.title || "(untitled)"}"`);
       }

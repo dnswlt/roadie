@@ -145,7 +145,7 @@ function depRow(dep: Dependency, far: DependencyRef, rerender: () => void): HTML
   title.className = "dep-go-title";
   title.textContent = disp.title || "(untitled)";
   go.append(title);
-  go.addEventListener("click", () => state.revealAndSelect(far.kind, far.id));
+  go.addEventListener("click", () => state.jumpTo(far.kind, far.id));
 
   const x = document.createElement("button");
   x.className = "icon-btn dep-x";
@@ -379,7 +379,7 @@ function renderGraph(dlg: HTMLDialogElement, ref: DependencyRef): void {
   show.textContent = "Show on chart";
   show.addEventListener("click", () => {
     dlg.close();
-    state.revealAndSelect(ref.kind, ref.id);
+    state.jumpTo(ref.kind, ref.id);
   });
   const close = document.createElement("button");
   close.type = "button";

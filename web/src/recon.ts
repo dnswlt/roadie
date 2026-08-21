@@ -575,7 +575,7 @@ function roadieItemRow(item: UnreferencedRoadieItem): HTMLElement {
     ? `${laneName} › ${item.parentTitle || "(untitled)"}`
     : laneName;
   open.append(dot, title, context);
-  open.addEventListener("click", () => state.revealAndSelect("item", item.itemId));
+  open.addEventListener("click", () => state.jumpTo("item", item.itemId));
   const link = document.createElement("button");
   link.type = "button";
   link.className = "icon-btn recon-roadie-link";
@@ -595,7 +595,7 @@ function roadieItemRow(item: UnreferencedRoadieItem): HTMLElement {
     section = "issues";
     // Besides opening the edit rail, this keeps the target highlighted when
     // the user returns to WBS/timeline after linking.
-    state.revealAndSelect("item", item.itemId);
+    state.jumpTo("item", item.itemId);
   });
   row.append(open, link);
   return row;
@@ -930,7 +930,7 @@ function issueRow({ issue, matches }: ReconciledIssue, target: ItemLocation | nu
       // Use the same cross-view jump as Find and dependency links. Besides
       // feeding the edit panel, this makes a hidden/folded item renderable and
       // leaves scrollToSelection set for the next WBS/timeline render.
-      item.addEventListener("click", () => state.revealAndSelect("item", match.itemId));
+      item.addEventListener("click", () => state.jumpTo("item", match.itemId));
       linked.append(item);
     }
     row.append(linked);

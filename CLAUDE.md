@@ -201,6 +201,8 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   surface (that was the bug).
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
+- **The address bar is the shareable link**: roadmap, view and one selection,
+  never zoom, scroll, filter or folds. Selection is a query param, not a fragment.
 - **Version history is "go back", not undo.**
 - **A checkpoint is a snapshot with a name**: the name is what promotes it to
   `kind = manual` and exempts it from pruning. No separate table, flag or concept.

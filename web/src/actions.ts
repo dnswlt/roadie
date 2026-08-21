@@ -17,7 +17,6 @@ import type {
   NewSchedulePeriod,
   Visibility,
 } from "./types";
-import { setRoadmapUrl } from "./url";
 
 type ItemMetadataPatch = Pick<ItemPatch, "priority" | "flagged" | "tentative" | "atRisk">;
 
@@ -162,7 +161,6 @@ export const actions = {
       state.loadWbsMsCollapsed();
       state.scrollToToday = true;
       localStorage.setItem("roadie.roadmap", String(id));
-      setRoadmapUrl(state.current);
       connectEvents(id); // (re)subscribe to this roadmap's live change stream
       state.notify();
     } catch (e) {
@@ -244,8 +242,6 @@ export const actions = {
       },
       () => api.renameRoadmap(id, name),
     );
-    // Refresh the decorative name slug in the address bar (id is unchanged).
-    setRoadmapUrl(state.current);
   },
 
   // deleteRoadmap moves the current roadmap to the trash and leaves it: the
@@ -262,10 +258,7 @@ export const actions = {
       state.clearSelection();
       const next = state.roadmaps[0];
       if (next) await this.selectRoadmap(next.id);
-      else {
-        setRoadmapUrl(null);
-        state.notify();
-      }
+      else state.notify();
       toast(`Moved "${name}" to the trash`);
     } catch (e) {
       toast(errMsg(e), true);
