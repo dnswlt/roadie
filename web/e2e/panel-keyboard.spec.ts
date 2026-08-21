@@ -44,3 +44,22 @@ test("Escape saves a description edit and retains the item selection", async ({ 
     .poll(async () => (await laneItems(request, seeded.roadmapId, seeded.laneId))[0]!.description)
     .toBe("Saved by Escape");
 });
+
+test("Tab from a changed title lands in the description", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("roadie.view", "timeline"));
+  await page.goto(`/?roadmap=${seeded.roadmapId}&item=${seeded.items[0]!.id}`);
+
+  const title = page.locator("#panel .panel-title-input");
+  const description = page.locator("#panel textarea");
+  await title.fill("Renamed by Tab");
+
+  const saved = page.waitForResponse(
+    (res) =>
+      res.url().endsWith(`/api/items/${seeded.items[0]!.id}`) &&
+      res.request().method() === "PATCH",
+  );
+  await title.press("Tab");
+  await saved;
+
+  await expect(description).toBeFocused();
+});

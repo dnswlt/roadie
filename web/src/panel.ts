@@ -221,6 +221,19 @@ function copyMarkdownButton(item: Item, lane: LaneFull, parent: ItemFull | null)
   return btn;
 }
 
+// Panel saves notify synchronously, before focus has finished moving. Keep the
+// current controls for that render so Tab can reach its intended destination.
+let savingPanelField = false;
+
+function savePanelField(save: () => void): void {
+  savingPanelField = true;
+  try {
+    save();
+  } finally {
+    savingPanelField = false;
+  }
+}
+
 // Identifies what the panel currently shows, e.g. "item:5" or "ms:3", so a
 // re-render can skip rebuilding the panel under the user's cursor.
 let renderedKey: string | null = null;
@@ -597,7 +610,9 @@ function itemDateEditor(item: Item): DateEditorRows {
     const patch: { startDate?: string; endDate?: string } = {};
     if (next.startDate !== previous.startDate) patch.startDate = next.startDate;
     if (next.endDate !== previous.endDate) patch.endDate = next.endDate;
-    if (patch.startDate || patch.endDate) void actions.updateItem(item.id, patch);
+    if (patch.startDate || patch.endDate) {
+      savePanelField(() => void actions.updateItem(item.id, patch));
+    }
   };
   function edit(edge: "start" | "end", date: string): void {
     commit(editRangeDate(edge, date, value));
@@ -632,7 +647,9 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
   const commit = (next: string): void => {
     const previous = value;
     show(next);
-    if (next !== previous) void actions.updateMilestone(milestone.id, { date: next });
+    if (next !== previous) {
+      savePanelField(() => void actions.updateMilestone(milestone.id, { date: next }));
+    }
   };
   const date = dateField("Date", "Choose date", "end", commit);
 
@@ -700,9 +717,10 @@ export function renderPanel(panel: HTMLElement): void {
     return;
   }
 
-  // Don't rebuild under the user's cursor while they are typing.
+  // Don't rebuild under the user's cursor while they are typing, and don't
+  // rebuild out from under a commit that is handing focus to the next field.
   const key = `item:${loc.item.id}`;
-  if (renderedKey === key && panel.contains(document.activeElement)) {
+  if (renderedKey === key && (savingPanelField || panel.contains(document.activeElement))) {
     return;
   }
   renderedKey = key;
@@ -728,14 +746,18 @@ export function renderPanel(panel: HTMLElement): void {
   title.control.id = PANEL_TITLE_ID;
   title.control.addEventListener("change", () => {
     const v = title.control.value.trim();
-    if (v && v !== item.title) void actions.updateItem(item.id, { title: v });
+    if (v && v !== item.title) {
+      savePanelField(() => void actions.updateItem(item.id, { title: v }));
+    }
   });
 
   const desc = field("Description", "textarea");
   (desc.control as HTMLTextAreaElement).value = item.description;
   desc.control.addEventListener("change", () => {
     const v = (desc.control as HTMLTextAreaElement).value;
-    if (v !== item.description) void actions.updateItem(item.id, { description: v });
+    if (v !== item.description) {
+      savePanelField(() => void actions.updateItem(item.id, { description: v }));
+    }
   });
 
   const linksSection = createLinksSection(desc.control as HTMLTextAreaElement);
@@ -925,7 +947,8 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
   }
 
   let labels = [...item.labels];
-  const commit = () => void actions.updateItem(item.id, { labels: [...labels] });
+  const commit = () =>
+    savePanelField(() => void actions.updateItem(item.id, { labels: [...labels] }));
 
   const renderChips = () => {
     chips.replaceChildren();
@@ -978,8 +1001,9 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
 function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   const { milestone, lane } = loc;
   const key = `ms:${milestone.id}`;
-  // Don't rebuild under the user's cursor while they are typing.
-  if (renderedKey === key && body.contains(document.activeElement)) {
+  // Don't rebuild under the user's cursor while they are typing, and don't
+  // rebuild out from under a commit that is handing focus to the next field.
+  if (renderedKey === key && (savingPanelField || body.contains(document.activeElement))) {
     return;
   }
   renderedKey = key;
@@ -1001,7 +1025,9 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   title.control.id = PANEL_TITLE_ID;
   title.control.addEventListener("change", () => {
     const v = title.control.value.trim();
-    if (v && v !== milestone.title) void actions.updateMilestone(milestone.id, { title: v });
+    if (v && v !== milestone.title) {
+      savePanelField(() => void actions.updateMilestone(milestone.id, { title: v }));
+    }
   });
 
   const dates = milestoneDateEditor(milestone);
@@ -1010,7 +1036,9 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   (desc.control as HTMLTextAreaElement).value = milestone.description;
   desc.control.addEventListener("change", () => {
     const v = (desc.control as HTMLTextAreaElement).value;
-    if (v !== milestone.description) void actions.updateMilestone(milestone.id, { description: v });
+    if (v !== milestone.description) {
+      savePanelField(() => void actions.updateMilestone(milestone.id, { description: v }));
+    }
   });
 
   const linksSection = createLinksSection(desc.control as HTMLTextAreaElement);
