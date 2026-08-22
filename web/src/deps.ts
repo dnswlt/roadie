@@ -8,11 +8,10 @@
 // owns its DOM and re-renders itself after every local mutation: while its
 // input has focus, the panel deliberately skips its own rebuild.
 //
-// The local graph overlay: one entity with its one-hop neighborhood, drawn
-// topologically (prerequisites → node → dependents), deliberately *not* on the
-// timeline — the chart projects time, and dependency arrows across it are the
-// spaghetti this feature exists to avoid. One hop plus click-to-recenter gives
-// full graph traversal without ever laying out a global graph.
+// The local graph dialog: one entity with its one-hop neighborhood, drawn
+// topologically (prerequisites → node → dependents). The panel button keeps
+// this topology-only view available beside the selection-scoped timeline focus
+// in deps-timeline.ts.
 //
 // Graph derivations live in deps-graph.ts (DOM-free, tested).
 
@@ -231,8 +230,8 @@ function spanText(ref: DependencyRef): string {
   return `${from} – ${formatDay(dayOf(dates.end))}`;
 }
 
-// openDepsForSelection is the "d" shortcut: the graph of the selected item or
-// milestone. Needs exactly one target, like "e" — selectedItemId is null for a
+// The "d" shortcut has the same topology-dialog meaning in every chart view.
+// It needs exactly one target, like "e"; selectedItemId is null for a
 // multi-selection, so it no-ops there.
 export function openDepsForSelection(): void {
   const msId = state.selectedMilestoneId;

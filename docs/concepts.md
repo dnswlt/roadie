@@ -84,8 +84,9 @@ Roadie therefore warns only when a prerequisite is scheduled to finish after the
 work depending on it, not when the two merely overlap. It never reschedules the
 plan automatically.
 
-Roadie shows an entity's immediate prerequisites and dependents in a local
-graph, avoiding a spaghetti of dependency lines across the timeline.
+Roadie shows an entity's immediate prerequisites and dependents, never the
+whole graph at once. A chain is followed by moving from one entity to the next,
+which is what keeps the plan free of a spaghetti of dependency lines.
 
 ## Item metadata
 

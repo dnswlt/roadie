@@ -3,6 +3,7 @@
 
 import { laneColorValue } from "./colors";
 import { type DepSummary, refKey } from "./deps-graph";
+import { renderTimelineDependencies } from "./deps-timeline";
 
 import { icons } from "./icons";
 import {
@@ -138,6 +139,7 @@ export function renderChart(container: HTMLElement): void {
 
   grid.append(thead, lanesEl, addRow);
   container.append(grid);
+  renderTimelineDependencies(container);
 
   const selectedEl = state.scrollToSelection
     ? container.querySelector<HTMLElement>(".block.selected, .child-bar.selected, .milestone.selected")
@@ -184,6 +186,7 @@ export function projectSelection(container: HTMLElement): void {
   for (const el of container.querySelectorAll<HTMLElement>(".milestone")) {
     el.classList.toggle("selected", state.selectedMilestoneId === Number(el.dataset.milestoneId));
   }
+  renderTimelineDependencies(container);
 }
 
 // SCHEDULE_LABEL_PX: hide a period's label below this width, like the months
@@ -611,9 +614,10 @@ export function riskMark(atRisk: boolean): Node {
 // colour, for the flag's reason — when the calendar contradicts one of those
 // edges, which is the one dependency state worth interrupting someone for.
 //
-// It carries no tooltip and no click: "d" opens the graph overlay, which
-// answers what and why far better than a hover ever would, and staying inert
-// keeps it out of the drag controllers' way like the rest of the furniture.
+// It carries no tooltip and no click: the topbar dependency control opens the
+// timeline focus, while the panel button and "d" open the topology graph.
+// Staying inert keeps it out of the drag controllers' way like the rest of the
+// furniture.
 export function depMark(summary: DepSummary | undefined): Node {
   if (!summary) return document.createTextNode("");
   const el = document.createElement("span");

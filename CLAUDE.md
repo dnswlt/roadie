@@ -174,9 +174,11 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   labels (the user-colored-star argument again). Stored prerequisite → dependent;
   roadmap-scoped only; a DAG, enforced in the store with rejections that name the
   conflicting chain. Nesting implies no edges.
-- **Dependencies are never drawn on the timeline.** The chart projects time;
-  edges across it are the spaghetti this feature avoids. The local one-hop
-  overlay (`deps.ts`, recenter by clicking) is the only graph projection.
+- **Timeline dependencies are a one-hop focus, never a global edge layer.** The
+  toolbar draws the selection's incident edges at their chart positions, with
+  arrows from prerequisites to dependents. The toolbar alone toggles it;
+  selecting a connected entity recenters it. `d` and the panel open the
+  topology dialog. Never draw every roadmap edge at once.
 - **Tentative and at-risk are booleans, not workflow status** — no confidence
   percentages, no off-track/blocked/done; both coexist with the flag. Tentative
   is a sawtooth silhouette (`.bar-shape`), never opacity, which means hierarchy.
@@ -206,17 +208,14 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **Version history is "go back", not undo.**
 - **A checkpoint is a snapshot with a name**: the name is what promotes it to
   `kind = manual` and exempts it from pruning. No separate table, flag or concept.
-- **E2E is a smoke layer, not a UI test suite** (`web/e2e`, `make test-e2e`).
-  Playwright exists only for what a real browser answers and nothing else can —
-  pointer gestures, panel flows whose bug *is* the focus behaviour, and popover
-  exclusivity (event phase across surfaces) — and every
-  test follows one pattern: **seed via API, act in the browser, assert via API,
-  purge**. The UI is the actuator, the model is the oracle: no screenshots, and
-  the only selectors are the class contracts the controllers themselves hit-test.
-  A DOM assertion needs client-only state the server cannot be asked about (a
-  `.selected` class, which period a dropdown displays) and a note in the spec
-  saying so. Tests run against the open-auth server on their own port and
-  create/purge their own roadmaps, so a live dev DB is safe.
+- **E2E is a browser smoke layer, not visual regression testing** (`web/e2e`,
+  `make test-e2e`). Use Playwright only where browser behaviour is the subject:
+  pointer gestures, focus and event ordering, client-only projections, or
+  relational geometry such as containment. Seed and purge through the API;
+  assert persisted mutations through the API and client-only behaviour through
+  stable DOM contracts. Never assert screenshots, exact pixels, CSS values, or
+  logic a DOM-free unit test can pin. A DOM-only spec says why it needs a browser.
+  Tests use the open-auth server on their own port, so a live dev DB is safe.
 
 Deliberate exceptions and scope limits, so they don't read as bugs:
 
@@ -236,11 +235,11 @@ Deliberate exceptions and scope limits, so they don't read as bugs:
 
 ## Ask first
 
-A third render scope · multi-track schedule · e2e tests outside the seed/act/
-assert-via-API pattern (screenshots, DOM assertions beyond client-only state,
-anything a DOM-free module could have pinned) · a second flag ·
+A third render scope · multi-track schedule · e2e tests outside the browser-only
+smoke scope (screenshots, exact visual assertions, logic a DOM-free module could
+pin) · a second flag ·
 changing what `-auth=off` does · dependency edge attributes or kinds · drawing
-dependencies on the timeline.
+non-local dependencies on the timeline.
 
 ## Verification
 
@@ -248,7 +247,6 @@ Beyond `make test` / `make check`, UI changes must be exercised in a real browse
 **by the user, by hand** — there is no DOM test runner here. Test pure logic by
 extracting it into a DOM-free module (`links.ts` ← `links.test.ts`, `search.ts`,
 `timescale.ts`, `schedule.ts`, `snap.ts`); frontend tests are `node:test` files
-next to their source, transpiled into `web/test-out/`. Pointer gestures — the one
-thing neither route covers — are pinned by the e2e smoke layer (`web/e2e`; see the
-settled pattern below). When a change needs eyes on it, say so and describe what
-to look at.
+next to their source, transpiled into `web/test-out/`. Browser-only wiring and
+geometry are pinned selectively by the e2e smoke layer (`web/e2e`). When a
+change needs eyes on it, say so and describe what to look at.

@@ -9,6 +9,8 @@
   --grid: #eef0f3;
   --grid-strong: #dfe3e8;
   --focus: #94a3b8;
+  --brand: #4f46e5;
+  --brand-hover: #4338ca;
   --danger: #c92c2c;
   --danger-soft: #fdeaea;
   /* Notice tone for "you're in a special mode" surfaces (the snapshot-preview
@@ -179,14 +181,14 @@ body {
    than ink: since the Home chip put the brand color into the chrome, a black
    primary read as a stray. Soft chip = place (Home), solid indigo = action. */
 .btn-primary {
-  background: #4f46e5;
-  border-color: #4f46e5;
+  background: var(--brand);
+  border-color: var(--brand);
   color: #fff;
 }
 
 .btn-primary:hover {
-  background: #4338ca;
-  border-color: #4338ca;
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
 }
 
 .btn-danger {
@@ -238,7 +240,7 @@ body {
   cursor: default;
 }
 
-/* Bare topbar buttons hidden per view (fold-all and view-recon,
+/* Bare topbar buttons hidden per view (fold-all, deps-toggle and view-recon,
    renderTopbar). Wrapped buttons hide via .menu-wrap.hidden instead. */
 .icon-btn.hidden {
   display: none;
@@ -1498,6 +1500,73 @@ kbd {
   pointer-events: none;
 }
 
+/* Dependency focus is a one-hop projection over the real timeline geometry.
+   The overlay is inert and lives in the scrolling lane content, so paths move
+   with their endpoints without participating in hit-testing or scroll work. */
+.timeline-deps-overlay {
+  position: absolute;
+  inset: 0;
+  /* Above item content so arrowheads remain visible at finish edges; below the
+     sticky context rail (12) and time header (20). */
+  z-index: 11;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.timeline-deps-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.timeline-dep-edge {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.75;
+  opacity: 0.78;
+}
+
+.timeline-dep-edge.dep-conflict {
+  stroke: var(--flag);
+  stroke-width: 2.25;
+  opacity: 1;
+}
+
+.timeline-dep-arrow-guide {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 1;
+}
+
+.timeline-dep-arrow {
+  fill: var(--ink-2);
+}
+
+.timeline-dep-arrow.dep-conflict {
+  fill: var(--flag);
+}
+
+.timeline-deps-note {
+  position: absolute;
+  width: max-content;
+  max-width: 280px;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in oklab, var(--brand) 36%, var(--surface));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--brand) 12%, var(--surface));
+  box-shadow: var(--shadow);
+  color: color-mix(in oklab, var(--brand) 62%, var(--ink));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* A drag preview intentionally has no live edge routing. Hiding the stale
+   paths is enough: commit/cancel already restores the chart from state. */
+.chart-scroll:has(.dragging, .lane-dragging) .timeline-deps-overlay {
+  display: none;
+}
+
 .drag-tooltip {
   position: fixed;
   z-index: 100;
@@ -2314,7 +2383,7 @@ dialog input:focus {
 .vis-chips .prio-chip.active {
   color: #fff;
   border-color: transparent;
-  background: #4f46e5;
+  background: var(--brand);
 }
 
 /* The padlock marking a private roadmap in Home's list. Pushed to the trailing
@@ -2942,6 +3011,13 @@ button.deps-node:hover {
 .icon-btn.active {
   color: var(--ink);
   background: color-mix(in oklab, var(--focus) 26%, transparent);
+}
+
+/* Dependency mode and its chart notes share the brand tint, so the badge
+   reads as feedback from the pressed control rather than a stray tooltip. */
+#deps-toggle.active {
+  color: var(--brand);
+  background: color-mix(in oklab, var(--brand) 14%, transparent);
 }
 
 /* A non-matching parent remains only when one of its children matches the

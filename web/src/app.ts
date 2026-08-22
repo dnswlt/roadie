@@ -3,6 +3,10 @@ import { actions } from "./actions";
 import { api } from "./api";
 import { LANE_COLOR_ORDER, laneColorValue } from "./colors";
 import { confirmDialog, promptDialog } from "./dialogs";
+import {
+  timelineDependenciesActive,
+  toggleTimelineDependencies,
+} from "./deps-timeline";
 import { initDnd } from "./dnd";
 import { initEvents, refreshNow } from "./events";
 import { initFind } from "./find";
@@ -166,6 +170,7 @@ function renderTopbar(): void {
         ? "Expand all child items"
         : "Collapse all child items";
   foldAll.disabled = !state.hasParentItems() || state.filter !== null;
+  renderDependencyToggle();
   renderVisibilityItem();
   // Surface an active filter even while the dropdown is closed.
   $("filter-menu").classList.toggle("active", state.filter !== null);
@@ -197,6 +202,19 @@ function renderTopbar(): void {
   $("lane-vis-wrap").classList.toggle("hidden", recon);
   $("filter-wrap").classList.toggle("hidden", recon);
   $("fold-all").classList.toggle("hidden", recon);
+}
+
+// Dependency focus is a timeline viewing mode rather than an action on the
+// selected entity. Its pressed state therefore remains visible even when no
+// entity is selected; choosing one then projects its incident connections.
+function renderDependencyToggle(): void {
+  const btn = $("deps-toggle") as HTMLButtonElement;
+  const active = timelineDependenciesActive();
+  btn.classList.toggle("hidden", state.viewMode !== "timeline");
+  btn.classList.toggle("active", active);
+  btn.setAttribute("aria-pressed", String(active));
+  btn.disabled = !state.current;
+  btn.title = active ? "Hide dependency connections" : "Show dependency connections";
 }
 
 // buildSnapMenu (re)populates the snap-grid popover: one row per mode, the
@@ -376,6 +394,7 @@ function injectIcons(): void {
   $("find-menu").append(icons.search(18));
   $("lane-vis-menu").append(icons.eye(18));
   $("filter-menu").append(icons.filter(18));
+  $("deps-toggle").append(icons.diagramMerge(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
   $("rm-checkpoint").prepend(icons.tag(14));
@@ -529,6 +548,7 @@ function wireTopbar(): void {
   $("fold-all").addEventListener("click", () => {
     state.setAllParentsCollapsed(!state.allParentsCollapsed());
   });
+  $("deps-toggle").addEventListener("click", () => toggleTimelineDependencies());
   $("zoom-fit").addEventListener("click", () => zoomToFit());
   $("zoom-in").addEventListener("click", () => setZoom(state.pxPerDay * 1.4));
   $("zoom-out").addEventListener("click", () => setZoom(state.pxPerDay / 1.4));
@@ -1028,6 +1048,7 @@ async function boot(): Promise<void> {
     // their own: they rebuild from state, preserving scroll and query caret.
     else renderRecon(chart);
     renderPanel(panel);
+    renderDependencyToggle();
     syncUrlFromState();
   });
   injectIcons();
