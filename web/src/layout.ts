@@ -24,19 +24,18 @@ export const MS_ROW_H = 20;
 
 // Geometry of a milestone's band label, mirrored by .milestone-label in
 // styles.css: the label's left edge sits MS_LABEL_LEFT px right of the
-// diamond's center (the 13px diamond box plus a 6px gap, minus half the box),
-// MS_LABEL_CLEAR keeps it short of the next diamond's tip and drop-line, and
-// MS_DIAMOND_HALF is how far the diamond itself reaches left of that center.
+// diamond's center (the 13px diamond box plus a 6px gap, minus half the box).
+// MS_LABEL_CLEAR is measured back from the next milestone's center; 14px
+// clears the rotated diamond's roughly 9px half-width plus a small gap.
 export const MS_LABEL_LEFT = 12.5;
 export const MS_LABEL_CLEAR = 14;
-const MS_DIAMOND_HALF = 6.5;
 
-// A very long title claims a whole row to itself and pushes its neighbors
-// down, which costs more vertical space than the title is worth reading in
-// full. Past this it ellipsizes in place instead (the renderer's --avail
-// budget), so row count tracks how crowded the dates are and not how verbose
-// the titles are.
-const MS_LABEL_MAX = 160;
+// Milestone titles have no expanded state on the timeline, so this is primarily
+// a readability limit, not a row-saving heuristic. 320px leaves ordinary long
+// titles useful at a glance while still bounding pathological names. It covers
+// the complete label, dependency mark included, and is shared by rendering and
+// packing so their geometry stays exact.
+export const MS_LABEL_MAX = 320;
 
 export interface MilestoneRows {
   rowOf: Map<number, number>;
@@ -59,16 +58,15 @@ export interface MilestoneRows {
 export function packMilestoneRows(
   milestones: Milestone[],
   scale: Scale,
-  labelWidth: (title: string) => number,
+  labelWidth: (milestone: Milestone) => number,
 ): MilestoneRows {
   const rowEnds: number[] = []; // x at which each row becomes free again
   const rowOf = new Map<number, number>();
   for (const m of milestones) {
     const x = xOf(scale, dayOf(m.date));
-    const left = x - MS_DIAMOND_HALF;
     const right =
-      x + MS_LABEL_LEFT + Math.min(labelWidth(m.title), MS_LABEL_MAX) + MS_LABEL_CLEAR;
-    let row = rowEnds.findIndex((end) => end <= left);
+      x + MS_LABEL_LEFT + Math.min(labelWidth(m), MS_LABEL_MAX) + MS_LABEL_CLEAR;
+    let row = rowEnds.findIndex((end) => end <= x);
     if (row === -1) {
       row = rowEnds.length;
       rowEnds.push(right);
@@ -99,6 +97,7 @@ export interface PlacedBlock {
 
 export interface LaneLayout {
   blocks: PlacedBlock[];
+  milestoneRowOf: Map<number, number>;
   height: number;
 }
 
@@ -120,7 +119,7 @@ export function blockHeight(numChildren: number): number {
     : PARENT_BAR_H + CHILD_GAP + numChildren * (CHILD_H + CHILD_GAP);
 }
 
-// layoutLane places a lane's items. `labelWidth` measures a milestone title,
+// layoutLane places a lane's items. `labelWidth` measures a milestone label,
 // which decides how many band rows the milestones need and so where the first
 // item starts; it has no default because a wrong width silently overlaps
 // labels, unlike `isCollapsed`, whose default of "nothing folded" is simply
@@ -129,10 +128,14 @@ export function blockHeight(numChildren: number): number {
 export function layoutLane(
   lane: LaneFull,
   scale: Scale,
-  labelWidth: (title: string) => number,
+  labelWidth: (milestone: Milestone) => number,
   isCollapsed: (itemId: number) => boolean = () => false,
 ): LaneLayout {
-  const rowCount = packMilestoneRows(lane.milestones, scale, labelWidth).rowCount;
+  const { rowOf: milestoneRowOf, rowCount } = packMilestoneRows(
+    lane.milestones,
+    scale,
+    labelWidth,
+  );
   let y = LANE_PAD + (rowCount === 0 ? 0 : MILESTONE_BAND + (rowCount - 1) * MS_ROW_H);
   const blocks: PlacedBlock[] = lane.items.map((item) => {
     const span = spanOf(item, scale);
@@ -153,5 +156,5 @@ export function layoutLane(
     return block;
   });
   const height = Math.max(MIN_LANE_H, y - BLOCK_GAP + LANE_PAD);
-  return { blocks, height };
+  return { blocks, milestoneRowOf, height };
 }

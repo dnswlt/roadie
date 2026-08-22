@@ -93,9 +93,23 @@ export async function addItemDependency(
   fromId: number,
   toId: number,
 ): Promise<void> {
+  await addDependency(
+    request,
+    roadmapId,
+    { kind: "item", id: fromId },
+    { kind: "item", id: toId },
+  );
+}
+
+export async function addDependency(
+  request: APIRequestContext,
+  roadmapId: number,
+  from: { kind: "item" | "milestone"; id: number },
+  to: { kind: "item" | "milestone"; id: number },
+): Promise<void> {
   await post(request, `/api/roadmaps/${roadmapId}/dependencies`, {
-    from: { kind: "item", id: fromId },
-    to: { kind: "item", id: toId },
+    from,
+    to,
   });
 }
 

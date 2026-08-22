@@ -8,12 +8,10 @@ import { renderTimelineDependencies } from "./deps-timeline";
 import { icons } from "./icons";
 import {
   LABEL_W,
-  MS_LABEL_CLEAR,
-  MS_LABEL_LEFT,
+  MS_LABEL_MAX,
   MS_ROW_H,
   PARENT_BAR_H,
   layoutLane,
-  packMilestoneRows,
   type PlacedBlock,
 } from "./layout";
 import { extractLinks } from "./links";
@@ -44,6 +42,10 @@ let depSums = new Map<string, DepSummary>();
 // depsOf looks up an item's summary for this pass. Undefined = no edges.
 function depsOf(item: Item): DepSummary | undefined {
   return depSums.get(refKey({ kind: "item", id: item.id }));
+}
+
+function milestoneDeps(milestone: Milestone): DepSummary | undefined {
+  return depSums.get(refKey({ kind: "milestone", id: milestone.id }));
 }
 
 export function currentScale(): Scale {
@@ -263,7 +265,7 @@ export function laneLabel(lane: LaneFull): HTMLElement {
 // `lane` arrives already projected (state.projection), so what it holds is
 // what this draws; the fold callback is what still removes children.
 function renderLane(lane: LaneFull, chartW: number): HTMLElement {
-  const layout = layoutLane(lane, scale, labelWidth, (id) => state.rendersCollapsed(id));
+  const layout = layoutLane(lane, scale, milestoneLabelWidth, (id) => state.rendersCollapsed(id));
   const laneEl = div("lane");
   laneEl.dataset.laneId = String(lane.id);
   laneEl.style.setProperty("--c", laneColorValue(lane.color));
@@ -300,18 +302,10 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
     canvas.append(renderBlock(block));
   }
 
-  // Milestone diamonds live in a reserved band at the lane top, each on the row
-  // packMilestoneRows (layout.ts) gave it. A title prints to the right of its
-  // diamond, budgeted to the space before the next milestone sharing that row
-  // (the model keeps them date-sorted, so a forward scan finds it); when even a
-  // sliver won't fit, the label stays hidden and hover/selection reveals it.
-  const { rowOf } = packMilestoneRows(lane.milestones, scale, labelWidth);
-  lane.milestones.forEach((m, i) => {
-    const row = rowOf.get(m.id) ?? 0;
-    const next = lane.milestones.slice(i + 1).find((n) => rowOf.get(n.id) === row);
-    const limit = next ? xOf(scale, dayOf(next.date)) - MS_LABEL_CLEAR : chartW - 4;
-    canvas.append(renderMilestone(m, limit - (xOf(scale, dayOf(m.date)) + MS_LABEL_LEFT), row));
-  });
+  // layoutLane already packed these labels when it sized the milestone band.
+  for (const m of lane.milestones) {
+    canvas.append(renderMilestone(m, layout.milestoneRowOf.get(m.id) ?? 0));
+  }
 
   laneEl.append(laneLabel(lane), canvas);
   return laneEl;
@@ -327,39 +321,20 @@ function renderMilestoneLine(m: Milestone): HTMLElement {
   return line;
 }
 
-// Below this much room a label is hidden rather than ellipsized down to
-// nothing; hover/selection still reveals it. Packing normally prevents it —
-// this catches the leftovers, such as a title measured slightly narrower than
-// it renders. The rest of the band geometry lives in layout.ts, which needs it
-// to size the band.
-const MS_LABEL_MIN = 24;
-
-// renderMilestone builds a diamond plus its band label. `labelPx` is the
-// horizontal room the label may use: enough gets an ellipsized always-visible
-// title, less gets a hidden one that hover/selection reveals as a chip painted
-// over the neighbors (which also replaces the old native title tooltip — too
-// slow to be useful, and it would double up with the reveal). The budget rides
-// in a CSS custom property rather than an inline max-width so the stylesheet's
-// hover/selected rules can override it without !important. `row`
-// (packMilestoneRows) is the band row this milestone prints on; row 0 needs no
-// inline offset since it is the CSS default.
-function renderMilestone(m: Milestone, labelPx: number, row: number): HTMLElement {
+// renderMilestone builds a diamond plus its band label. `row` is the band row
+// layoutLane assigned it; row 0 needs no inline offset since it is the CSS
+// default.
+function renderMilestone(m: Milestone, row: number): HTMLElement {
   const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
-  // A milestone has no furniture run to hold the dependency mark — it is a
-  // diamond and an absolutely-positioned label — so it carries the warning on
-  // the diamond itself. Only the warning: "has edges" has nowhere to go here,
-  // and is a click ("d") away, while "cannot be met as scheduled" is the thing
-  // that must not wait to be asked for.
-  if ((depSums.get(refKey({ kind: "milestone", id: m.id }))?.conflicts ?? 0) > 0) {
-    el.classList.add("dep-conflict");
-  }
   el.dataset.milestoneId = String(m.id);
   el.style.left = `${xOf(scale, dayOf(m.date))}px`;
   if (row > 0) el.style.top = `${row * MS_ROW_H}px`;
   const label = div("milestone-label");
-  label.textContent = m.title;
-  if (labelPx < MS_LABEL_MIN) label.classList.add("cramped");
-  else label.style.setProperty("--avail", `${labelPx}px`);
+  const title = document.createElement("span");
+  title.className = "milestone-title";
+  title.textContent = m.title;
+  label.append(depMark(milestoneDeps(m)), title);
+  label.style.maxWidth = `${MS_LABEL_MAX}px`;
   el.append(div("milestone-diamond"), label);
   return el;
 }
@@ -563,10 +538,38 @@ function measureTitleWidth(text: string): number {
   return measureIn("bar-title", text);
 }
 
-// The width a milestone's band label wants, which decides how many rows the
-// band needs (packMilestoneRows, layout.ts).
-function labelWidth(title: string): number {
-  return measureIn("milestone-label", title);
+// Unlike title text, the dependency mark's width is a CSS box-model result.
+// Measure the real .bar-dep once per variant so changes to its glyph, padding,
+// or margins automatically feed milestone row packing. The conflict ring sits
+// within its 5px trailing margin, so it does not extend the label's right edge.
+const depMarkWidths = new Map<boolean, number>();
+
+function measureDepMarkWidth(deps: DepSummary | undefined): number {
+  if (!deps) return 0;
+  const conflict = deps.conflicts > 0;
+  const cached = depMarkWidths.get(conflict);
+  if (cached !== undefined) return cached;
+
+  const probe = div("milestone-label");
+  probe.style.visibility = "hidden";
+  const mark = depMark(deps) as HTMLElement;
+  probe.append(mark);
+  document.body.append(probe);
+  const style = getComputedStyle(mark);
+  const margin =
+    (Number.parseFloat(style.marginLeft) || 0) +
+    (Number.parseFloat(style.marginRight) || 0);
+  const width = mark.getBoundingClientRect().width + margin;
+  probe.remove();
+  depMarkWidths.set(conflict, width);
+  return width;
+}
+
+// The width a milestone's band label wants, including its dependency mark,
+// which decides how many rows the band needs (packMilestoneRows, layout.ts).
+function milestoneLabelWidth(milestone: Milestone): number {
+  const deps = milestoneDeps(milestone);
+  return measureDepMarkWidth(deps) + measureIn("milestone-label", milestone.title);
 }
 
 // A small P1..P4 badge shown at the right end of a bar. Non-interactive

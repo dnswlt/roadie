@@ -174,10 +174,8 @@ function renderMilestoneRow(m: Milestone): HTMLElement {
   title.textContent = m.title;
   const date = div("wbs-dates");
   date.textContent = periodPointText(state.current?.periods ?? [], m.date, isoDate);
-  // Unlike the timeline's diamond, a row has room for the real mark, so a
-  // milestone here says what an item says, the same way — including the
-  // presence case the timeline has to leave out. That makes the warning ring
-  // redundant on this row, so it is not drawn: one condition, one marker.
+  // The same mark carries both dependency presence and conflict in each view;
+  // the WBS keeps it with the row's trailing furniture.
   el.append(
     div("wbs-ms-diamond"),
     title,

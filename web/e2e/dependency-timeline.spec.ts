@@ -9,9 +9,11 @@
 
 import { expect, test } from "@playwright/test";
 import {
+  addDependency,
   addItem,
   addItemDependency,
   addLane,
+  addMilestone,
   purgeRoadmap,
   seedRoadmap,
   type Seeded,
@@ -20,6 +22,7 @@ import {
 let seeded: Seeded;
 let hiddenLaneId: number;
 let hiddenPrerequisiteId: number;
+let milestoneId: number;
 
 test.beforeEach(async ({ request }) => {
   // The selected work sits far to the right of the hidden prerequisite, so
@@ -31,10 +34,17 @@ test.beforeEach(async ({ request }) => {
   hiddenLaneId = await addLane(request, seeded.roadmapId, "Hidden context");
   hiddenPrerequisiteId = await addItem(request, hiddenLaneId, "Hidden prerequisite");
   await addItem(request, seeded.laneId, "Folded child", seeded.items[2]!.id);
+  milestoneId = await addMilestone(request, seeded.laneId, "Visible milestone", "2027-09-15");
 
   const dependentId = seeded.items[0]!.id;
   await addItemDependency(request, seeded.roadmapId, seeded.items[1]!.id, dependentId);
   await addItemDependency(request, seeded.roadmapId, hiddenPrerequisiteId, dependentId);
+  await addDependency(
+    request,
+    seeded.roadmapId,
+    { kind: "milestone", id: milestoneId },
+    { kind: "item", id: seeded.items[2]!.id },
+  );
 });
 
 test.afterEach(async ({ request }) => {
@@ -56,6 +66,15 @@ test("keeps dependency feedback through a scrolled full render", async ({ page }
   const dependent = page.locator(`.bar[data-item-id="${dependentId}"]`);
   await expect(dependent).toBeVisible();
   await expect(page.locator(`.bar[data-item-id="${hiddenPrerequisiteId}"]`)).toHaveCount(0);
+  const milestoneLabel = page.locator(
+    `.milestone[data-milestone-id="${milestoneId}"] .milestone-label`,
+  );
+  await expect(milestoneLabel.locator(".bar-dep")).toBeVisible();
+  expect(
+    await milestoneLabel.locator(":scope > *").evaluateAll((children) =>
+      children.map((child) => child.getAttribute("class")),
+    ),
+  ).toEqual(["bar-dep", "milestone-title"]);
 
   const toggle = page.locator("#deps-toggle");
   await toggle.click();

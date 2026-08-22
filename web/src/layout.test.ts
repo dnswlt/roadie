@@ -1,6 +1,15 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { LANE_PAD, layoutLane, MILESTONE_BAND, MS_ROW_H, packMilestoneRows } from "./layout";
+import {
+  LANE_PAD,
+  layoutLane,
+  MILESTONE_BAND,
+  MS_LABEL_CLEAR,
+  MS_LABEL_LEFT,
+  MS_LABEL_MAX,
+  MS_ROW_H,
+  packMilestoneRows,
+} from "./layout";
 import { isoOf, type Scale } from "./timescale";
 import type { ItemFull, LaneFull, Milestone } from "./types";
 
@@ -11,7 +20,7 @@ const scale: Scale = { startDay: 0, endDay: 365, pxPerDay: 1 };
 // A stand-in for the renderer's canvas measurement: every title is 100px wide,
 // which with the label offset and clearance makes a milestone occupy roughly
 // 125px of its row.
-const width100 = () => 100;
+const width100 = (_milestone: Milestone) => 100;
 
 function ms(id: number, day: number): Milestone {
   return { id, laneId: 1, title: `m${id}`, description: "", date: isoOf(day) };
@@ -55,6 +64,19 @@ test("a milestone whose label would be overlapped moves to the next row", () => 
   assert.deepEqual(rows([ms(1, 0), ms(2, 10)]), [0, 1]);
 });
 
+test("a dependency mark's measured width widens that milestone's interval", () => {
+  // The renderer's callback includes the mark in milestone 1's label width.
+  const wide = (m: Milestone) => (m.id === 1 ? 250 : 40);
+  assert.deepEqual(rows([ms(1, 0), ms(2, 200)], wide), [0, 1]);
+});
+
+test("a label reuses the row once its center-relative clearance fits", () => {
+  // 12.5px label offset + 100px title + 14px clearance = 126.5px.
+  // The second milestone at 127px therefore fits, without subtracting the
+  // diamond half-width a second time.
+  assert.deepEqual(rows([ms(1, 0), ms(2, 127)]), [0, 0]);
+});
+
 // A row is never reused while its occupant's label is still running, however
 // many rows that costs — the collision the band exists to prevent.
 test("a third milestone in one cluster opens a third row rather than reusing a busy one", () => {
@@ -77,7 +99,8 @@ test("row count follows peak overlap, not milestone count", () => {
 // A verbose title ellipsizes rather than claiming a row of its own and pushing
 // its neighbours down (MS_LABEL_MAX).
 test("an over-long label is capped so it cannot push neighbours onto new rows", () => {
-  assert.deepEqual(rows([ms(1, 0), ms(2, 200)], () => 10_000), [0, 0]);
+  const next = Math.ceil(MS_LABEL_LEFT + MS_LABEL_MAX + MS_LABEL_CLEAR);
+  assert.deepEqual(rows([ms(1, 0), ms(2, next)], () => 10_000), [0, 0]);
 });
 
 test("no milestones assigns no rows", () => {
