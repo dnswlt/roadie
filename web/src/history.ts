@@ -252,27 +252,20 @@ function renderBanner(bannerEl: HTMLElement): void {
   // Preview is only ever entered from the list, so the list is loaded whenever
   // this renders and the lookup always finds its row.
   const named = state.history?.find((s) => s.id === preview.snapshotId)?.name ?? null;
-  const lead = document.createElement("span");
-  lead.className = "snapshot-banner-lead";
-  lead.append(
-    icons.eye(16),
-    textSpan(
-      "snapshot-banner-text",
-      named
-        ? `Viewing checkpoint "${named}" from ${when} — read only`
-        : `Viewing a snapshot from ${when} — read only`,
-    ),
+  const lead = textSpan(
+    "snapshot-banner-text",
+    named ? `Viewing checkpoint ${named} · ${when}` : `Viewing auto-saved snapshot · ${when}`,
   );
 
   const restore = document.createElement("button");
-  restore.className = "btn";
-  restore.append(icons.rotateCcw(14), textSpan("", "Restore this version"));
+  restore.className = "btn btn-primary";
+  restore.append(icons.rotateCcw(14), textSpan("", "Restore"));
   restore.addEventListener("click", () => {
     void (async () => {
       const ok = await confirmDialog(
         `Restore this roadmap to its state from ${when}? Your current version is kept in history, so you can undo this.`,
-        "Restore this version",
-        false,
+        "Restore",
+        "primary",
       );
       if (ok) void actions.restoreSnapshot(preview.snapshotId);
     })();
@@ -283,24 +276,37 @@ function renderBanner(bannerEl: HTMLElement): void {
   // worth keeping. Naming an unnamed capture is also what saves it from being
   // pruned, so this is the only way to keep an old auto snapshot.
   const keep = document.createElement("button");
-  keep.className = "btn";
-  keep.append(icons.tag(14), textSpan("", named ? "Rename" : "Name this version"));
+  keep.className = "btn btn-quiet";
+  keep.append(
+    named ? icons.pencil(14) : icons.tag(14),
+    textSpan("", named ? "Rename" : "Save checkpoint"),
+  );
   keep.addEventListener("click", () => {
     void (async () => {
-      const title = named ? "Rename checkpoint" : "Name this version";
+      const title = named ? "Rename checkpoint" : "Save checkpoint";
       const next = await promptDialog(title, named ?? "", "Save");
       if (next) void actions.nameSnapshot(preview.snapshotId, next);
     })();
   });
 
-  const back = document.createElement("button");
-  back.className = "btn";
-  back.textContent = "Back to current";
-  back.addEventListener("click", () => void actions.backToCurrent());
+  const remove = document.createElement("button");
+  remove.className = "btn btn-quiet danger";
+  remove.append(icons.trash(14), textSpan("", "Delete"));
+  remove.addEventListener("click", () => {
+    void (async () => {
+      const ok = await confirmDialog(
+        `Delete checkpoint "${named}"? This removes it from version history.`,
+        "Delete checkpoint",
+      );
+      if (ok) void actions.deleteSnapshot(preview.snapshotId);
+    })();
+  });
 
   const acts = document.createElement("div");
   acts.className = "snapshot-banner-actions";
-  acts.append(keep, back, restore);
+  acts.append(keep);
+  if (named) acts.append(remove);
+  acts.append(restore);
 
   bannerEl.replaceChildren(lead, acts);
 }

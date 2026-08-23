@@ -719,6 +719,28 @@ export const actions = {
     }
   },
 
+  // deleteSnapshot removes a checkpoint from version history. When it is the
+  // version currently being previewed, return to the live roadmap; the history
+  // panel stays open so the result is visible immediately.
+  async deleteSnapshot(snapshotId: number): Promise<boolean> {
+    try {
+      await api.deleteSnapshot(snapshotId);
+      if (state.preview?.snapshotId === snapshotId) {
+        await reloadLive();
+        state.preview = null;
+      }
+      if (state.history !== null) {
+        state.history = state.history.filter((s) => s.id !== snapshotId);
+      }
+      toast("Deleted checkpoint");
+      state.notify();
+      return true;
+    } catch (e) {
+      toast(errMsg(e), true);
+      return false;
+    }
+  },
+
   // closeHistory leaves history browsing entirely. If a snapshot was being
   // previewed, the live roadmap is reloaded to discard it.
   async closeHistory(): Promise<void> {

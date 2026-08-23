@@ -13,9 +13,8 @@
   --brand-hover: #4338ca;
   --danger: #c92c2c;
   --danger-soft: #fdeaea;
-  /* Notice tone for "you're in a special mode" surfaces (the snapshot-preview
-     banner). A muted amber/gold; darker than the orange lane on purpose, so
-     white banner text stays readable. */
+  /* Notice tone for stale remote-change feedback. A muted amber/gold, distinct
+     from both brand actions and the brighter planning-warning amber. */
   --notice: #b07d10;
   /* The "needs attention" flag. Outside the lane themes on purpose: the marker
      must read the same against all five, which no --c shade can do. Meaning and
@@ -212,6 +211,32 @@ body {
   color: var(--ink);
   background: var(--grid);
   border-color: transparent;
+}
+
+/* Buttons standing on a tinted surface, where .btn's opaque --surface fill
+   would read as a white chip pasted onto the tint. Transparent instead, taking
+   the outline and text from the surface's own colour. `.danger` is the same
+   shape in the destructive tone rather than solid .btn-danger, which on a
+   surface that is itself a notice would outshout the action it sits beside. */
+.btn-quiet {
+  border-color: color-mix(in oklab, var(--brand) 28%, var(--surface));
+  background: transparent;
+  color: color-mix(in oklab, var(--brand) 68%, var(--ink));
+}
+
+.btn-quiet:hover {
+  border-color: color-mix(in oklab, var(--brand) 42%, var(--surface));
+  background: color-mix(in oklab, var(--brand) 10%, transparent);
+}
+
+.btn-quiet.danger {
+  border-color: color-mix(in oklab, var(--danger) 28%, var(--surface));
+  color: var(--danger);
+}
+
+.btn-quiet.danger:hover {
+  border-color: color-mix(in oklab, var(--danger) 42%, var(--surface));
+  background: var(--danger-soft);
 }
 
 .icon-btn {
@@ -3187,11 +3212,11 @@ button.deps-node:hover {
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 8px 10px 8px 16px;
-  background: color-mix(in oklab, var(--notice) 16%, white);
-  border: 1px solid color-mix(in oklab, var(--notice) 45%, white);
-  border-radius: 10px;
+  gap: 12px;
+  padding: 6px 7px 6px 12px;
+  background: color-mix(in oklab, var(--brand) 12%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--brand) 36%, var(--surface));
+  border-radius: 8px;
   box-shadow: var(--shadow-pop);
 }
 
@@ -3199,20 +3224,28 @@ button.deps-node:hover {
   display: none;
 }
 
-.snapshot-banner-lead {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: color-mix(in oklab, var(--notice) 82%, black);
-}
-
 .snapshot-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
+  color: color-mix(in oklab, var(--brand) 62%, var(--ink));
 }
 
 .snapshot-banner-actions {
+  flex: none;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in oklab, var(--brand) 22%, transparent);
+}
+
+/* The banner packs three buttons beside its label, so they run tighter than a
+   dialog's. Tone comes from .btn-quiet / .btn-primary, not from here. */
+.snapshot-banner .btn {
+  padding: 5px 9px;
 }
 
 /* ---------- Jira Recon view (recon.ts) ---------- */

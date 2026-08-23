@@ -134,10 +134,22 @@ export function promptDialog(title: string, initial = "", okLabel = "OK"): Promi
   });
 }
 
-// confirmDialog asks a yes/no question. The confirm button is a red "Delete"
-// by default (the common case); pass danger = false for a non-destructive
-// confirmation (e.g. restore), which uses the neutral button style instead.
-export function confirmDialog(message: string, okLabel = "Delete", danger = true): Promise<boolean> {
+// The confirm button's weight, which must match the control that opened the
+// dialog: a confirmation quieter than its trigger reads as a different, lesser
+// action. "danger" is the red Delete of the common case, "primary" answers a
+// solid brand button, "neutral" a plain one.
+const CONFIRM_TONE = {
+  danger: "btn btn-danger",
+  primary: "btn btn-primary",
+  neutral: "btn",
+} as const;
+
+// confirmDialog asks a yes/no question.
+export function confirmDialog(
+  message: string,
+  okLabel = "Delete",
+  tone: keyof typeof CONFIRM_TONE = "danger",
+): Promise<boolean> {
   const dlg = dialogEl();
   dlg.replaceChildren();
   const p = document.createElement("p");
@@ -148,7 +160,7 @@ export function confirmDialog(message: string, okLabel = "Delete", danger = true
   cancel.className = "btn";
   cancel.textContent = "Cancel";
   const ok = document.createElement("button");
-  ok.className = danger ? "btn btn-danger" : "btn";
+  ok.className = CONFIRM_TONE[tone];
   ok.textContent = okLabel;
   row.append(cancel, ok);
   dlg.append(p, row);

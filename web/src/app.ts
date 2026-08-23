@@ -502,7 +502,7 @@ function wireTopbar(): void {
         ? `Make "${state.current.name}" private? Only you will be able to see it.`
         : `Make "${state.current.name}" public? Everyone will be able to see and edit it.`,
       goPrivate ? "Make private" : "Make public",
-      false,
+      "neutral",
     );
     if (ok) void actions.setVisibility(goPrivate ? "private" : "public");
   });
