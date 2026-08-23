@@ -14,8 +14,10 @@ that remain useful at scale.
 
 - [Key concepts](concepts.md) gives a quick tour of what Roadie provides and how
   its parts work together.
-- [Managing roadmaps](managing-roadmaps.md) covers roadmap lifecycle, history,
-  sharing, and collaboration.
+- [Managing roadmaps](managing-roadmaps.md) covers roadmap lifecycle, sharing,
+  and collaboration.
+- [Version history](version-history.md) explains how earlier versions are kept,
+  compared, and restored.
 - [Jira reconciliation](jira-reconciliation.md) explains how to find and link
   Jira issues and Roadie items that are missing references.
 - Practical guides and deeper planning material will be added as the

@@ -82,30 +82,15 @@ Permanent deletion cannot be undone.
 
 ## History and recovery
 
-Roadie records **version history** as snapshots of roadmap content. You can
-preview an earlier version without editing it and restore it when you decide the
-roadmap should go back to that state. Automatic snapshots capture recent
-editing.
+Roadie records **version history** as snapshots of roadmap content while you
+edit. You can view an earlier version without changing anything, compare it
+with the current roadmap, and restore it when you decide the plan should go
+back to that state.
 
 History is “go back,” not step-by-step undo. Restoring a snapshot replaces the
-current plan with that version.
+current plan with that version, and keeps the version you replaced.
 
-### View an earlier version
-
-1. Open the roadmap.
-2. Select its name in the top bar.
-3. Select **Version history**.
-4. Select a version from the history list.
-
-Earlier versions open as read-only previews. Select **Back to current** to leave
-the preview without changing the roadmap.
-
-### Restore an earlier version
-
-1. Preview the version you want to restore.
-2. Select **Restore this version** and confirm.
-
-Roadie keeps the version you replaced in history, so you can return to it later.
+→ [Version history](version-history.md)
 
 ## Sharing and collaboration
 
