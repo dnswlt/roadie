@@ -3760,3 +3760,295 @@ button.deps-node:hover {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* ---------- Version diff view (diff-view.ts) ---------- */
+
+/* The conventional green/red diff pair. Deliberately NOT --danger: that token
+   means "destructive, or already failed", and a removed row is history. Every
+   add/del surface below (pills, counts, notes, gutters, line tints) takes one
+   of these via the two utility classes, so there is exactly one green and one
+   red in the whole view. */
+:root {
+  --diff-add: #1a7f37;
+  --diff-del: #cf222e;
+}
+
+.diff-add {
+  color: var(--diff-add);
+}
+
+.diff-del {
+  color: var(--diff-del);
+}
+
+/* Pressed state for the banner's "Show changes" — .btn-quiet never needed
+   one before. */
+.btn-quiet.active {
+  background: color-mix(in oklab, var(--brand) 14%, transparent);
+  border-color: color-mix(in oklab, var(--brand) 45%, var(--surface));
+}
+
+.diff-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* The snapshot banner floats centered over the view's top (~52px deep);
+     without the cleared headroom it sits on the summary's own lines. */
+  padding: 60px 20px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.diff-summary-counts,
+.diff-summary-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.diff-summary-lead {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.diff-summary-empty {
+  color: var(--ink-2);
+}
+
+.diff-count {
+  font-weight: 600;
+}
+
+.diff-summary-label {
+  flex: none;
+  width: 90px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Lane rail: the chart views' .lane/.lane-label furniture, stacked as name
+   plus change notes. No gestures live here — the label is a static caption. */
+.diff-lane-label {
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px 10px 12px;
+}
+
+.diff-lane-name {
+  font-weight: 600;
+}
+
+.diff-lane-note {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+/* Two classes, because bare .diff-add loses to .diff-lane-note's later
+   equal-specificity color. */
+.diff-lane-note.diff-add {
+  color: var(--diff-add);
+}
+
+.diff-lane-note.diff-del {
+  color: var(--diff-del);
+}
+
+.diff-rows {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px; /* MIN_LANE_H, keeps the chart rhythm */
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The lane color spent as the WBS family spine; change kind is carried by
+   each row's pill, so the fill stays a uniform quiet lane tint. */
+.diff-block {
+  display: flex;
+  flex-direction: column;
+  border-left: 3px solid var(--c);
+}
+
+/* Row tints are the WBS's exactly (22% parent, 10% child, same hovers and
+   child ink): an added item must look like the item it will be, not like a
+   third row species. */
+.diff-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px; /* PARENT_BAR_H */
+  padding: 0 8px;
+  background: color-mix(in oklab, var(--c) 22%, var(--surface));
+  user-select: none;
+}
+
+.diff-row.expandable {
+  cursor: pointer;
+}
+
+.diff-row.expandable:hover {
+  background: color-mix(in oklab, var(--c) 32%, var(--surface));
+}
+
+.diff-row:not(.diff-child):not(.diff-ms) .diff-title {
+  font-weight: 600;
+}
+
+.diff-child {
+  margin-left: 26px;
+  background: color-mix(in oklab, var(--c) 10%, var(--surface));
+  color: color-mix(in oklab, var(--c) 47%, black);
+  border-top: 1px solid color-mix(in oklab, var(--c) 24%, var(--surface));
+}
+
+.diff-row.diff-child.expandable:hover {
+  background: color-mix(in oklab, var(--c) 24%, var(--surface));
+}
+
+/* Milestone rows: the WBS's bare 24px row, no fill. */
+.diff-row.diff-ms {
+  min-height: 24px;
+  background: none;
+}
+
+.diff-row.diff-ms.expandable:hover {
+  background: color-mix(in oklab, var(--c) 12%, var(--surface));
+}
+
+/* Breadcrumb parents are present only to place their changed children. */
+.diff-row.diff-unchanged {
+  color: var(--ink-2);
+}
+
+.diff-removed .diff-title {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, var(--diff-del) 55%, transparent);
+}
+
+.diff-disclosure {
+  flex: none;
+  width: 14px;
+  display: inline-flex;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.diff-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Status pill: the tint derives from the text color the utility class sets,
+   so one rule serves all three variants. */
+.diff-pill {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: color-mix(in oklab, currentColor 12%, var(--surface));
+}
+
+.diff-dates {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+/* An expanded row's detail, under it inside the same lane block; the left
+   padding lines its content up under the row's title. */
+.diff-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px 28px;
+  background: var(--surface);
+  border-top: 1px dashed var(--border);
+  font-size: 12.5px;
+  cursor: default;
+}
+
+.diff-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diff-field-label {
+  flex: none;
+  width: 72px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Muted alone marks the old value: the arrow already says which side is
+   which, and a strike through dates fights the digits. Strikethrough stays
+   reserved for removed entities' titles. */
+.diff-old {
+  color: var(--ink-2);
+}
+
+.diff-arrow {
+  color: var(--muted);
+}
+
+.diff-new {
+  font-weight: 500;
+}
+
+/* The unified description diff: prose in the app font, tinted per line; only
+   the gutter is monospace so its +/− column aligns. */
+.diff-desc {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.diff-line {
+  display: flex;
+  align-items: baseline;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.diff-gutter {
+  flex: none;
+  width: 22px;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.diff-text {
+  flex: 1;
+  min-width: 0;
+  padding-right: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-line-same {
+  color: var(--ink-2);
+}
+
+.diff-line-add {
+  background: color-mix(in oklab, var(--diff-add) 9%, var(--surface));
+}
+
+.diff-line-del {
+  background: color-mix(in oklab, var(--diff-del) 7%, var(--surface));
+}

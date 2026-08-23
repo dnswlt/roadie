@@ -252,10 +252,21 @@ function renderBanner(bannerEl: HTMLElement): void {
   // Preview is only ever entered from the list, so the list is loaded whenever
   // this renders and the lookup always finds its row.
   const named = state.history?.find((s) => s.id === preview.snapshotId)?.name ?? null;
+  const comparing = preview.compare !== undefined;
+  const what = named ? `checkpoint ${named}` : "auto-saved snapshot";
   const lead = textSpan(
     "snapshot-banner-text",
-    named ? `Viewing checkpoint ${named} · ${when}` : `Viewing auto-saved snapshot · ${when}`,
+    comparing ? `Changes since ${what} · ${when}` : `Viewing ${what} · ${when}`,
   );
+
+  // The version-diff toggle: swaps the chart for what changed between this
+  // snapshot and the live roadmap (diff-view.ts). It sits with the other
+  // banner actions because comparing is a way of looking at the previewed
+  // version, and scrubbing to another snapshot keeps it on.
+  const compare = document.createElement("button");
+  compare.className = comparing ? "btn btn-quiet active" : "btn btn-quiet";
+  compare.append(icons.diff(14), textSpan("", comparing ? "Hide changes" : "Show changes"));
+  compare.addEventListener("click", () => void actions.toggleCompare());
 
   const restore = document.createElement("button");
   restore.className = "btn btn-primary";
@@ -304,7 +315,7 @@ function renderBanner(bannerEl: HTMLElement): void {
 
   const acts = document.createElement("div");
   acts.className = "snapshot-banner-actions";
-  acts.append(keep);
+  acts.append(compare, keep);
   if (named) acts.append(remove);
   acts.append(restore);
 

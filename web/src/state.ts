@@ -165,8 +165,15 @@ class AppState {
   // `preview` is set, every mutation is blocked (actions.ts / dnd.ts) — it is
   // the single source of truth for "am I looking at a snapshot", so no
   // read-only flag has to be threaded through the render/menu code.
+  //
+  // `compare` is the live roadmap, fetched when the banner's "Show changes"
+  // was toggled on; present iff the diff view is on screen (diff-view.ts
+  // renders current-vs-compare, i.e. snapshot-vs-live). It rides inside
+  // `preview` because comparing without a previewed snapshot has no meaning —
+  // dropping preview can never leave a stray diff behind. The copy is as old
+  // as the toggle; a remote edit meanwhile raises the usual stale pill.
   history: Snapshot[] | null = null;
-  preview: { snapshotId: number; createdAt: string } | null = null;
+  preview: { snapshotId: number; createdAt: string; compare?: RoadmapFull } | null = null;
   // Who has edited this roadmap, loaded alongside `history` and shown above it.
   // Empty when nobody is recorded, which is the normal case with auth off — the
   // header then hides itself. Unlike `history` this needs no null/closed state:
@@ -408,7 +415,17 @@ class AppState {
   // unrelated page. A selected milestone is always renderable in the WBS:
   // selecting one unfolds its group (see selectMilestone).
   setViewMode(mode: ViewMode): void {
-    if (mode === this.viewMode) return;
+    // Picking a view while the diff is on screen means "show me that view":
+    // the comparison closes rather than silently overriding the choice
+    // (render() draws the diff whenever `compare` is set, whatever viewMode
+    // says). Same-mode calls exit too — pressing the active view's button is
+    // that same request.
+    const comparing = this.preview?.compare !== undefined;
+    if (comparing) delete this.preview!.compare;
+    if (mode === this.viewMode) {
+      if (comparing) this.notify();
+      return;
+    }
     const from = this.viewMode;
     this.viewMode = mode;
     if (mode === "recon") {

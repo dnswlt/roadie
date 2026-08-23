@@ -176,6 +176,10 @@ export const icons = {
     ),
   rotateCcw: (size = 16) =>
     svg(`<path d="M3 12a9 9 0 1 0 3-7.7L3 8"/><path d="M3 3v5h5"/>`, size),
+  // Plus over minus (lucide "diff"): the version-diff toggle in the snapshot
+  // preview banner.
+  diff: (size = 16) =>
+    svg(`<path d="M12 3v10"/><path d="M7 8h10"/><path d="M7 21h10"/>`, size),
   calendar: (size = 16) =>
     svg(
       `<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/>` +

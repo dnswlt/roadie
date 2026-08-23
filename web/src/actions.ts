@@ -757,12 +757,35 @@ export const actions = {
 
   // viewSnapshot loads a snapshot's contents into `current` for read-only
   // viewing (live scrub). Nothing is lost: the live roadmap is reloaded from
-  // the server whenever preview is left.
+  // the server whenever preview is left. An active comparison survives the
+  // scrub — the live side didn't change, only the snapshot under it — so
+  // stepping through history walks through the diffs.
   async viewSnapshot(snapshotId: number, createdAt: string): Promise<void> {
     try {
       const full = await api.getSnapshot(snapshotId);
       state.current = full;
-      state.preview = { snapshotId, createdAt };
+      state.preview = { snapshotId, createdAt, compare: state.preview?.compare };
+      state.clearSelection();
+      state.notify();
+    } catch (e) {
+      toast(errMsg(e), true);
+    }
+  },
+
+  // toggleCompare switches the snapshot preview between "show this version"
+  // and "show what changed between this version and the live roadmap"
+  // (diff-view.ts). Turning it on fetches a fresh live copy — `current` holds
+  // the snapshot, so the live side has to come from the server.
+  async toggleCompare(): Promise<void> {
+    const preview = state.preview;
+    if (!preview || !state.current) return;
+    if (preview.compare) {
+      delete preview.compare;
+      state.notify();
+      return;
+    }
+    try {
+      preview.compare = await api.getRoadmap(state.current.id);
       state.clearSelection();
       state.notify();
     } catch (e) {

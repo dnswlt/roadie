@@ -66,7 +66,9 @@ Home dialog (`home.ts`, name-path
 folding in `tree.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`) ·
-Jira Recon view (`recon.ts`, server `tracker.go`).
+Jira Recon view (`recon.ts`, server `tracker.go`) ·
+version diff (`diff.ts` + `diff-text.ts` + `diff-view.ts`, toggled from the
+snapshot banner).
 
 ## Rules
 
@@ -206,6 +208,17 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **The address bar is the shareable link**: roadmap, view and one selection,
   never zoom, scroll, filter or folds. Selection is a query param, not a fragment.
 - **Version history is "go back", not undo.**
+- **The version diff is computed client-side** (`diff.ts`) from two RoadmapFull
+  payloads — no diff endpoint, no second wire format. Its scope is exactly what
+  a restore would change; identity is the DB id, so a diff across a restore
+  (which re-ids everything) honestly reads as replace-all. Reorders surface
+  only as per-lane "items reordered" notes, never as which ranks moved. Edge
+  changes render on both endpoint rows (→ outgoing, ← incoming), not as a
+  flat list — so an edge to an added/removed entity still shows on the
+  surviving end; added and removed entities are one row each — no drill-down
+  (preview shows no entity contents either). Diff rows reuse the WBS tints so entities look like what
+  they are; pills mark only Added/Removed — "changed" is a diff's norm and
+  gets field chips, with boolean flips inlined as +/− chips, no detail row.
 - **A checkpoint is a snapshot with a name**: the name is what promotes it to
   `kind = manual` and exempts it from pruning. No separate table, flag or concept.
 - **E2E is a browser smoke layer, not visual regression testing** (`web/e2e`,

@@ -11,6 +11,7 @@ import { initDnd } from "./dnd";
 import { initEvents, refreshNow } from "./events";
 import { initFind } from "./find";
 import type { SignalFilterKind } from "./filter";
+import { renderDiff } from "./diff-view";
 import { renderHistory } from "./history";
 import { icons } from "./icons";
 import { initHome, openHome } from "./home";
@@ -84,7 +85,10 @@ function syncUrlFromState(): void {
 function render(): void {
   syncUrlFromState();
   renderTopbar();
-  if (state.viewMode === "recon") renderRecon(chart);
+  // The version diff overrides the chart views while it is on screen; picking
+  // any view exits it (state.setViewMode), so viewMode never fights it.
+  if (state.preview?.compare) renderDiff(chart);
+  else if (state.viewMode === "recon") renderRecon(chart);
   else if (state.viewMode === "wbs") renderWbs(chart);
   else renderChart(chart);
   renderPanel(panel);
@@ -186,14 +190,19 @@ function renderTopbar(): void {
   // connection. Snap and zoom act on the time axis, which the other views
   // project away, so they hide rather than sit around disabled.
   const recon = state.viewMode === "recon";
-  $("view-timeline").classList.toggle("active", state.viewMode === "timeline");
-  $("view-wbs").classList.toggle("active", state.viewMode === "wbs");
+  // While the version diff is on screen no view button is lit (they all lead
+  // away from it), and the time-axis controls hide like in the other
+  // non-timeline projections.
+  const comparing = state.preview?.compare !== undefined;
+  $("view-timeline").classList.toggle("active", !comparing && state.viewMode === "timeline");
+  $("view-wbs").classList.toggle("active", !comparing && state.viewMode === "wbs");
   const reconBtn = $("view-recon") as HTMLButtonElement;
   reconBtn.classList.toggle("hidden", !state.me.trackerAvailable);
-  reconBtn.classList.toggle("active", recon);
+  reconBtn.classList.toggle("active", !comparing && recon);
   reconBtn.disabled = !state.current;
-  $("snap-wrap").classList.toggle("hidden", state.viewMode !== "timeline");
-  $("zoom-controls").classList.toggle("hidden", state.viewMode !== "timeline");
+  const timeline = !comparing && state.viewMode === "timeline";
+  $("snap-wrap").classList.toggle("hidden", !timeline);
+  $("zoom-controls").classList.toggle("hidden", !timeline);
   // Recon shows tracker results, not the chart: find, lane visibility, filter
   // and folding all act on chart content, so they hide too (the snap/zoom
   // rule). All sit left of the spacer, so nothing in the right-hand button
@@ -210,7 +219,10 @@ function renderTopbar(): void {
 function renderDependencyToggle(): void {
   const btn = $("deps-toggle") as HTMLButtonElement;
   const active = timelineDependenciesActive();
-  btn.classList.toggle("hidden", state.viewMode !== "timeline");
+  btn.classList.toggle(
+    "hidden",
+    state.viewMode !== "timeline" || state.preview?.compare !== undefined,
+  );
   btn.classList.toggle("active", active);
   btn.setAttribute("aria-pressed", String(active));
   btn.disabled = !state.current;
@@ -1042,6 +1054,7 @@ async function boot(): Promise<void> {
   // Selection scope: project onto the chart, re-render only the panel (which
   // guards itself against rebuilding under a focused field).
   state.subscribeSelection(() => {
+    if (state.preview?.compare) return; // the diff view has no selection
     if (state.viewMode === "wbs") projectWbsSelection(chart);
     else if (state.viewMode === "timeline") projectSelection(chart);
     // Recon's lists mark the selected item too, but have no projection of
