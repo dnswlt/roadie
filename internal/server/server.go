@@ -114,6 +114,7 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/roadmaps", s.listRoadmaps)
 	s.mux.HandleFunc("POST /api/roadmaps", s.createRoadmap)
 	s.mux.HandleFunc("POST /api/roadmaps/import", s.importRoadmap)
+	s.mux.HandleFunc("POST /api/roadmaps/transfer", s.transferRoadmap)
 	// The trash. A literal segment beats the {id} wildcard below, so this and
 	// GET /api/roadmaps/{id} coexist. See trash.go.
 	s.mux.HandleFunc("GET /api/roadmaps/trash", s.listTrash)
@@ -426,10 +427,33 @@ func (s *Server) exportRoadmap(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// importRoadmap creates a new roadmap from an uploaded export file. The body
-// limit is larger than the shared readJSON limit since a whole roadmap can be
-// sizable; unknown fields are tolerated for forward compatibility.
+// importRoadmap creates a new, independent roadmap from an uploaded export
+// file: fresh database IDs, and a fresh UID for the roadmap and every milestone.
 func (s *Server) importRoadmap(w http.ResponseWriter, r *http.Request) {
+	s.importWithMode(w, r, store.ImportCopy)
+}
+
+// transferRoadmap brings in the roadmap the uploaded file names, keeping the
+// UIDs it carries, and refuses without writing anything if any of them is
+// already here (see store.ImportTransfer).
+//
+// Its own route rather than a mode on the import route, matching every other
+// distinct operation here (duplicate, restore, purge, visibility): what an
+// import does with the identities in a file is the caller's stated choice, and
+// stating it by URL makes an unknown mode unrepresentable. The body is the
+// export file itself either way, so both routes take a downloaded file
+// unaltered.
+func (s *Server) transferRoadmap(w http.ResponseWriter, r *http.Request) {
+	s.importWithMode(w, r, store.ImportTransfer)
+}
+
+// importWithMode is the shared body of the two import routes. The body limit is
+// larger than the shared readJSON limit since a whole roadmap can be sizable;
+// unknown fields are tolerated for forward compatibility.
+//
+// Both modes need the file to carry identities, so anything below
+// model.MinExportVersion is refused outright rather than importable one way.
+func (s *Server) importWithMode(w http.ResponseWriter, r *http.Request, mode store.ImportMode) {
 	r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
 	var exp model.RoadmapExport
 	if err := json.NewDecoder(r.Body).Decode(&exp); err != nil {
@@ -444,14 +468,21 @@ func (s *Server) importRoadmap(w http.ResponseWriter, r *http.Request) {
 		writeClientErr(w, fmt.Errorf("import file version %d is newer than supported (%d)", exp.Version, model.ExportVersion))
 		return
 	}
+	if exp.Version < model.MinExportVersion {
+		writeClientErr(w, fmt.Errorf(
+			"import file version %d is older than supported (%d): it was exported before roadmaps had a portable identity",
+			exp.Version, model.MinExportVersion))
+		return
+	}
 	// An import is always public, and the visibility deliberately does not come
 	// from the file: an export carries one (Roadmap is embedded in the payload)
 	// and honouring it would let a file publish itself, or import as private and
 	// belong to nobody. There is no way to ask for a private import either —
 	// the body is the export envelope, with no room for a request of our own —
 	// but the importer is recorded as the owner, so they can make it private
-	// immediately afterwards from the roadmap menu.
-	rm, err := s.store.ImportRoadmap(r.Context(), exp.Roadmap, ownership(r, model.VisibilityPublic))
+	// immediately afterwards from the roadmap menu. A transfer is no different:
+	// it preserves content identity, not access.
+	rm, err := s.store.ImportRoadmap(r.Context(), exp.Roadmap, ownership(r, model.VisibilityPublic), mode)
 	if err != nil {
 		s.writeErr(w, err)
 		return

@@ -39,6 +39,7 @@ function lane(over: Partial<LaneFull> = {}): LaneFull {
 function roadmap(over: Partial<RoadmapFull> = {}): RoadmapFull {
   return {
     id: 1,
+    uid: "uid-r1",
     name: "Platform 2027",
     createdAt: "2026-01-01T00:00:00Z",
     visibility: "public",
@@ -51,6 +52,7 @@ function roadmap(over: Partial<RoadmapFull> = {}): RoadmapFull {
 
 const milestone = (over: Partial<Milestone> = {}): Milestone => ({
   id: 1,
+  uid: "uid-m1",
   laneId: 1,
   title: "Beta",
   description: "",

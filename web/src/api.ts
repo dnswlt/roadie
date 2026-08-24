@@ -26,7 +26,9 @@ import type {
 // server can echo it back in change events, letting this tab ignore the events
 // its own edits cause (see events.ts).
 export const clientId =
-  typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random());
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : String(Math.random());
 
 // signingIn guards against a burst of parallel 401s each starting their own
 // navigation; the first one wins and the rest just stop.
@@ -78,7 +80,8 @@ export const api = {
   createRoadmap: (name: string, visibility: Visibility = "public") =>
     req<Roadmap>("POST", "/api/roadmaps", { name, visibility }),
   getRoadmap: (id: number) => req<RoadmapFull>("GET", `/api/roadmaps/${id}`),
-  renameRoadmap: (id: number, name: string) => req<Roadmap>("PATCH", `/api/roadmaps/${id}`, { name }),
+  renameRoadmap: (id: number, name: string) =>
+    req<Roadmap>("PATCH", `/api/roadmaps/${id}`, { name }),
   // Visibility is not roadmap content — it is not snapshotted and a restore
   // leaves it alone — so it has its own endpoint rather than riding in the
   // rename PATCH. Only the owner may call it; anyone else gets a 404.
@@ -88,13 +91,23 @@ export const api = {
   // irreversible step.
   deleteRoadmap: (id: number) => req<void>("DELETE", `/api/roadmaps/${id}`),
   listTrash: () => req<TrashedRoadmap[]>("GET", "/api/roadmaps/trash"),
-  restoreRoadmap: (id: number) => req<Roadmap>("POST", `/api/roadmaps/${id}/restore`),
-  purgeRoadmap: (id: number) => req<void>("DELETE", `/api/roadmaps/${id}/purge`),
+  restoreRoadmap: (id: number) =>
+    req<Roadmap>("POST", `/api/roadmaps/${id}/restore`),
+  purgeRoadmap: (id: number) =>
+    req<void>("DELETE", `/api/roadmaps/${id}/purge`),
   exportRoadmapUrl: (id: number) => `/api/roadmaps/${id}/export`,
   // An import is always public; the server records the importer as its owner,
   // so it can be made private straight afterwards. The file's own visibility
   // field is ignored server-side — a file must not be able to publish itself.
-  importRoadmap: (data: unknown) => req<Roadmap>("POST", "/api/roadmaps/import", data),
+  //
+  // What happens to the identities in the file is the route, not a flag on one
+  // (see ImportMode): importRoadmap always creates an independent roadmap,
+  // transferRoadmap always keeps the file's UIDs and fails if any is already
+  // there. The body is the exported file itself in both cases.
+  importRoadmap: (data: unknown) =>
+    req<Roadmap>("POST", "/api/roadmaps/import", data),
+  transferRoadmap: (data: unknown) =>
+    req<Roadmap>("POST", "/api/roadmaps/transfer", data),
   duplicateRoadmap: (id: number, name: string) =>
     req<Roadmap>("POST", `/api/roadmaps/${id}/duplicate`, { name }),
 
@@ -109,10 +122,14 @@ export const api = {
   listTrackerQueries: (roadmapId: number) =>
     req<TrackerQuery[]>("GET", `/api/roadmaps/${roadmapId}/tracker-queries`),
   createTrackerQuery: (roadmapId: number, name: string, query: string) =>
-    req<TrackerQuery>("POST", `/api/roadmaps/${roadmapId}/tracker-queries`, { name, query }),
+    req<TrackerQuery>("POST", `/api/roadmaps/${roadmapId}/tracker-queries`, {
+      name,
+      query,
+    }),
   updateTrackerQuery: (id: number, patch: { name?: string; query?: string }) =>
     req<TrackerQuery>("PATCH", `/api/tracker-queries/${id}`, patch),
-  deleteTrackerQuery: (id: number) => req<void>("DELETE", `/api/tracker-queries/${id}`),
+  deleteTrackerQuery: (id: number) =>
+    req<void>("DELETE", `/api/tracker-queries/${id}`),
 
   listContributors: (roadmapId: number) =>
     req<Contributor[]>("GET", `/api/roadmaps/${roadmapId}/contributors`),
@@ -123,18 +140,22 @@ export const api = {
   getSnapshot: (id: number) => req<RoadmapFull>("GET", `/api/snapshots/${id}`),
   renameSnapshot: (id: number, name: string) =>
     req<Snapshot>("PATCH", `/api/snapshots/${id}`, { name }),
-  restoreSnapshot: (id: number) => req<Roadmap>("POST", `/api/snapshots/${id}/restore`),
+  restoreSnapshot: (id: number) =>
+    req<Roadmap>("POST", `/api/snapshots/${id}/restore`),
   deleteSnapshot: (id: number) => req<void>("DELETE", `/api/snapshots/${id}`),
 
   createLane: (roadmapId: number, name: string) =>
     req<Lane>("POST", `/api/roadmaps/${roadmapId}/lanes`, { name }),
   setLaneOrder: (roadmapId: number, laneIds: number[]) =>
     req<void>("PUT", `/api/roadmaps/${roadmapId}/lane-order`, { laneIds }),
-  updateLane: (id: number, patch: LanePatch) => req<Lane>("PATCH", `/api/lanes/${id}`, patch),
+  updateLane: (id: number, patch: LanePatch) =>
+    req<Lane>("PATCH", `/api/lanes/${id}`, patch),
   deleteLane: (id: number) => req<void>("DELETE", `/api/lanes/${id}`),
 
-  createItem: (laneId: number, item: NewItem) => req<Item>("POST", `/api/lanes/${laneId}/items`, item),
-  updateItem: (id: number, patch: ItemPatch) => req<Item>("PATCH", `/api/items/${id}`, patch),
+  createItem: (laneId: number, item: NewItem) =>
+    req<Item>("POST", `/api/lanes/${laneId}/items`, item),
+  updateItem: (id: number, patch: ItemPatch) =>
+    req<Item>("PATCH", `/api/items/${id}`, patch),
   deleteItem: (id: number) => req<void>("DELETE", `/api/items/${id}`),
 
   createMilestone: (laneId: number, milestone: NewMilestone) =>
@@ -144,11 +165,21 @@ export const api = {
   deleteMilestone: (id: number) => req<void>("DELETE", `/api/milestones/${id}`),
 
   replaceSchedule: (roadmapId: number, periods: NewSchedulePeriod[]) =>
-    req<SchedulePeriod[]>("PUT", `/api/roadmaps/${roadmapId}/schedule`, { periods }),
+    req<SchedulePeriod[]>("PUT", `/api/roadmaps/${roadmapId}/schedule`, {
+      periods,
+    }),
 
   // Dependency reads ride in the RoadmapFull payload; only the two mutations
   // have endpoints. from = prerequisite, to = dependent ("to needs from").
-  createDependency: (roadmapId: number, from: DependencyRef, to: DependencyRef) =>
-    req<Dependency>("POST", `/api/roadmaps/${roadmapId}/dependencies`, { from, to }),
-  deleteDependency: (id: number) => req<void>("DELETE", `/api/dependencies/${id}`),
+  createDependency: (
+    roadmapId: number,
+    from: DependencyRef,
+    to: DependencyRef,
+  ) =>
+    req<Dependency>("POST", `/api/roadmaps/${roadmapId}/dependencies`, {
+      from,
+      to,
+    }),
+  deleteDependency: (id: number) =>
+    req<void>("DELETE", `/api/dependencies/${id}`),
 };

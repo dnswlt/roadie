@@ -59,6 +59,7 @@ function lane(id: number, items: ItemFull[] = []): LaneFull {
 function roadmapOf(lanes: LaneFull[]): RoadmapFull {
   return {
     id: 1,
+    uid: "uid-r1",
     name: "R",
     createdAt: "2026-01-01T00:00:00Z",
     visibility: "public",
@@ -296,6 +297,7 @@ test("hiding contexts drops their item and milestone selections", () => {
   const first = lane(1, [item(1, [], false)]);
   first.milestones.push({
     id: 10,
+    uid: "uid-m10",
     laneId: first.id,
     title: "M",
     description: "",
@@ -322,6 +324,7 @@ test("folding a WBS milestone group drops its selected milestone locally", () =>
   const only = lane(1);
   only.milestones.push({
     id: 10,
+    uid: "uid-m10",
     laneId: only.id,
     title: "M",
     description: "",
@@ -336,6 +339,56 @@ test("folding a WBS milestone group drops its selected milestone locally", () =>
 
   assert.equal(state.selectedMilestoneId, null);
   state.wbsMsCollapsed = new Set();
+});
+
+// Selections and view preferences are pruned against the ids that are on
+// screen, so what survives a reload is decided entirely by whether those ids
+// came back. A restore keeps them, which is why a shareable link, a selection
+// and a hidden lane all still point at what they did before it.
+test("selection and hidden lanes survive a restore, and only ids decide it", () => {
+  const ms = (id: number, laneId: number) => ({
+    id,
+    uid: `uid-m${id}`,
+    laneId,
+    title: "M",
+    description: "",
+    date: "2026-01-01",
+    tentative: false,
+  });
+  const laneWith = (id: number, itemId: number, msId: number): LaneFull => {
+    const l = lane(id, [item(itemId, [], false)]);
+    l.milestones.push(ms(msId, id));
+    return l;
+  };
+
+  state.current = roadmapOf([laneWith(1, 1, 10), lane(2)]);
+  state.filter = null;
+  state.setLaneHidden(2, true);
+  state.selectedItemIds = new Set([1]);
+  state.selectedMilestoneId = 10;
+
+  // What the client does after a restore: refetch, reload the preferences,
+  // re-render. The payload carries the same ids, so nothing is pruned.
+  state.current = roadmapOf([laneWith(1, 1, 10), lane(2)]);
+  state.loadHiddenLanes();
+  state.notify();
+  assert.deepEqual([...state.selectedItemIds], [1]);
+  assert.equal(state.selectedMilestoneId, 10);
+  assert.equal(state.isLaneHidden(2), true);
+
+  // The same content under fresh ids is a different set of entities, and
+  // everything that pointed at the old ones is dropped — which is exactly what
+  // a renumbering restore would have done to them.
+  state.current = roadmapOf([laneWith(3, 4, 11), lane(5)]);
+  state.loadHiddenLanes();
+  state.notify();
+  assert.deepEqual([...state.selectedItemIds], []);
+  assert.equal(state.selectedMilestoneId, null);
+  assert.equal(state.isLaneHidden(2), false);
+
+  state.hiddenLanes = new Set();
+  state.selectedItemIds = new Set();
+  state.selectedMilestoneId = null;
 });
 
 test("atRiskCount counts children as well as top-level items", () => {

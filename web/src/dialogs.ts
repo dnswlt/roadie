@@ -1,7 +1,7 @@
 // Minimal promise-based wrappers around the native <dialog> element.
 
 import { icons } from "./icons";
-import type { Visibility } from "./types";
+import type { ImportMode, Visibility } from "./types";
 
 function dialogEl(): HTMLDialogElement {
   return document.getElementById("dialog") as HTMLDialogElement;
@@ -97,7 +97,101 @@ export function newRoadmapDialog(
   });
 }
 
-export function promptDialog(title: string, initial = "", okLabel = "OK"): Promise<string | null> {
+// importModeDialog asks what an imported file should become. The question is
+// always asked, never inferred from whether the file's identities collide with
+// something already here: taking a copy and taking the roadmap the file names
+// are different operations, and only the person importing knows which one they
+// mean. Returns null if cancelled.
+export function importModeDialog(fileName: string): Promise<ImportMode | null> {
+  const dlg = dialogEl();
+  dlg.replaceChildren();
+  const form = document.createElement("form");
+  form.method = "dialog";
+  const h = document.createElement("h3");
+  h.textContent = "Import roadmap";
+  const file = document.createElement("p");
+  file.textContent = fileName;
+  // New identifiers is the default and the common case; reusing the file's is a
+  // deliberate act.
+  let value: ImportMode = "copy";
+  const options: [ImportMode, string, string][] = [
+    [
+      "copy",
+      "New identifiers",
+      "Imports as a new roadmap. Assigns new identifiers.",
+    ],
+    [
+      "transfer",
+      "Keep identifiers",
+      "Reuses the identifiers in the file. Fails if any of them already exists here.",
+    ],
+  ];
+  // Both hints are rendered, stacked in one grid cell, and only the inactive
+  // one is hidden: the dialog is then the size of the longest hint whichever
+  // chip is active, instead of resizing under the pointer as the choice
+  // changes.
+  const hint = document.createElement("div");
+  hint.className = "dialog-hint";
+  const hints = new Map<ImportMode, HTMLParagraphElement>();
+  for (const [v, , text] of options) {
+    const p = document.createElement("p");
+    p.textContent = text;
+    hints.set(v, p);
+    hint.append(p);
+  }
+  const row = document.createElement("div");
+  row.className = "prio-chips mode-chips";
+  const chips = new Map<ImportMode, HTMLButtonElement>();
+  const paint = (): void => {
+    for (const [v, b] of chips) b.classList.toggle("active", v === value);
+    for (const [v, p] of hints)
+      p.style.visibility = v === value ? "visible" : "hidden";
+  };
+  for (const [v, text] of options) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "prio-chip";
+    b.textContent = text;
+    b.addEventListener("click", () => {
+      value = v;
+      paint();
+    });
+    chips.set(v, b);
+    row.append(b);
+  }
+  paint();
+
+  const actions = document.createElement("div");
+  actions.className = "dialog-actions";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn";
+  cancel.textContent = "Cancel";
+  const ok = document.createElement("button");
+  ok.type = "submit";
+  ok.className = "btn btn-primary";
+  ok.textContent = "Import";
+  actions.append(cancel, ok);
+  form.append(h, file, row, hint, actions);
+  dlg.append(form);
+
+  return new Promise((resolve) => {
+    let result: ImportMode | null = null;
+    form.addEventListener("submit", () => {
+      result = value;
+    });
+    cancel.addEventListener("click", () => dlg.close());
+    dlg.addEventListener("close", () => resolve(result), { once: true });
+    dlg.showModal();
+    ok.focus();
+  });
+}
+
+export function promptDialog(
+  title: string,
+  initial = "",
+  okLabel = "OK",
+): Promise<string | null> {
   const dlg = dialogEl();
   dlg.replaceChildren();
   const form = document.createElement("form");

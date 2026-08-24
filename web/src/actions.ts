@@ -10,6 +10,7 @@ import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
 import type {
   DependencyRef,
+  ImportMode,
   Item,
   ItemFull,
   ItemPatch,
@@ -18,7 +19,10 @@ import type {
   Visibility,
 } from "./types";
 
-type ItemMetadataPatch = Pick<ItemPatch, "priority" | "flagged" | "tentative" | "atRisk">;
+type ItemMetadataPatch = Pick<
+  ItemPatch,
+  "priority" | "flagged" | "tentative" | "atRisk"
+>;
 
 // Default length of a new top-level item, in days added to the start (end date
 // is inclusive, so this spans DEFAULT_ITEM_SPAN + 1 days). New children don't
@@ -29,7 +33,10 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-async function optimistic(mutate: () => void, call: () => Promise<unknown>): Promise<boolean> {
+async function optimistic(
+  mutate: () => void,
+  call: () => Promise<unknown>,
+): Promise<boolean> {
   // Single choke point: no mutation persists while previewing a snapshot (its
   // IDs are historical and could hit the wrong live row). Silently no-op — the
   // snapshot banner already explains why edits don't take.
@@ -91,7 +98,8 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
   if (patch.tentative !== undefined) item.tentative = patch.tentative;
   if (patch.atRisk !== undefined) item.atRisk = patch.atRisk;
 
-  const newParentId = patch.parentId !== undefined ? patch.parentId : item.parentId;
+  const newParentId =
+    patch.parentId !== undefined ? patch.parentId : item.parentId;
   let newLaneId = patch.laneId !== undefined ? patch.laneId : item.laneId;
   const newParent = newParentId !== null ? state.findItem(newParentId) : null;
   if (newParent) newLaneId = newParent.item.laneId;
@@ -112,7 +120,10 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
     const parentFull = newParent.item as ItemFull;
     const { children: _drop, ...plain } = item as ItemFull;
     const arr = parentFull.children;
-    const idx = patch.rank !== undefined ? Math.max(0, Math.min(patch.rank, arr.length)) : arr.length;
+    const idx =
+      patch.rank !== undefined
+        ? Math.max(0, Math.min(patch.rank, arr.length))
+        : arr.length;
     arr.splice(idx, 0, plain as Item);
     renumber(arr);
   } else {
@@ -122,7 +133,9 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
       if (!full.children) full.children = [];
       for (const c of full.children) c.laneId = newLaneId;
       const idx =
-        patch.rank !== undefined ? Math.max(0, Math.min(patch.rank, lane.items.length)) : lane.items.length;
+        patch.rank !== undefined
+          ? Math.max(0, Math.min(patch.rank, lane.items.length))
+          : lane.items.length;
       lane.items.splice(idx, 0, full);
       renumber(lane.items);
     }
@@ -180,7 +193,10 @@ export const actions = {
     for (const sid of [...state.selectedItemIds]) {
       if (!state.findItem(sid)) state.deselectItem(sid);
     }
-    if (state.selectedMilestoneId !== null && !state.findMilestone(state.selectedMilestoneId)) {
+    if (
+      state.selectedMilestoneId !== null &&
+      !state.findMilestone(state.selectedMilestoneId)
+    ) {
       state.selectedMilestoneId = null;
     }
     state.loadHiddenLanes(); // prune view prefs for lanes/parents that changed
@@ -190,7 +206,10 @@ export const actions = {
     state.notify();
   },
 
-  async createRoadmap(name: string, visibility: Visibility = "public"): Promise<void> {
+  async createRoadmap(
+    name: string,
+    visibility: Visibility = "public",
+  ): Promise<void> {
     try {
       const rm = await api.createRoadmap(name, visibility);
       await this.loadRoadmaps();
@@ -211,7 +230,11 @@ export const actions = {
       const listed = state.roadmaps.find((r) => r.id === rm.id);
       if (listed) listed.visibility = rm.visibility;
       state.notify();
-      toast(visibility === "private" ? "Roadmap is now private" : "Roadmap is now public");
+      toast(
+        visibility === "private"
+          ? "Roadmap is now private"
+          : "Roadmap is now public",
+      );
     } catch (e) {
       toast(errMsg(e), true);
     }
@@ -291,10 +314,14 @@ export const actions = {
 
   // importRoadmap uploads a previously exported file as a new roadmap and
   // switches to it. Name collisions are resolved server-side (" (2)" suffix).
-  async importRoadmap(file: File): Promise<void> {
+  // mode is the caller's answer to what the file should become; it selects the
+  // endpoint, and everything after the upload is the same either way.
+  async importRoadmap(file: File, mode: ImportMode): Promise<void> {
     try {
       const data: unknown = JSON.parse(await file.text());
-      const rm = await api.importRoadmap(data);
+      const rm = await (mode === "transfer"
+        ? api.transferRoadmap(data)
+        : api.importRoadmap(data));
       await this.loadRoadmaps();
       await this.selectRoadmap(rm.id);
       toast(`Imported "${rm.name}"`);
@@ -453,7 +480,11 @@ export const actions = {
   // moveItemWithChildren patches a parent item and shifts each child's dates
   // by the same number of days, so children follow a dragged parent instead
   // of snapping back to their stored dates.
-  async moveItemWithChildren(id: number, patch: ItemPatch, dayDelta: number): Promise<void> {
+  async moveItemWithChildren(
+    id: number,
+    patch: ItemPatch,
+    dayDelta: number,
+  ): Promise<void> {
     const loc = state.findItem(id);
     const children = loc ? (loc.item as ItemFull).children : [];
     const childPatches = children.map((c) => ({
@@ -504,7 +535,10 @@ export const actions = {
   // updateItemMetadata applies one scalar patch to several explicitly selected items.
   // It backs the multi-selection metadata controls: one optimistic apply and
   // rollback, while the server keeps its deliberately small per-item PATCH.
-  async updateItemMetadata(ids: number[], patch: ItemMetadataPatch): Promise<void> {
+  async updateItemMetadata(
+    ids: number[],
+    patch: ItemMetadataPatch,
+  ): Promise<void> {
     if (ids.length === 0) return;
     await optimistic(
       () => {
@@ -539,11 +573,14 @@ export const actions = {
           if (!loc) continue;
           gone.add(id);
           if (loc.parent) {
-            loc.parent.children = loc.parent.children.filter((c) => c.id !== id);
+            loc.parent.children = loc.parent.children.filter(
+              (c) => c.id !== id,
+            );
             renumber(loc.parent.children);
           } else {
             // The parent's children cascade away with it, edges included.
-            for (const c of (loc.item as ItemFull).children ?? []) gone.add(c.id);
+            for (const c of (loc.item as ItemFull).children ?? [])
+              gone.add(c.id);
             loc.lane.items = loc.lane.items.filter((i) => i.id !== id);
             renumber(loc.lane.items);
           }
@@ -584,8 +621,10 @@ export const actions = {
         if (!loc) return;
         const { milestone } = loc;
         if (patch.title !== undefined) milestone.title = patch.title;
-        if (patch.description !== undefined) milestone.description = patch.description;
-        if (patch.tentative !== undefined) milestone.tentative = patch.tentative;
+        if (patch.description !== undefined)
+          milestone.description = patch.description;
+        if (patch.tentative !== undefined)
+          milestone.tentative = patch.tentative;
         if (patch.date !== undefined) {
           milestone.date = patch.date;
           loc.lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
@@ -613,7 +652,10 @@ export const actions = {
   // and its rejection carries the diagnostic that explains the contradiction
   // ('"C" already depends on "A": …') — that must surface as a toast, not
   // flicker in and out of the panel. Returns true on success.
-  async addDependency(from: DependencyRef, to: DependencyRef): Promise<boolean> {
+  async addDependency(
+    from: DependencyRef,
+    to: DependencyRef,
+  ): Promise<boolean> {
     if (state.preview || !state.current) return false;
     try {
       const dep = await api.createDependency(state.current.id, from, to);
@@ -630,7 +672,9 @@ export const actions = {
     await optimistic(
       () => {
         if (!state.current) return;
-        state.current.dependencies = state.current.dependencies.filter((d) => d.id !== id);
+        state.current.dependencies = state.current.dependencies.filter(
+          (d) => d.id !== id,
+        );
       },
       () => api.deleteDependency(id),
     );
@@ -709,7 +753,9 @@ export const actions = {
     try {
       const named = await api.renameSnapshot(snapshotId, name);
       if (state.history !== null) {
-        state.history = state.history.map((s) => (s.id === named.id ? named : s));
+        state.history = state.history.map((s) =>
+          s.id === named.id ? named : s,
+        );
       }
       toast(`Saved checkpoint "${name}"`);
       state.notify();
@@ -765,7 +811,11 @@ export const actions = {
     try {
       const full = await api.getSnapshot(snapshotId);
       state.current = full;
-      state.preview = { snapshotId, createdAt, compare: state.preview?.compare };
+      state.preview = {
+        snapshotId,
+        createdAt,
+        compare: state.preview?.compare,
+      };
       state.clearSelection();
       state.notify();
     } catch (e) {

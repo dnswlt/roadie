@@ -186,12 +186,12 @@ func normalizeLabels(labels []string) []string {
 	return out
 }
 
-const milestoneCols = "id, lane_id, title, description, date, tentative, updated_at"
+const milestoneCols = "id, uid, lane_id, title, description, date, tentative, updated_at"
 
 func scanMilestone(r rowScanner) (model.Milestone, error) {
 	var m model.Milestone
 	var date time.Time
-	if err := r.Scan(&m.ID, &m.LaneID, &m.Title, &m.Description, &date, &m.Tentative, &m.UpdatedAt); err != nil {
+	if err := r.Scan(&m.ID, &m.UID, &m.LaneID, &m.Title, &m.Description, &date, &m.Tentative, &m.UpdatedAt); err != nil {
 		return model.Milestone{}, err
 	}
 	m.Date = model.NewDate(date)
@@ -200,11 +200,11 @@ func scanMilestone(r rowScanner) (model.Milestone, error) {
 
 // Roadmaps
 
-const roadmapCols = "id, name, created_at, updated_at, deleted_at, visibility"
+const roadmapCols = "id, uid, name, created_at, updated_at, deleted_at, visibility"
 
 func scanRoadmap(r rowScanner) (model.Roadmap, error) {
 	var rm model.Roadmap
-	err := r.Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt, &rm.Visibility)
+	err := r.Scan(&rm.ID, &rm.UID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt, &rm.Visibility)
 	return rm, err
 }
 
@@ -212,7 +212,7 @@ func scanRoadmap(r rowScanner) (model.Roadmap, error) {
 // the listings that compute it in SQL against the requesting subject.
 func scanOwnedRoadmap(r rowScanner) (model.Roadmap, error) {
 	var rm model.Roadmap
-	err := r.Scan(&rm.ID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt, &rm.Visibility, &rm.Owned)
+	err := r.Scan(&rm.ID, &rm.UID, &rm.Name, &rm.CreatedAt, &rm.UpdatedAt, &rm.DeletedAt, &rm.Visibility, &rm.Owned)
 	return rm, err
 }
 
@@ -560,6 +560,10 @@ func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull
 // gives you a private copy of your own, and copying a public one keeps it
 // public. An anonymous caller can only ever have reached a public source, so
 // the inherited visibility is never one they are not allowed to create.
+//
+// The import mode is stated here rather than left to the payload: a duplicate
+// is always a new, independent roadmap, so it gets a fresh roadmap UID and
+// fresh milestone UIDs however identity-laden the source is.
 func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name, owner string) (model.Roadmap, error) {
 	src, err := s.GetRoadmapFull(ctx, id)
 	if err != nil {
@@ -568,7 +572,7 @@ func (s *Store) DuplicateRoadmap(ctx context.Context, id int64, name, owner stri
 	if n := strings.TrimSpace(name); n != "" {
 		src.Name = n
 	}
-	return s.ImportRoadmap(ctx, src, Ownership{Visibility: src.Visibility, Owner: owner})
+	return s.ImportRoadmap(ctx, src, Ownership{Visibility: src.Visibility, Owner: owner}, ImportCopy)
 }
 
 // uniqueRoadmapName returns base, or base with a " (n)" suffix (n starting at
@@ -599,24 +603,174 @@ func (s *Store) uniqueRoadmapName(ctx context.Context, tx pgx.Tx, base, viewer s
 	}
 }
 
-// ImportRoadmap creates a brand-new roadmap from an exported RoadmapFull,
-// assigning fresh IDs throughout. The source's lane order (position) and item
-// order (rank) are taken from the array order — not the stored fields — so the
-// result is dense and consistent regardless of what the file contained. If the
-// name collides with an existing roadmap it is disambiguated with a " (n)"
-// suffix. The whole import runs in one transaction.
+// ImportMode selects what an import does with the identity carried in the file.
+// The caller states it; the database contents never select it, so the same file
+// imported twice does the same thing twice. There is no import-over-existing or
+// replace mode — version history is how an existing roadmap is put back.
+type ImportMode string
+
+const (
+	// ImportCopy creates an independent roadmap: fresh database IDs, a fresh
+	// roadmap UID and a fresh UID for every milestone.
+	ImportCopy ImportMode = "copy"
+	// ImportTransfer brings in the roadmap the file names, keeping the roadmap
+	// and milestone UIDs it carries. It writes nothing at all if any of them is
+	// already here, and never falls back to copy semantics.
+	ImportTransfer ImportMode = "transfer"
+)
+
+// validUID reports whether s has the canonical 8-4-4-4-12 hex shape of a UUID,
+// the only thing the uid columns accept. An import file is user input, so a
+// malformed UID has to be a rejection rather than a database cast error.
+func validUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// importPolicy turns an import mode into the identity policy for the roadmap's
+// contents, plus the UID for the roadmap row itself (nil = generate a fresh
+// one). Every mode requires the file's UIDs, including a copy that will throw
+// them away: a file without them predates what Roadie still imports. Checking
+// before the first insert is what makes a transfer's rejection name the file's
+// problem rather than a constraint violation halfway through.
+func importPolicy(mode ImportMode, src model.RoadmapFull) (*string, insertPolicy, error) {
+	if err := checkUID("this roadmap", src.UID); err != nil {
+		return nil, insertPolicy{}, err
+	}
+	for _, lane := range src.Lanes {
+		for _, ms := range lane.Milestones {
+			if err := checkUID(fmt.Sprintf("milestone %q", ms.Title), ms.UID); err != nil {
+				return nil, insertPolicy{}, err
+			}
+		}
+	}
+	switch mode {
+	case ImportCopy:
+		return nil, insertPolicy{}, nil
+	case ImportTransfer:
+		return &src.UID, insertPolicy{preserveUIDs: true}, nil
+	default:
+		return nil, insertPolicy{}, invalidf("unknown import mode %q", mode)
+	}
+}
+
+func checkUID(what, uid string) error {
+	if uid == "" {
+		return invalidf("%s carries no identity, so this file is too old to import", what)
+	}
+	if !validUID(uid) {
+		return invalidf("%s carries a malformed identity %q", what, uid)
+	}
+	return nil
+}
+
+// checkTransferable rejects the import if any identity the file brings already
+// exists here, naming what it collided with; only the user can resolve that, so
+// it is never papered over by generating new identities. Runs inside the import
+// transaction before any insert, which is what makes a rejected transfer write
+// nothing. Trashed roadmaps count — they still hold their UIDs.
+//
+// The refusal never depends on visibility — the UID is taken either way — but
+// what the message *names* does: viewer is the importing subject, and a roadmap
+// or milestone it cannot see is reported without its name, the same rule
+// uniqueRoadmapName follows.
+func checkTransferable(ctx context.Context, tx pgx.Tx, src model.RoadmapFull, viewer string) error {
+	var name string
+	var trashed, visible bool
+	err := tx.QueryRow(ctx,
+		`SELECT name, deleted_at IS NOT NULL, (`+visibleExpr+`) FROM roadmaps WHERE uid = $2`,
+		viewer, src.UID).Scan(&name, &trashed, &visible)
+	switch {
+	case err == nil && !visible:
+		return invalidf("this roadmap is already here, but you cannot see it — import it with new identifiers instead")
+	case err == nil && trashed:
+		return invalidf("this roadmap is already here as %q, in the trash — restore it from there, or import with new identifiers", name)
+	case err == nil:
+		return invalidf("this roadmap is already here as %q — import it with new identifiers instead, or use its version history to go back", name)
+	case !errors.Is(err, pgx.ErrNoRows):
+		return err
+	}
+
+	// Two milestones spelling the same UUID are one identity to the unique
+	// index, so a file that repeats one would fail mid-insert rather than here;
+	// the preflight owns that rejection too.
+	uids := []string{}
+	seen := map[string]bool{}
+	for _, lane := range src.Lanes {
+		for _, ms := range lane.Milestones {
+			key := strings.ToLower(ms.UID)
+			if seen[key] {
+				return invalidf("milestone %q repeats an identity used earlier in this file", ms.Title)
+			}
+			seen[key] = true
+			uids = append(uids, ms.UID)
+		}
+	}
+	// unnest($2::text[])::uuid rather than a uuid[] parameter: pgx sends a Go
+	// []string as text, and the cast keeps the comparison itself uuid-to-uuid so
+	// the unique index still serves it. ORDER BY 3 is the visibility column:
+	// with several conflicts, report one the importer can actually be told about.
+	var msTitle string
+	err = tx.QueryRow(ctx,
+		`SELECT ms.title, roadmaps.name, (`+visibleExpr+`) FROM milestones ms
+		 JOIN lanes l ON l.id = ms.lane_id
+		 JOIN roadmaps ON roadmaps.id = l.roadmap_id
+		 WHERE ms.uid = ANY(SELECT unnest($2::text[])::uuid)
+		 ORDER BY 3 DESC LIMIT 1`,
+		viewer, uids).Scan(&msTitle, &name, &visible)
+	switch {
+	case err == nil && !visible:
+		return invalidf("a milestone in this file is already here, in a roadmap you cannot see — import with new identifiers instead")
+	case err == nil:
+		return invalidf("milestone %q is already here, in roadmap %q — import with new identifiers instead", msTitle, name)
+	case !errors.Is(err, pgx.ErrNoRows):
+		return err
+	}
+	return nil
+}
+
+// ImportRoadmap creates a brand-new roadmap from an exported RoadmapFull. The
+// source's lane order (position) and item order (rank) are taken from the array
+// order — not the stored fields — so the result is dense and consistent
+// regardless of what the file contained. If the name collides with an existing
+// roadmap it is disambiguated with a " (n)" suffix. The whole import runs in one
+// transaction.
+//
+// Database IDs are always fresh; mode decides what happens to the UIDs (see
+// ImportMode). Duplication is an import in ImportCopy mode, which is why the
+// mode is an explicit argument rather than something derived from the payload:
+// a duplicate must produce independent identities no matter what it copies.
 //
 // own decides the new roadmap's visibility and owner, and it comes from the
 // caller, never from src: an export file carries a Visibility field (Roadmap is
 // embedded in RoadmapFull) and it is ignored here for the same reason the
 // embedded IDs and timestamps are. A file must not be able to grant anyone
-// access, nor to publish itself.
-func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ownership) (model.Roadmap, error) {
+// access, nor to publish itself. That holds for a transfer too: it moves
+// content identity, not access.
+func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ownership, mode ImportMode) (model.Roadmap, error) {
 	name := strings.TrimSpace(src.Name)
 	if name == "" {
 		return model.Roadmap{}, invalidf("roadmap name must not be empty")
 	}
 	vis, err := normalizeVisibility(own.Visibility, own.Owner)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+	uid, pol, err := importPolicy(mode, src)
 	if err != nil {
 		return model.Roadmap{}, err
 	}
@@ -626,13 +780,20 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ow
 	}
 	defer tx.Rollback(ctx)
 
+	if mode == ImportTransfer {
+		if err := checkTransferable(ctx, tx, src, own.Owner); err != nil {
+			return model.Roadmap{}, err
+		}
+	}
+
 	name, err = s.uniqueRoadmapName(ctx, tx, name, own.Owner)
 	if err != nil {
 		return model.Roadmap{}, err
 	}
 
 	rm, err := scanRoadmap(tx.QueryRow(ctx,
-		`INSERT INTO roadmaps (name, visibility) VALUES ($1, $2) RETURNING `+roadmapCols, name, vis))
+		`INSERT INTO roadmaps (uid, name, visibility)
+		 VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3) RETURNING `+roadmapCols, uid, name, vis))
 	if err != nil {
 		return model.Roadmap{}, err
 	}
@@ -641,10 +802,62 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ow
 	}
 	rm.Owned = own.Owner != ""
 
-	if err := s.insertRoadmapContents(ctx, tx, rm.ID, src); err != nil {
+	if err := s.insertRoadmapContents(ctx, tx, rm.ID, src, pol); err != nil {
 		return model.Roadmap{}, err
 	}
 	return rm, tx.Commit(ctx)
+}
+
+// insertPolicy is the identity insertRoadmapContents gives the rows it writes.
+// The operation picks it before inserting anything; what is already in the
+// database never picks it (notes/stable_uids.md).
+type insertPolicy struct {
+	// preserveIDs writes the source's own database IDs and updated_at stamps
+	// instead of letting the sequence and now() assign them. Only a restore
+	// does this: a database ID names a logical entity, not a physical row. It
+	// cannot collide — sequences never rewind, and the restore deletes the
+	// roadmap's lanes first, in the same transaction, under the roadmap lock.
+	preserveIDs bool
+	// preserveUIDs writes the source's milestone UIDs instead of generating
+	// fresh ones (a restore, and a transfer import).
+	preserveUIDs bool
+	// uidByID supplies the UID for a milestone whose source carries none — a
+	// snapshot taken before UIDs existed — keyed by the database ID it held
+	// before the restore deleted it. Only read under preserveUIDs.
+	uidByID map[int64]string
+}
+
+// dbID returns the database ID to insert for a source row: its own when the
+// policy preserves IDs, nil to let the sequence assign one.
+func (p insertPolicy) dbID(id int64) *int64 {
+	if !p.preserveIDs {
+		return nil
+	}
+	return &id
+}
+
+// stamp returns the updated_at to insert, nil for now(). It rides with
+// preserveIDs: restoring the same entity must not claim it was just edited.
+func (p insertPolicy) stamp(t time.Time) *time.Time {
+	if !p.preserveIDs {
+		return nil
+	}
+	return &t
+}
+
+// milestoneUID returns the UID to insert for a source milestone, nil to
+// generate a fresh one.
+func (p insertPolicy) milestoneUID(ms model.Milestone) *string {
+	if !p.preserveUIDs {
+		return nil
+	}
+	if ms.UID != "" {
+		return &ms.UID
+	}
+	if uid, ok := p.uidByID[ms.ID]; ok {
+		return &uid
+	}
+	return nil
 }
 
 // insertRoadmapContents writes the lanes, items (with children), milestones
@@ -653,8 +866,8 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ow
 // not the stored fields, so the result is dense and consistent regardless of
 // the source. It assumes roadmapID has no lanes yet (a fresh import target, or
 // one just cleared by RestoreSnapshot). Shared by ImportRoadmap and
-// RestoreSnapshot.
-func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID int64, src model.RoadmapFull) error {
+// RestoreSnapshot, which differ only in pol.
+func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID int64, src model.RoadmapFull, pol insertPolicy) error {
 	// Dependency edges reference the ids embedded in src, so the item and
 	// milestone inserts record how those map to the fresh rows. A source id of
 	// 0 (a hand-written file omitting ids) is not recorded: it names nothing an
@@ -680,10 +893,11 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 		}
 		var id int64
 		err := tx.QueryRow(ctx,
-			`INSERT INTO items (lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, flagged, tentative, at_risk)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-			laneID, parentID, it.Title, it.Description, it.StartDate.Time, it.EndDate.Time,
-			rank, it.Priority, normalizeLabels(it.Labels), it.Flagged, it.Tentative, it.AtRisk).Scan(&id)
+			`INSERT INTO items (id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, flagged, tentative, at_risk, updated_at)
+			 VALUES (`+nextID("items")+`, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::timestamptz, now())) RETURNING id`,
+			pol.dbID(it.ID), laneID, parentID, it.Title, it.Description, it.StartDate.Time, it.EndDate.Time,
+			rank, it.Priority, normalizeLabels(it.Labels), it.Flagged, it.Tentative, it.AtRisk,
+			pol.stamp(it.UpdatedAt)).Scan(&id)
 		return id, err
 	}
 
@@ -698,8 +912,9 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 		}
 		var laneID int64
 		if err := tx.QueryRow(ctx,
-			`INSERT INTO lanes (roadmap_id, name, position, color) VALUES ($1, $2, $3, $4) RETURNING id`,
-			roadmapID, laneName, pos, color).Scan(&laneID); err != nil {
+			`INSERT INTO lanes (id, roadmap_id, name, position, color)
+			 VALUES (`+nextID("lanes")+`, $2, $3, $4, $5) RETURNING id`,
+			pol.dbID(lane.ID), roadmapID, laneName, pos, color).Scan(&laneID); err != nil {
 			return err
 		}
 		for rank, item := range lane.Items {
@@ -729,8 +944,11 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 			}
 			var msID int64
 			if err := tx.QueryRow(ctx,
-				`INSERT INTO milestones (lane_id, title, description, date, tentative) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-				laneID, ms.Title, ms.Description, ms.Date.Time, ms.Tentative).Scan(&msID); err != nil {
+				`INSERT INTO milestones (id, uid, lane_id, title, description, date, tentative, updated_at)
+				 VALUES (`+nextID("milestones")+`, COALESCE($2::uuid, gen_random_uuid()), $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()))
+				 RETURNING id`,
+				pol.dbID(ms.ID), pol.milestoneUID(ms), laneID, ms.Title, ms.Description, ms.Date.Time,
+				ms.Tentative, pol.stamp(ms.UpdatedAt)).Scan(&msID); err != nil {
 				return err
 			}
 			if ms.ID != 0 {
@@ -742,8 +960,18 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 		return err
 	}
 	// The schedule is roadmap-scoped (not under any lane), so it is inserted once
-	// here rather than per lane.
+	// here rather than per lane. Periods get fresh IDs under every policy: they
+	// are replaced as a set and compared by value, so nothing outside the table
+	// ever names one.
 	return insertSchedulePeriods(ctx, tx, roadmapID, src.Periods)
+}
+
+// nextID is the id expression the insert statements above use for $1: the
+// source's own database ID when one is supplied, otherwise the table's own
+// sequence — the same value the column default would have produced. COALESCE
+// short-circuits, so passing an ID does not burn a sequence number.
+func nextID(table string) string {
+	return fmt.Sprintf("COALESCE($1::bigint, nextval(pg_get_serial_sequence('%s', 'id')))", table)
 }
 
 // Lanes

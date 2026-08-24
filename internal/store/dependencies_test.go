@@ -240,7 +240,7 @@ func TestDependencyImportRemapsIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imported, err := testStore.ImportRoadmap(ctx, src, Ownership{})
+	imported, err := testStore.ImportRoadmap(ctx, src, Ownership{}, ImportCopy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestDependencyImportRejectsBadGraphs(t *testing.T) {
 		{From: itemRef(a.ID), To: itemRef(b.ID)},
 		{From: itemRef(b.ID), To: itemRef(a.ID)},
 	}
-	_, err = testStore.ImportRoadmap(ctx, cyclic, Ownership{})
+	_, err = testStore.ImportRoadmap(ctx, cyclic, Ownership{}, ImportCopy)
 	if !isValidation(err) {
 		t.Fatalf("cyclic import: want validation error, got %v", err)
 	}
@@ -281,7 +281,7 @@ func TestDependencyImportRejectsBadGraphs(t *testing.T) {
 
 	dangling := src
 	dangling.Dependencies = []model.Dependency{{From: itemRef(a.ID), To: itemRef(999999)}}
-	if _, err := testStore.ImportRoadmap(ctx, dangling, Ownership{}); !isValidation(err) {
+	if _, err := testStore.ImportRoadmap(ctx, dangling, Ownership{}, ImportCopy); !isValidation(err) {
 		t.Errorf("dangling import: want validation error, got %v", err)
 	}
 }

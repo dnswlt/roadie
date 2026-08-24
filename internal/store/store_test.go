@@ -849,7 +849,7 @@ func TestImportRoadmap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	imported, err := testStore.ImportRoadmap(ctx, src, Ownership{})
+	imported, err := testStore.ImportRoadmap(ctx, src, Ownership{}, ImportCopy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -917,7 +917,7 @@ func TestImportRoadmap(t *testing.T) {
 	}
 
 	// Empty name is rejected.
-	if _, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{}, Ownership{}); !isValidation(err) {
+	if _, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{}, Ownership{}, ImportCopy); !isValidation(err) {
 		t.Errorf("empty name: want validation error, got %v", err)
 	}
 }

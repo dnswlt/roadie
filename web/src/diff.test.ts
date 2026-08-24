@@ -33,7 +33,16 @@ function item(id: number, laneId: number, over: Partial<ItemFull> = {}): ItemFul
 }
 
 function milestone(id: number, laneId: number, over: Partial<Milestone> = {}): Milestone {
-  return { id, laneId, title: `m${id}`, description: "", date: "2026-02-01", tentative: false, ...over };
+  return {
+    id,
+    uid: `uid-m${id}`,
+    laneId,
+    title: `m${id}`,
+    description: "",
+    date: "2026-02-01",
+    tentative: false,
+    ...over,
+  };
 }
 
 function lane(id: number, over: Partial<LaneFull> = {}): LaneFull {
@@ -52,6 +61,7 @@ function lane(id: number, over: Partial<LaneFull> = {}): LaneFull {
 function roadmap(lanes: LaneFull[], over: Partial<RoadmapFull> = {}): RoadmapFull {
   return {
     id: 1,
+    uid: "uid-r1",
     name: "rm",
     createdAt: "2026-01-01T00:00:00Z",
     visibility: "public",
@@ -94,6 +104,59 @@ test("identical roadmaps produce an empty diff", () => {
   const d = diffRoadmaps(make(), make());
   assert.equal(isEmptyDiff(d), true);
   assert.deepEqual(diffCounts(d), { added: 0, removed: 0, modified: 0 });
+});
+
+// A restore reinserts the roadmap's entities under the database IDs the
+// snapshot recorded, so diffing a snapshot against the roadmap it was just
+// restored into has nothing to report. That is what makes version history
+// legible: before this, a restore renumbered everything and the diff honestly
+// read as replace-all — which is the second half of this test.
+//
+// Dependency rows do get fresh IDs across a restore. They are matched by
+// endpoint pair, so that must not show up either.
+test("a restored snapshot diffs to nothing against the snapshot", () => {
+  const snapshot = roadmap(
+    [
+      ranked(
+        lane(1, {
+          items: [item(10, 1, { children: [item(11, 1)] })],
+          milestones: [milestone(20, 1)],
+        }),
+      ),
+    ],
+    { dependencies: [dep(7, 10, 11)] },
+  );
+  const restored = roadmap(
+    [
+      ranked(
+        lane(1, {
+          items: [item(10, 1, { children: [item(11, 1)] })],
+          milestones: [milestone(20, 1)],
+        }),
+      ),
+    ],
+    { dependencies: [dep(99, 10, 11)] },
+  );
+  assert.equal(isEmptyDiff(diffRoadmaps(snapshot, restored)), true);
+
+  // The same content under fresh IDs is a different set of entities, and the
+  // diff says so rather than pretending to recognize them by title.
+  const renumbered = roadmap(
+    [
+      ranked(
+        lane(2, {
+          items: [item(30, 2, { children: [item(31, 2)] })],
+          milestones: [milestone(40, 2)],
+        }),
+      ),
+    ],
+    { dependencies: [dep(99, 30, 31)] },
+  );
+  assert.deepEqual(diffCounts(diffRoadmaps(snapshot, renumbered)), {
+    added: 3,
+    removed: 3,
+    modified: 0,
+  });
 });
 
 test("a field edit is one modified entry naming its fields", () => {

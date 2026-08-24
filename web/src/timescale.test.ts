@@ -30,7 +30,7 @@ function item(startDate: string, endDate: string, children: Item[] = []): ItemFu
 }
 
 function milestone(date: string): Milestone {
-  return { id: 0, laneId: 0, title: "x", description: "", date, tentative: false };
+  return { id: 0, uid: "uid-m0", laneId: 0, title: "x", description: "", date, tentative: false };
 }
 
 function lane(items: ItemFull[], milestoneDates: string[] = []): LaneFull {

@@ -38,6 +38,7 @@ function roadmap(...items: ItemFull[]): RoadmapFull {
     milestones: [
       {
         id: 99,
+        uid: "uid-m99",
         laneId: 1,
         title: "Launch",
         description: "https://jira.example.test/jira/browse/PAY-3",
@@ -48,6 +49,7 @@ function roadmap(...items: ItemFull[]): RoadmapFull {
   };
   return {
     id: 1,
+    uid: "uid-r1",
     name: "Roadmap",
     createdAt: "2026-01-01T00:00:00Z",
     visibility: "public",

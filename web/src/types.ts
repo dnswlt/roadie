@@ -7,6 +7,13 @@ export type Visibility = "private" | "public";
 
 export interface Roadmap {
   id: number;
+  // The roadmap's portable identity: what it is called beyond the database it
+  // lives in, so a transfer import can recognize the same logical roadmap in a
+  // file. Nothing in the client resolves anything through it — links,
+  // selections and view preferences all use the database id, which is stable
+  // across a restore. It is here because it rides in every roadmap payload,
+  // including exported files.
+  uid: string;
   name: string;
   // The server also sends updatedAt, deliberately not declared here: it only
   // moves when the roadmaps row itself is written (rename, restore), so it is
@@ -20,6 +27,17 @@ export interface Roadmap {
   // auth off, have no owner at all and stay public forever.
   owned?: boolean;
 }
+
+// What an import does with the identities the file carries, and hence which
+// endpoint it posts to. "copy" creates an independent roadmap, generating a new
+// UID for it and for every milestone; "transfer" brings in the roadmap the file
+// names, keeping them, and is refused outright if any of them is already there.
+// The user picks; nothing infers the mode from what the file happens to collide
+// with.
+//
+// There is no import-over-existing mode: version history is how an existing
+// roadmap is put back.
+export type ImportMode = "copy" | "transfer";
 
 // TrashedRoadmap is a roadmap in the trash, as returned by GET
 // /api/roadmaps/trash. purgeAt is computed by the server from its retention
@@ -65,6 +83,10 @@ export interface ItemFull extends Item {
 
 export interface Milestone {
   id: number;
+  // Globally unique and immutable from creation: the name anything outside this
+  // roadmap refers to the milestone by, where the database id means nothing.
+  // Items and lanes have none — nothing outside a roadmap ever names one.
+  uid: string;
   laneId: number;
   title: string;
   description: string;

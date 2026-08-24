@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -116,8 +118,9 @@ func TestSnapshotRestore(t *testing.T) {
 	if len(got.Lanes) != 1 || got.Lanes[0].Name != "L1" {
 		t.Fatalf("restore did not replace contents: %d lanes", len(got.Lanes))
 	}
-	if got.Lanes[0].ID == lane.ID {
-		t.Errorf("restore should reinsert with fresh IDs, reused lane ID %d", lane.ID)
+	if got.Lanes[0].ID != lane.ID {
+		t.Errorf("restore reinserted lane under a fresh ID %d, want the original %d",
+			got.Lanes[0].ID, lane.ID)
 	}
 	if n := len(got.Lanes[0].Items); n != 1 {
 		t.Fatalf("items after restore: want 1, got %d", n)
@@ -333,4 +336,207 @@ func TestSnapshotManualRequiresName(t *testing.T) {
 	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotAuto, nil); err != nil {
 		t.Fatalf("auto with no name: %v", err)
 	}
+}
+
+// A restore re-creates the roadmap's entities under the database IDs the
+// snapshot recorded, because a database ID names a logical entity rather than a
+// physical row. This is the defining regression test for that: restore a
+// snapshot and compare the result against the snapshot's own contents, which is
+// exactly what the client-side version diff does. Same content, same IDs,
+// nothing to report.
+//
+// The comparison is over the lane tree as JSON rather than field by field: the
+// point is that *everything* the client sees comes back identical, and a check
+// that listed the fields would quietly stop covering the next one added.
+func TestRestorePreservesEntityIdentity(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane := seedSmallRoadmap(t, rm.ID)
+
+	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotAuto, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := testStore.GetSnapshotContents(ctx, snap.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Diverge in every way a restore has to undo: an edit, an addition and a
+	// deletion.
+	if _, err := testStore.UpdateLane(ctx, lane.ID, LanePatch{
+		Name: model.Opt[string]{Set: true, Value: "renamed"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Later", StartDate: date("2026-04-01"), EndDate: date("2026-04-10")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, ms := range want.Lanes[0].Milestones {
+		if err := testStore.DeleteMilestone(ctx, ms.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := testStore.RestoreSnapshot(ctx, snap.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, b := mustJSON(t, want.Lanes), mustJSON(t, got.Lanes); a != b {
+		t.Errorf("restored contents differ from the snapshot\n snapshot: %s\n restored: %s", a, b)
+	}
+}
+
+// Restoring what a restore produced must be a no-op on identity too: preserved
+// IDs have to be stable under repetition, not merely equal once.
+func TestRestoreOfRestoreIsStable(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane := seedSmallRoadmap(t, rm.ID)
+
+	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotAuto, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := testStore.RestoreSnapshot(ctx, snap.ID); err != nil {
+			t.Fatalf("restore %d: %v", i, err)
+		}
+		full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if full.Lanes[0].ID != lane.ID {
+			t.Fatalf("restore %d: lane ID %d, want %d", i, full.Lanes[0].ID, lane.ID)
+		}
+	}
+}
+
+// An entity the checkpoint does not contain stays gone, and its database ID is
+// not handed to anything else: sequences never rewind, so a restore can reuse
+// its own IDs without ever colliding with a future one.
+func TestRestoreKeepsAbsentEntityGoneAndFreshIDsFresh(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane := seedSmallRoadmap(t, rm.ID)
+
+	snap, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotAuto, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	added, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "Added later", StartDate: date("2026-04-01"), EndDate: date("2026-04-10")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.RestoreSnapshot(ctx, snap.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.UpdateItem(ctx, added.ID, ItemPatch{
+		Title: model.Opt[string]{Set: true, Value: "x"}}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("item absent from the checkpoint: want ErrNotFound, got %v", err)
+	}
+
+	next, err := testStore.CreateItem(ctx, lane.ID, NewItem{
+		Title: "After the restore", StartDate: date("2026-05-01"), EndDate: date("2026-05-10")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ID <= added.ID {
+		t.Errorf("insert after a restore got ID %d, which is not past the retired %d",
+			next.ID, added.ID)
+	}
+}
+
+// Snapshots taken before UIDs existed carry none. The milestone that currently
+// holds that database ID hands its UID over; a milestone the roadmap no longer
+// has simply gets a fresh one.
+func TestRestorePreUIDSnapshotInheritsUIDs(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	lane := seedSmallRoadmap(t, rm.ID)
+	gone, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
+		Title: "Dropped", Date: date("2026-07-01")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uidBefore := map[int64]string{}
+	for _, ms := range full.Lanes[0].Milestones {
+		uidBefore[ms.ID] = ms.UID
+	}
+	// A genuine pre-UID blob has no "uid" key at all, which decodes to exactly
+	// this: the empty string.
+	legacy := full
+	legacy.Lanes = append([]model.LaneFull(nil), full.Lanes...)
+	legacy.Lanes[0].Milestones = append([]model.Milestone(nil), full.Lanes[0].Milestones...)
+	for i := range legacy.Lanes[0].Milestones {
+		legacy.Lanes[0].Milestones[i].UID = ""
+	}
+	snapID := insertSnapshotBlob(t, rm.ID, legacy)
+
+	// The milestone that is only in the blob has no row left to inherit from.
+	if err := testStore.DeleteMilestone(ctx, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := testStore.RestoreSnapshot(ctx, snapID); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(restored.Lanes[0].Milestones); n != len(uidBefore) {
+		t.Fatalf("milestones after restore: want %d, got %d", len(uidBefore), n)
+	}
+	for _, ms := range restored.Lanes[0].Milestones {
+		switch {
+		case ms.ID == gone.ID:
+			// Nothing held that ID at restore time, so a fresh UID is the only
+			// honest answer — and it must not be the one the deleted row had.
+			if !validUID(ms.UID) || ms.UID == uidBefore[gone.ID] {
+				t.Errorf("milestone %q: want a fresh UID, got %q", ms.Title, ms.UID)
+			}
+		case ms.UID != uidBefore[ms.ID]:
+			t.Errorf("milestone %q did not inherit its UID: %q, want %q",
+				ms.Title, ms.UID, uidBefore[ms.ID])
+		}
+	}
+}
+
+// insertSnapshotBlob stores full as a snapshot payload directly, bypassing
+// CreateSnapshot so a test can capture a payload the current code would never
+// produce (see TestRestorePreUIDSnapshotInheritsUIDs).
+func insertSnapshotBlob(t *testing.T, roadmapID int64, full model.RoadmapFull) int64 {
+	t.Helper()
+	data, err := json.Marshal(model.RoadmapExport{
+		Format: model.ExportFormat, Version: 1, Roadmap: full})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	if err := testStore.pool.QueryRow(context.Background(),
+		`INSERT INTO snapshots (roadmap_id, kind, format_version, data)
+		 VALUES ($1, $2, $3, $4) RETURNING id`,
+		roadmapID, model.SnapshotAuto, 1, data).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

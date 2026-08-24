@@ -48,9 +48,19 @@ Roadie downloads a JSON file containing the roadmap and its content.
 
 1. Select **Home**.
 2. Select **Import** and choose the exported JSON file.
+3. Choose how the roadmap's identifiers are assigned, and confirm:
+
+    - **New identifiers** imports the file as a new roadmap, assigning new
+      identifiers. Importing the same file again creates another roadmap.
+    - **Keep identifiers** reuses the identifiers in the file, so the result is
+      the roadmap the file came from rather than a copy of it. It fails if that
+      roadmap, or any of its milestones, is already here.
 
 Importing creates and opens a new public roadmap. In deployments with sign-in,
 its owner can make it private afterward.
+
+Files exported by Roadie versions before roadmaps had a portable identity
+cannot be imported.
 
 ## Delete or restore a roadmap
 

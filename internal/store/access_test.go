@@ -271,8 +271,8 @@ func TestUniqueNameIgnoresInvisibleRoadmaps(t *testing.T) {
 	newOwnedRoadmap(t, name, model.VisibilityPrivate, grace)
 
 	imported, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{
-		Roadmap: model.Roadmap{Name: name},
-	}, Ownership{Owner: ada})
+		Roadmap: model.Roadmap{UID: testUID(), Name: name},
+	}, Ownership{Owner: ada}, ImportCopy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,8 +290,8 @@ func TestUniqueNameIgnoresInvisibleRoadmaps(t *testing.T) {
 func TestImportIgnoresFileVisibility(t *testing.T) {
 	ctx := context.Background()
 	imported, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{
-		Roadmap: model.Roadmap{Name: "test-" + t.Name(), Visibility: model.VisibilityPrivate},
-	}, Ownership{Visibility: model.VisibilityPublic, Owner: ada})
+		Roadmap: model.Roadmap{UID: testUID(), Name: "test-" + t.Name(), Visibility: model.VisibilityPrivate},
+	}, Ownership{Visibility: model.VisibilityPublic, Owner: ada}, ImportCopy)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -48,6 +48,7 @@ function lane(id: number, name: string, items: ItemSpec[], milestones: Milestone
 function roadmap(...lanes: LaneFull[]): RoadmapFull {
   return {
     id: 1,
+    uid: "uid-r1",
     name: "R",
     createdAt: "2026-01-01T00:00:00Z",
     visibility: "public",
@@ -173,6 +174,7 @@ test("children of collapsed parents are searched too", () => {
 test("milestones match on title and description and carry their date twice", () => {
   const ms: Milestone = {
     id: 7,
+    uid: "uid-m7",
     laneId: 1,
     title: "GA launch",
     description: "auth complete",

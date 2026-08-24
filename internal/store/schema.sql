@@ -18,6 +18,9 @@
 -- (only the subjects in roadmap_members). See migrations/012_roadmap_visibility.sql.
 CREATE TABLE roadmaps (
     id         BIGSERIAL PRIMARY KEY,
+    -- Portable identity, immutable from creation: the roadmap's name beyond
+    -- this database. See migrations/018_entity_uids.sql.
+    uid        UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     name       TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -67,6 +70,11 @@ CREATE INDEX items_parent_idx ON items (parent_id);
 
 CREATE TABLE milestones (
     id          BIGSERIAL PRIMARY KEY,
+    -- Portable identity, immutable from creation. Every milestone gets one, not
+    -- only the ones that are published to another roadmap: a milestone may be
+    -- published later, and a UID must hold from creation. Lanes and items get
+    -- none. See migrations/018_entity_uids.sql.
+    uid         UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     lane_id     BIGINT NOT NULL REFERENCES lanes(id) ON DELETE CASCADE,
     title       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',

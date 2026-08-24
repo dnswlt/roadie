@@ -43,6 +43,7 @@ const lane = (id: number, position: number, itemIds: number[], milestoneIds: num
   milestones: milestoneIds.map(
     (milestoneId): Milestone => ({
       id: milestoneId,
+      uid: `uid-m${milestoneId}`,
       laneId: id,
       title: `Milestone ${milestoneId}`,
       description: "",
@@ -122,6 +123,7 @@ function datedItem(id: number, start: string, end: string): ItemFull {
 function roadmap(items: ItemFull[], milestones: Milestone[], dependencies: Dependency[]): RoadmapFull {
   return {
     id: 1,
+    uid: "uid-r1",
     name: "R",
     createdAt: "2026-01-01T00:00:00Z",
     visibility: "public",
@@ -133,6 +135,7 @@ function roadmap(items: ItemFull[], milestones: Milestone[], dependencies: Depen
 
 const milestone = (id: number, date: string): Milestone => ({
   id,
+  uid: `uid-m${id}`,
   laneId: 1,
   title: `M${id}`,
   description: "",

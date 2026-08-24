@@ -217,9 +217,10 @@ func TestImportRejectsBadInput(t *testing.T) {
 		body string
 	}{
 		{"malformed json", `{not json`},
-		{"wrong format", `{"format":"something-else","version":1,"roadmap":{"name":"x"}}`},
+		{"wrong format", `{"format":"something-else","version":2,"roadmap":{"name":"x"}}`},
 		{"future version", `{"format":"roadie.roadmap","version":999,"roadmap":{"name":"x"}}`},
-		{"empty name", `{"format":"roadie.roadmap","version":1,"roadmap":{"name":""}}`},
+		{"past version", `{"format":"roadie.roadmap","version":1,"roadmap":{"name":"x"}}`},
+		{"empty name", `{"format":"roadie.roadmap","version":2,"roadmap":{"name":""}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -228,6 +229,117 @@ func TestImportRejectsBadInput(t *testing.T) {
 				t.Errorf("want 400, got %d (%s)", w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+// A UID is immutable from creation, so no patch may carry one. Nothing enforces
+// that at runtime: the patch structs simply have no such field, and readJSON
+// rejects unknown ones — which is exactly the guarantee, and why it is worth
+// pinning that adding the field later would break this test rather than the
+// identity.
+func TestPatchCannotSetUID(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+
+	w := do(t, "GET", "/api/roadmaps/"+itoa(id), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get roadmap: %d", w.Code)
+	}
+	full := decode[model.RoadmapFull](t, w)
+	ms := full.Lanes[0].Milestones[0]
+	if !strings.Contains(w.Body.String(), ms.UID) || ms.UID == "" {
+		t.Fatalf("roadmap read does not carry the milestone UID: %+v", ms)
+	}
+
+	const fresh = `"0b3f4b0e-5b3a-4f2a-9c1d-7e6a5c4b3a21"`
+	for _, tc := range []struct{ path, body string }{
+		{"/api/milestones/" + itoa(ms.ID), `{"uid":` + fresh + `}`},
+		{"/api/roadmaps/" + itoa(id), `{"uid":` + fresh + `}`},
+	} {
+		if w := doRaw(t, "PATCH", tc.path, tc.body); w.Code != http.StatusBadRequest {
+			t.Errorf("PATCH %s with a uid: want 400, got %d (%s)", tc.path, w.Code, w.Body.String())
+		}
+	}
+}
+
+// The two import routes are two operations, not one with a flag: the same file
+// posted to /import twice gives two unrelated roadmaps, and /transfer refuses an
+// identity that is already here rather than quietly downgrading to a copy.
+func TestImportModes(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+
+	w := do(t, "GET", "/api/roadmaps/"+itoa(id)+"/export", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("export status: %d (%s)", w.Code, w.Body.String())
+	}
+	file := w.Body.String()
+
+	var exp model.RoadmapExport
+	if err := json.Unmarshal([]byte(file), &exp); err != nil {
+		t.Fatal(err)
+	}
+	if exp.Roadmap.UID == "" || exp.Roadmap.Lanes[0].Milestones[0].UID == "" {
+		t.Fatalf("export carries no identities: %+v", exp.Roadmap)
+	}
+
+	// Import: a new identity of its own.
+	w = doRaw(t, "POST", "/api/roadmaps/import", file)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("import: want 201, got %d (%s)", w.Code, w.Body.String())
+	}
+	copied := decode[model.Roadmap](t, w)
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), copied.ID) })
+	if copied.UID == exp.Roadmap.UID {
+		t.Errorf("import kept the roadmap UID %q", copied.UID)
+	}
+
+	// Transfer, while the source is still here: refused, and nothing written.
+	w = doRaw(t, "POST", "/api/roadmaps/transfer", file)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("conflicting transfer: want 400, got %d (%s)", w.Code, w.Body.String())
+	}
+
+	// Transfer once the source is gone: the same logical roadmap arrives.
+	if err := testStore.DeleteRoadmap(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	w = doRaw(t, "POST", "/api/roadmaps/transfer", file)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("transfer: want 201, got %d (%s)", w.Code, w.Body.String())
+	}
+	moved := decode[model.Roadmap](t, w)
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), moved.ID) })
+	if moved.UID != exp.Roadmap.UID {
+		t.Errorf("transfer changed the roadmap UID: %q, want %q", moved.UID, exp.Roadmap.UID)
+	}
+}
+
+// The route decides what an import does, so a mode cannot be smuggled past it:
+// the identity is already here, and a transfer would have been refused.
+func TestImportIgnoresAModeQueryParam(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+
+	w := do(t, "GET", "/api/roadmaps/"+itoa(id)+"/export", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("export status: %d (%s)", w.Code, w.Body.String())
+	}
+	w = doRaw(t, "POST", "/api/roadmaps/import?mode=transfer", w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("import with a stray query param: want 201, got %d (%s)", w.Code, w.Body.String())
+	}
+	rm := decode[model.Roadmap](t, w)
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), rm.ID) })
+}
+
+// A file exported before UIDs existed carries no identity at all, and neither
+// route accepts it. The format version decides that, not a scan of which UIDs
+// happen to be populated.
+func TestImportRejectsOldExport(t *testing.T) {
+	const old = `{"format":"roadie.roadmap","version":1,"roadmap":{"name":"test-old-export","lanes":[]}}`
+
+	for _, route := range []string{"/api/roadmaps/import", "/api/roadmaps/transfer"} {
+		if w := doRaw(t, "POST", route, old); w.Code != http.StatusBadRequest {
+			t.Errorf("v1 file to %s: want 400, got %d (%s)", route, w.Code, w.Body.String())
+		}
 	}
 }
 

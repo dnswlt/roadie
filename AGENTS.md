@@ -210,8 +210,8 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **Version history is "go back", not undo.**
 - **The version diff is computed client-side** (`diff.ts`) from two RoadmapFull
   payloads — no diff endpoint, no second wire format. Its scope is exactly what
-  a restore would change; identity is the DB id, so a diff across a restore
-  (which re-ids everything) honestly reads as replace-all. Reorders surface
+  a restore would change; identity is the DB id, which a restore preserves, so
+  a diff across one describes content. Reorders surface
   only as per-lane "items reordered" notes, never as which ranks moved. Edge
   changes render on both endpoint rows (→ outgoing, ← incoming), not as a
   flat list — so an edge to an added/removed entity still shows on the
@@ -221,6 +221,17 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   gets field chips, with boolean flips inlined as +/− chips, no detail row.
 - **A checkpoint is a snapshot with a name**: the name is what promotes it to
   `kind = manual` and exempts it from pruning. No separate table, flag or concept.
+- **A database ID names a logical entity, not a physical row.** Restore reinserts
+  the snapshot's own lane/item/milestone IDs and `updated_at`; anything storing a
+  reference outside the roadmap's delete cascade must accept being re-bound.
+- **Only roadmaps and milestones have a UID** — portable identity, immutable from
+  creation, returned by APIs and never accepted in a patch. Lanes, items,
+  dependencies and periods get none, and giving them one is the global-graph
+  addressing layer `notes/external_milestones.md` refuses.
+- **What an import does with a file's identity is the route, not a flag**:
+  `/api/roadmaps/import` regenerates every UID, `/api/roadmaps/transfer` keeps
+  them and is refused atomically if any is already here. No import-over-existing
+  mode — version history is that. Both need `model.MinExportVersion` or newer.
 - **E2E is a browser smoke layer, not visual regression testing** (`web/e2e`,
   `make test-e2e`). Use Playwright only where browser behaviour is the subject:
   pointer gestures, focus and event ordering, client-only projections, or

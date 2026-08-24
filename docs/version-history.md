@@ -100,10 +100,6 @@ whether the dependency was added: `→` where this entity is the prerequisite,
 `←` where it is the dependent. Gained dependencies come first, in green; lost
 ones follow, in red.
 
-> **Note:** After a restore, comparisons with versions from before it report
-> everything as replaced. Restoring rebuilds the roadmap's content, so earlier
-> entities cannot be matched to their counterparts.
-
 ## Save a checkpoint
 
 Naming a version keeps it out of the thinning and labels it in the list—worth
@@ -134,3 +130,7 @@ Deleting removes the history entry only; the roadmap is untouched.
 
 The roadmap returns to that version, and the state you replaced stays in
 history, so the restore can itself be undone.
+
+Restoring keeps every entity's identity, so comparisons across a restore still
+describe what actually changed, and a link you have shared to an item or a
+milestone still opens it.

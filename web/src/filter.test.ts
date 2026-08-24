@@ -105,6 +105,7 @@ test("dependency-conflict focus uses derived item membership and keeps breadcrum
 test("an empty filtered lane remains present with its milestones", () => {
   const milestone: Milestone = {
     id: 9,
+    uid: "uid-m9",
     laneId: 1,
     title: "M",
     description: "",

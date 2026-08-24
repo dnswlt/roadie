@@ -67,7 +67,16 @@ const (
 )
 
 type Roadmap struct {
-	ID        int64     `json:"id"`
+	ID int64 `json:"id"`
+	// UID is the roadmap's portable identity: stable across a restore and
+	// carried through exports, so a transfer import can recognize the same
+	// logical roadmap wherever the file turns up. It is assigned at creation and
+	// never changes; the API returns it but no patch accepts it.
+	//
+	// Nothing resolves a cross-roadmap reference through it — a milestone UID is
+	// globally unique on its own — so it exists purely to answer "is this same
+	// roadmap already here", including for a roadmap with no milestones.
+	UID       string    `json:"uid"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -138,7 +147,12 @@ type ItemFull struct {
 // Milestone is a fixed date within a lane. Unlike items it has no duration
 // and no rank; it is positioned purely by its date.
 type Milestone struct {
-	ID          int64     `json:"id"`
+	ID int64 `json:"id"`
+	// UID is the milestone's portable identity, globally unique and immutable
+	// from creation — the name anything outside this roadmap refers to it by,
+	// where the database ID means nothing. Every milestone has one, because any
+	// of them may be published later. Items and lanes have none.
+	UID         string    `json:"uid"`
 	LaneID      int64     `json:"laneId"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
@@ -200,14 +214,23 @@ type RoadmapFull struct {
 // Export format markers. The on-disk file is a small envelope around a
 // RoadmapFull so imports can recognize the file and reject unrelated JSON.
 // Bump ExportVersion only on incompatible changes to the payload shape.
+//
+// Version 2 added the roadmap and milestone UIDs.
 const (
 	ExportFormat  = "roadie.roadmap"
-	ExportVersion = 1
+	ExportVersion = 2
+	// MinExportVersion is the oldest format an import accepts. Version 1 files
+	// predate entity UIDs, and an import that had to invent identities for them
+	// would need a third set of rules; they are deliberately not supported.
+	MinExportVersion = 2
 )
 
 // RoadmapExport is the download/upload envelope. On import the embedded
-// roadmap's IDs and timestamps are ignored; the store assigns fresh ones and
-// reconstructs the item hierarchy from the nesting, not from parentId.
+// roadmap's database IDs and timestamps are ignored; the store assigns fresh
+// ones and reconstructs the item hierarchy from the nesting, not from parentId.
+// A file must carry a UID for the roadmap and for every milestone; the import
+// mode decides whether they are kept or replaced, and the contents never decide
+// it (see notes/stable_uids.md).
 type RoadmapExport struct {
 	Format  string      `json:"format"`
 	Version int         `json:"version"`

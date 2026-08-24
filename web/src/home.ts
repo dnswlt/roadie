@@ -19,7 +19,7 @@
 
 import { actions } from "./actions";
 import { api } from "./api";
-import { confirmDialog, newRoadmapDialog, promptDialog } from "./dialogs";
+import { confirmDialog, importModeDialog, newRoadmapDialog, promptDialog } from "./dialogs";
 import { icons } from "./icons";
 import { state } from "./state";
 import { contentRange, formatDay } from "./timescale";
@@ -441,10 +441,15 @@ export function initHome(): void {
   importFile.addEventListener("change", () => {
     const file = importFile.files?.[0];
     importFile.value = ""; // allow re-selecting the same file later
-    if (file) {
+    if (!file) return;
+    void (async () => {
+      // The mode prompt stacks over Home as a nested modal, so cancelling it
+      // leaves Home standing with the list intact.
+      const mode = await importModeDialog(file.name);
+      if (!mode) return;
       dialogEl().close(); // importRoadmap opens the imported roadmap
-      void actions.importRoadmap(file);
-    }
+      void actions.importRoadmap(file, mode);
+    })();
   });
 }
 

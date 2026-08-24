@@ -227,6 +227,16 @@ func (s *Store) DeleteSnapshot(ctx context.Context, snapID int64) error {
 // contents, atomically — a concurrent editor's changes are either fully in the
 // undo snapshot (committed before us) or fully rejected (blocked until we
 // finish), never silently lost in between.
+//
+// The restored lanes, items and milestones keep the database IDs and the
+// updated_at stamps the snapshot recorded (insertPolicy.preserveIDs), because a
+// database ID names a logical entity rather than a physical row: a restored item
+// is the item that came back, not a new one wearing its number. That is what
+// makes a version diff across a restore describe content rather than reading as
+// replace-all, and what keeps a shareable ?item= link, the per-roadmap view
+// preferences and a consumer's external dependency pointing where they did.
+// Any later feature storing a reference outside the roadmap's delete cascade
+// must accept that a restore re-binds it rather than leaving it dangling.
 func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadmap, error) {
 	var roadmapID int64
 	var data []byte
@@ -273,6 +283,14 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 		return model.Roadmap{}, err
 	}
 
+	// Read the milestone UIDs the current rows hold *before* deleting them: a
+	// snapshot taken before UIDs existed carries none, and the database ID it
+	// stored is then the only thing that says which milestone each entry was.
+	uidByID, err := milestoneUIDsByID(ctx, tx, roadmapID)
+	if err != nil {
+		return model.Roadmap{}, err
+	}
+
 	if _, err := tx.Exec(ctx, `DELETE FROM lanes WHERE roadmap_id = $1`, roadmapID); err != nil {
 		return model.Roadmap{}, err
 	}
@@ -288,7 +306,8 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 	if _, err := tx.Exec(ctx, `DELETE FROM schedule_periods WHERE roadmap_id = $1`, roadmapID); err != nil {
 		return model.Roadmap{}, err
 	}
-	if err := s.insertRoadmapContents(ctx, tx, roadmapID, exp.Roadmap); err != nil {
+	if err := s.insertRoadmapContents(ctx, tx, roadmapID, exp.Roadmap,
+		insertPolicy{preserveIDs: true, preserveUIDs: true, uidByID: uidByID}); err != nil {
 		return model.Roadmap{}, err
 	}
 	// roadmapCols rather than a hand-listed subset: the roadmaps row grows
@@ -298,11 +317,39 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 	// Note what is *not* restored: the snapshot blob carries a visibility, since
 	// Roadmap is embedded in the RoadmapFull it stores, and insertRoadmapContents
 	// ignores it. Restoring January must not republish what was made private in
-	// June — the same rule that keeps contributors out of a restore.
+	// June — the same rule that keeps contributors out of a restore. The blob's
+	// roadmap UID is ignored for a different reason: the roadmap never went
+	// anywhere, so it keeps the identity it already has.
+	//
+	// Unlike its contents, the roadmap row's own updated_at moves to now, because
+	// the roadmap really did just change.
 	rm, err := scanRoadmap(tx.QueryRow(ctx,
 		`UPDATE roadmaps SET updated_at = now() WHERE id = $1 RETURNING `+roadmapCols, roadmapID))
 	if err != nil {
 		return model.Roadmap{}, err
 	}
 	return rm, tx.Commit(ctx)
+}
+
+// milestoneUIDsByID maps a roadmap's current milestone database IDs to their
+// UIDs. See RestoreSnapshot, its only caller: it is read under the roadmap lock
+// and consumed within the same transaction.
+func milestoneUIDsByID(ctx context.Context, q querier, roadmapID int64) (map[int64]string, error) {
+	rows, err := q.Query(ctx,
+		`SELECT m.id, m.uid FROM milestones m
+		 JOIN lanes l ON l.id = m.lane_id WHERE l.roadmap_id = $1`, roadmapID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var uid string
+		if err := rows.Scan(&id, &uid); err != nil {
+			return nil, err
+		}
+		out[id] = uid
+	}
+	return out, rows.Err()
 }

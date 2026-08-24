@@ -325,12 +325,13 @@ func TestEveryAPIRouteIsClassified(t *testing.T) {
 	// Routes that name no roadmap, and so have nothing to authorize against.
 	// Each filters or decides internally instead.
 	exempt := map[string]string{
-		"GET /api/me":               "reports the caller's own identity",
-		"POST /api/tracker/search":  "deployment-wide external search; contains no roadmap data",
-		"GET /api/roadmaps":         "a listing has no id; filtered in SQL by ListRoadmaps",
-		"GET /api/roadmaps/trash":   "same, via ListTrashedRoadmaps",
-		"POST /api/roadmaps":        "nothing exists yet to authorize",
-		"POST /api/roadmaps/import": "same; the importer becomes the owner",
+		"GET /api/me":                 "reports the caller's own identity",
+		"POST /api/tracker/search":    "deployment-wide external search; contains no roadmap data",
+		"GET /api/roadmaps":           "a listing has no id; filtered in SQL by ListRoadmaps",
+		"GET /api/roadmaps/trash":     "same, via ListTrashedRoadmaps",
+		"POST /api/roadmaps":          "nothing exists yet to authorize",
+		"POST /api/roadmaps/import":   "same; the importer becomes the owner",
+		"POST /api/roadmaps/transfer": "same; the file names the roadmap, and it must not already exist",
 	}
 
 	covered := map[string]bool{}
