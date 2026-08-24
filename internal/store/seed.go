@@ -46,9 +46,10 @@ func (s *Store) Seed(ctx context.Context) error {
 		children   []seedItem
 	}
 	type seedMilestone struct {
-		title string
-		desc  string
-		date  model.Date
+		title     string
+		desc      string
+		date      model.Date
+		tentative bool
 	}
 	lanes := []struct {
 		name       string
@@ -80,7 +81,7 @@ func (s *Store) Seed(ctx context.Context) error {
 			{title: "Enterprise SSO", start: d(3, 1), end: d(5, 30),
 				labels: []string{"Needs discussion"}, flagged: true, tentative: true},
 		}, []seedMilestone{
-			{title: "Public beta", date: d(1, 15)},
+			{title: "Public beta", date: d(1, 15), tentative: true},
 			{title: "GA launch", desc: "General availability.", date: d(4, 1)},
 		}},
 		{"Team & Enablement", []seedItem{
@@ -140,7 +141,7 @@ func (s *Store) Seed(ctx context.Context) error {
 		}
 		for _, ms := range ln.milestones {
 			if _, err := s.CreateMilestone(ctx, lane.ID, NewMilestone{
-				Title: ms.title, Description: ms.desc, Date: ms.date,
+				Title: ms.title, Description: ms.desc, Date: ms.date, Tentative: ms.tentative,
 			}); err != nil {
 				return err
 			}

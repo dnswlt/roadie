@@ -55,6 +55,7 @@ const milestone = (over: Partial<Milestone> = {}): Milestone => ({
   title: "Beta",
   description: "",
   date: "2027-06-01",
+  tentative: false,
   ...over,
 });
 
@@ -130,6 +131,11 @@ test("milestones are one bulleted section, title and date on one line", () => {
   assert.match(md, /^### Milestones$/m);
   assert.match(md, /^- \*\*Beta\*\* — 2027-06-01$/m);
   assert.match(md, /^- \*\*GA\*\* — 2027-09-01$/m);
+});
+
+test("a tentative milestone prefixes its exported date with ≈", () => {
+  const md = laneMarkdown(roadmap(), lane({ milestones: [milestone({ tentative: true })] }));
+  assert.match(md, /^- \*\*Beta\*\* — ≈ 2027-06-01$/m);
 });
 
 test("a milestone description is indented under its bullet", () => {

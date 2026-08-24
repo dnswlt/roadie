@@ -109,6 +109,7 @@ test("an empty filtered lane remains present with its milestones", () => {
     title: "M",
     description: "",
     date: "2026-01-01",
+    tentative: false,
   };
   const lane: LaneFull = {
     id: 1,

@@ -33,7 +33,7 @@ function item(id: number, laneId: number, over: Partial<ItemFull> = {}): ItemFul
 }
 
 function milestone(id: number, laneId: number, over: Partial<Milestone> = {}): Milestone {
-  return { id, laneId, title: `m${id}`, description: "", date: "2026-02-01", ...over };
+  return { id, laneId, title: `m${id}`, description: "", date: "2026-02-01", tentative: false, ...over };
 }
 
 function lane(id: number, over: Partial<LaneFull> = {}): LaneFull {
@@ -240,6 +240,16 @@ test("milestone edits are classified like items", () => {
   const d = diffRoadmaps(before, after);
   const kinds = d.lanes[0]!.milestones.map((m) => [m.kind, ...m.fields]);
   assert.deepEqual(kinds, [["modified", "date"], ["added"], ["removed"]]);
+});
+
+test("a milestone tentative flip is a visible modified field", () => {
+  const before = roadmap([lane(1, { milestones: [milestone(50, 1)] })]);
+  const after = roadmap([lane(1, { milestones: [milestone(50, 1, { tentative: true })] })]);
+  const d = diffRoadmaps(before, after);
+  assert.equal(isEmptyDiff(d), false);
+  assert.equal(d.lanes[0]!.milestones[0]!.kind, "modified");
+  assert.deepEqual(d.lanes[0]!.milestones[0]!.fields, ["tentative"]);
+  assert.deepEqual(diffCounts(d), { added: 0, removed: 0, modified: 1 });
 });
 
 test("periods diff by value, so a relabel reads as removed plus added", () => {

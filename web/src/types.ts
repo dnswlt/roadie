@@ -69,6 +69,7 @@ export interface Milestone {
   title: string;
   description: string;
   date: string; // YYYY-MM-DD
+  tentative: boolean; // timing is not a precise commitment; hollow diamond in timeline/WBS
 }
 
 export interface LaneFull extends Lane {
@@ -194,12 +195,14 @@ export interface NewMilestone {
   title: string;
   description: string;
   date: string;
+  tentative?: boolean;
 }
 
 export interface MilestonePatch {
   title?: string;
   description?: string;
   date?: string;
+  tentative?: boolean;
 }
 
 // Me mirrors the server's /api/me response. mode tells the UI whether this

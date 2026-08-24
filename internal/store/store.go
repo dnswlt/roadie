@@ -186,12 +186,12 @@ func normalizeLabels(labels []string) []string {
 	return out
 }
 
-const milestoneCols = "id, lane_id, title, description, date, updated_at"
+const milestoneCols = "id, lane_id, title, description, date, tentative, updated_at"
 
 func scanMilestone(r rowScanner) (model.Milestone, error) {
 	var m model.Milestone
 	var date time.Time
-	if err := r.Scan(&m.ID, &m.LaneID, &m.Title, &m.Description, &date, &m.UpdatedAt); err != nil {
+	if err := r.Scan(&m.ID, &m.LaneID, &m.Title, &m.Description, &date, &m.Tentative, &m.UpdatedAt); err != nil {
 		return model.Milestone{}, err
 	}
 	m.Date = model.NewDate(date)
@@ -729,8 +729,8 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 			}
 			var msID int64
 			if err := tx.QueryRow(ctx,
-				`INSERT INTO milestones (lane_id, title, description, date) VALUES ($1, $2, $3, $4) RETURNING id`,
-				laneID, ms.Title, ms.Description, ms.Date.Time).Scan(&msID); err != nil {
+				`INSERT INTO milestones (lane_id, title, description, date, tentative) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+				laneID, ms.Title, ms.Description, ms.Date.Time, ms.Tentative).Scan(&msID); err != nil {
 				return err
 			}
 			if ms.ID != 0 {
@@ -1242,6 +1242,7 @@ type NewMilestone struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	Date        model.Date `json:"date"`
+	Tentative   bool       `json:"tentative"`
 }
 
 func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMilestone) (model.Milestone, error) {
@@ -1260,9 +1261,9 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		return model.Milestone{}, ErrNotFound
 	}
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO milestones (lane_id, title, description, date)
-		 VALUES ($1, $2, $3, $4) RETURNING `+milestoneCols,
-		laneID, n.Title, n.Description, n.Date.Time)
+		`INSERT INTO milestones (lane_id, title, description, date, tentative)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING `+milestoneCols,
+		laneID, n.Title, n.Description, n.Date.Time, n.Tentative)
 	return scanMilestone(row)
 }
 
@@ -1270,6 +1271,7 @@ type MilestonePatch struct {
 	Title       model.Opt[string]     `json:"title"`
 	Description model.Opt[string]     `json:"description"`
 	Date        model.Opt[model.Date] `json:"date"`
+	Tentative   model.Opt[bool]       `json:"tentative"`
 }
 
 func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch) (model.Milestone, error) {
@@ -1283,11 +1285,12 @@ func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch)
 		`UPDATE milestones SET title = CASE WHEN $2 THEN $3 ELSE title END,
 		        description = CASE WHEN $4 THEN $5 ELSE description END,
 		        date = CASE WHEN $6 THEN $7 ELSE date END,
+		        tentative = CASE WHEN $8 THEN $9 ELSE tentative END,
 		        updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+milestoneCols,
 		id, p.Title.Set, p.Title.Value, p.Description.Set, p.Description.Value,
-		p.Date.Set, p.Date.Value.Time)
+		p.Date.Set, p.Date.Value.Time, p.Tentative.Set, p.Tentative.Value)
 	m, err := scanMilestone(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Milestone{}, ErrNotFound

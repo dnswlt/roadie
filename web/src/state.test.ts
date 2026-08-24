@@ -300,6 +300,7 @@ test("hiding contexts drops their item and milestone selections", () => {
     title: "M",
     description: "",
     date: "2026-01-01",
+    tentative: false,
   });
   const second = lane(2, [item(2, [], false)]);
   state.current = roadmapOf([first, second]);
@@ -325,6 +326,7 @@ test("folding a WBS milestone group drops its selected milestone locally", () =>
     title: "M",
     description: "",
     date: "2026-01-01",
+    tentative: false,
   });
   state.current = roadmapOf([only]);
   state.hiddenLanes = new Set();

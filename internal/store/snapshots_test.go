@@ -27,7 +27,7 @@ func seedSmallRoadmap(t *testing.T, rmID int64) model.Lane {
 		t.Fatal(err)
 	}
 	if _, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
-		Title: "Launch", Date: date("2026-03-01")}); err != nil {
+		Title: "Launch", Date: date("2026-03-01"), Tentative: true}); err != nil {
 		t.Fatal(err)
 	}
 	return lane
@@ -61,6 +61,9 @@ func TestSnapshotCreateListGet(t *testing.T) {
 	if len(full.Lanes) != 1 || len(full.Lanes[0].Items) != 1 ||
 		len(full.Lanes[0].Items[0].Children) != 1 || len(full.Lanes[0].Milestones) != 1 {
 		t.Fatalf("snapshot contents not preserved: %+v", full)
+	}
+	if !full.Lanes[0].Milestones[0].Tentative {
+		t.Errorf("snapshot lost tentative milestone: %+v", full.Lanes[0].Milestones[0])
 	}
 
 	if _, err := testStore.CreateSnapshot(ctx, 0, model.SnapshotAuto, nil); err != ErrNotFound {
@@ -118,6 +121,9 @@ func TestSnapshotRestore(t *testing.T) {
 	}
 	if n := len(got.Lanes[0].Items); n != 1 {
 		t.Fatalf("items after restore: want 1, got %d", n)
+	}
+	if len(got.Lanes[0].Milestones) != 1 || !got.Lanes[0].Milestones[0].Tentative {
+		t.Errorf("restore lost tentative milestone: %+v", got.Lanes[0].Milestones)
 	}
 
 	// Restore captured the pre-restore state as an extra auto snapshot.

@@ -585,6 +585,7 @@ export const actions = {
         const { milestone } = loc;
         if (patch.title !== undefined) milestone.title = patch.title;
         if (patch.description !== undefined) milestone.description = patch.description;
+        if (patch.tentative !== undefined) milestone.tentative = patch.tentative;
         if (patch.date !== undefined) {
           milestone.date = patch.date;
           loc.lane.milestones.sort((a, b) => a.date.localeCompare(b.date));

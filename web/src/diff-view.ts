@@ -29,6 +29,7 @@ import {
   type ItemField,
   type LaneDiff,
   type MilestoneDiff,
+  type MilestoneField,
   type RoadmapDiff,
 } from "./diff";
 import { diffLines } from "./diff-text";
@@ -223,11 +224,28 @@ const FIELD_CHIPS: Record<ItemField, string> = {
 // direction as a +/− prefix (no invented antonyms) and they get no detail row.
 const BOOLEAN_FIELDS: ReadonlySet<ItemField> = new Set(["flagged", "tentative", "atRisk"]);
 
+const MILESTONE_FIELD_CHIPS: Record<MilestoneField, string> = {
+  title: "title",
+  description: "description",
+  date: "date",
+  tentative: "tentative",
+  lane: "moved",
+  deps: "dependencies",
+};
+
+const MILESTONE_BOOLEAN_FIELDS: ReadonlySet<MilestoneField> = new Set(["tentative"]);
+
 function chipText(f: ItemField, a: Item): string {
   const name = FIELD_CHIPS[f];
   if (f === "flagged") return `${a.flagged ? "+" : "−"} ${name}`;
   if (f === "tentative") return `${a.tentative ? "+" : "−"} ${name}`;
   if (f === "atRisk") return `${a.atRisk ? "+" : "−"} ${name}`;
+  return name;
+}
+
+function milestoneChipText(f: MilestoneField, a: Milestone): string {
+  const name = MILESTONE_FIELD_CHIPS[f];
+  if (f === "tentative") return `${a.tentative ? "+" : "−"} ${name}`;
   return name;
 }
 
@@ -382,7 +400,10 @@ function renderMilestone(entry: MilestoneDiff): HTMLElement[] {
   const key = `m${ms.id}`;
   const row = div(`diff-row diff-ms diff-${entry.kind}`);
 
-  const detail = entry.kind === "modified";
+  // As for items, a boolean-only change is fully described by its signed chip
+  // and must not offer an empty disclosure panel.
+  const detail =
+    entry.kind === "modified" && entry.fields.some((f) => !MILESTONE_BOOLEAN_FIELDS.has(f));
   const lead = span("diff-disclosure", "");
   if (detail) lead.append(expanded.has(key) ? icons.chevronDown(11) : icons.chevronRight(11));
   const title = span("diff-title", "");
@@ -393,9 +414,7 @@ function renderMilestone(entry: MilestoneDiff): HTMLElement[] {
 
   if (entry.kind === "modified") {
     const chips = div("wbs-chips");
-    for (const f of entry.fields) {
-      chips.append(span("wbs-chip", f === "lane" ? "moved" : f === "deps" ? "dependencies" : f));
-    }
+    for (const f of entry.fields) chips.append(span("wbs-chip", milestoneChipText(f, entry.after!)));
     row.append(chips);
   }
 

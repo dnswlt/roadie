@@ -23,7 +23,7 @@ const scale: Scale = { startDay: 0, endDay: 365, pxPerDay: 1 };
 const width100 = (_milestone: Milestone) => 100;
 
 function ms(id: number, day: number): Milestone {
-  return { id, laneId: 1, title: `m${id}`, description: "", date: isoOf(day) };
+  return { id, laneId: 1, title: `m${id}`, description: "", date: isoOf(day), tentative: false };
 }
 
 function item(id: number, day: number): ItemFull {

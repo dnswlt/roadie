@@ -43,7 +43,7 @@ export type ItemField =
   | "parent"
   | "deps";
 
-export type MilestoneField = "title" | "description" | "date" | "lane" | "deps";
+export type MilestoneField = "title" | "description" | "date" | "tentative" | "lane" | "deps";
 
 export type LaneField = "name" | "color";
 
@@ -169,6 +169,7 @@ export function milestoneChanges(b: Milestone, a: Milestone): MilestoneField[] {
   if (b.title !== a.title) out.push("title");
   if (b.description !== a.description) out.push("description");
   if (b.date !== a.date) out.push("date");
+  if (b.tentative !== a.tentative) out.push("tentative");
   if (b.laneId !== a.laneId) out.push("lane");
   return out;
 }

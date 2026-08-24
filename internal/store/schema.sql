@@ -71,6 +71,8 @@ CREATE TABLE milestones (
     title       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     date        DATE NOT NULL,
+    -- A tentative milestone is an estimate rather than a committed date.
+    tentative   BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

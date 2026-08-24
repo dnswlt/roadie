@@ -738,12 +738,12 @@ func TestMilestones(t *testing.T) {
 	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
 
 	m, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
-		Title: "GA launch", Description: "Public release", Date: date("2026-06-01"),
+		Title: "GA launch", Description: "Public release", Date: date("2026-06-01"), Tentative: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Title != "GA launch" || !m.Date.Equal(date("2026-06-01").Time) || m.LaneID != lane.ID {
+	if m.Title != "GA launch" || !m.Date.Equal(date("2026-06-01").Time) || m.LaneID != lane.ID || !m.Tentative {
 		t.Errorf("create result: %+v", m)
 	}
 
@@ -765,8 +765,17 @@ func TestMilestones(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if upd.Title != "GA launch" || !upd.Date.Equal(date("2026-07-15").Time) {
+	if upd.Title != "GA launch" || !upd.Date.Equal(date("2026-07-15").Time) || !upd.Tentative {
 		t.Errorf("update result: %+v", upd)
+	}
+	upd, err = testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		Tentative: model.Opt[bool]{Set: true, Value: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd.Tentative {
+		t.Errorf("clearing tentative: %+v", upd)
 	}
 	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
 		Title: model.Opt[string]{Set: true, Value: ""},
@@ -831,7 +840,7 @@ func TestImportRoadmap(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := testStore.CreateMilestone(ctx, lane2.ID, NewMilestone{
-		Title: "Launch", Date: date("2026-03-01")}); err != nil {
+		Title: "Launch", Date: date("2026-03-01"), Tentative: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -903,7 +912,7 @@ func TestImportRoadmap(t *testing.T) {
 	if gc.LaneID != gl1.ID {
 		t.Errorf("child lane: want %d, got %d", gl1.ID, gc.LaneID)
 	}
-	if len(gl2.Milestones) != 1 || gl2.Milestones[0].Title != "Launch" {
+	if len(gl2.Milestones) != 1 || gl2.Milestones[0].Title != "Launch" || !gl2.Milestones[0].Tentative {
 		t.Errorf("milestones not preserved: %+v", gl2.Milestones)
 	}
 

@@ -109,6 +109,48 @@ func seedRoadmap(t *testing.T, name string) int64 {
 	return rm.ID
 }
 
+func TestMilestoneTentativeAPI(t *testing.T) {
+	ctx := context.Background()
+	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name(), store.Ownership{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), rm.ID) })
+	lane, err := testStore.CreateLane(ctx, rm.ID, "Backend")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := do(t, http.MethodPost, "/api/lanes/"+itoa(lane.ID)+"/milestones", map[string]any{
+		"title": "Launch", "date": "2026-03-15", "tentative": true,
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status: want 201, got %d (%s)", w.Code, w.Body.String())
+	}
+	var milestone model.Milestone
+	if err := json.Unmarshal(w.Body.Bytes(), &milestone); err != nil {
+		t.Fatal(err)
+	}
+	if !milestone.Tentative {
+		t.Fatalf("create response lost tentative: %+v", milestone)
+	}
+
+	w = do(t, http.MethodPatch, "/api/milestones/"+itoa(milestone.ID), map[string]any{"tentative": false})
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch status: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &milestone); err != nil {
+		t.Fatal(err)
+	}
+	if milestone.Tentative {
+		t.Fatalf("patch response did not clear tentative: %+v", milestone)
+	}
+	full := getFull(t, rm.ID)
+	if len(full.Lanes) != 1 || len(full.Lanes[0].Milestones) != 1 || full.Lanes[0].Milestones[0].Tentative {
+		t.Fatalf("roadmap read did not reflect patched tentative: %+v", full.Lanes)
+	}
+}
+
 func TestExportImportRoundTrip(t *testing.T) {
 	id := seedRoadmap(t, "test-"+t.Name())
 

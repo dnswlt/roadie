@@ -168,12 +168,17 @@ function isoDate(iso: string): string {
 
 function renderMilestoneRow(m: Milestone): HTMLElement {
   // Never removed by the filter, as in the timeline (see render.ts).
-  const el = div(state.selectedMilestoneId === m.id ? "wbs-milestone selected" : "wbs-milestone");
+  let className = state.selectedMilestoneId === m.id ? "wbs-milestone selected" : "wbs-milestone";
+  if (m.tentative) className += " tentative";
+  const el = div(className);
   el.dataset.milestoneId = String(m.id);
   const title = div("wbs-ms-title");
   title.textContent = m.title;
   const date = div("wbs-dates");
-  date.textContent = periodPointText(state.current?.periods ?? [], m.date, isoDate);
+  // The WBS uses the same textual tentative mark for both entity kinds; the
+  // hollow diamond remains the milestone's shape cue.
+  const approx = m.tentative ? "≈ " : "";
+  date.textContent = approx + periodPointText(state.current?.periods ?? [], m.date, isoDate);
   // The same mark carries both dependency presence and conflict in each view;
   // the WBS keeps it with the row's trailing furniture.
   el.append(

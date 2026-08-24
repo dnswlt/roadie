@@ -177,6 +177,7 @@ test("milestones match on title and description and carry their date twice", () 
     title: "GA launch",
     description: "auth complete",
     date: "2026-06-01",
+    tentative: false,
   };
   const rm = roadmap(lane(1, "Platform", [], [ms]));
   const byTitle = search(rm, "GA");

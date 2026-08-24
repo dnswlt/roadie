@@ -404,10 +404,6 @@ function renderSelectionPanel(body: HTMLElement): void {
   const note = noteBlock(`${n} items selected`, "Changes below apply to every selected item.");
 
   const priority = commonValue(items, (item) => item.priority);
-  const prio = document.createElement("div");
-  prio.className = "panel-field";
-  const prioLabel = document.createElement("span");
-  prioLabel.textContent = priority.mixed ? "Priority · Mixed" : "Priority";
   const chips = document.createElement("div");
   chips.className = "prio-chips";
   for (let p = 1; p <= 4; p++) {
@@ -427,39 +423,40 @@ function renderSelectionPanel(body: HTMLElement): void {
     const common = commonValue(items, (item) => item[field]);
     return common.mixed ? "mixed" : common.value;
   };
-  const signals = document.createElement("div");
-  signals.className = "signal-btns";
-  signals.append(
-    metadataSignalButton(
-      "tent-btn",
-      "Tentative timing: dates are not a precise commitment",
-      icons.approx(16),
-      signalState("tentative"),
-      (tentative) => void actions.updateItemMetadata(ids, { tentative }),
-    ),
-    metadataSignalButton(
-      "risk-btn",
-      "At risk: the plan stands, but there is reason to doubt it",
-      icons.alertTriangle(16),
-      signalState("atRisk"),
-      (atRisk) => void actions.updateItemMetadata(ids, { atRisk }),
-    ),
-    metadataSignalButton(
-      "flag-btn",
-      "Flag: needs attention (!)",
-      icons.flag(16),
-      signalState("flagged"),
-      (flagged) => void actions.setFlagged(ids, flagged),
-    ),
+  // With mixed priorities no chip is active, which otherwise looks exactly
+  // like every selected item being unprioritized. Keep that distinction in
+  // the section label; planning-signal buttons carry their own mixed state.
+  const metadata = metadataField(
+    [
+      metadataSignalButton(
+        "tent-btn",
+        "Tentative timing: dates are not a precise commitment",
+        icons.approx(16),
+        signalState("tentative"),
+        (tentative) => void actions.updateItemMetadata(ids, { tentative }),
+      ),
+      metadataSignalButton(
+        "risk-btn",
+        "At risk: the plan stands, but there is reason to doubt it",
+        icons.alertTriangle(16),
+        signalState("atRisk"),
+        (atRisk) => void actions.updateItemMetadata(ids, { atRisk }),
+      ),
+      metadataSignalButton(
+        "flag-btn",
+        "Flag: needs attention (!)",
+        icons.flag(16),
+        signalState("flagged"),
+        (flagged) => void actions.setFlagged(ids, flagged),
+      ),
+    ],
+    chips,
+    priority.mixed ? "Metadata · Mixed priority" : "Metadata",
   );
-  const prioRow = document.createElement("div");
-  prioRow.className = "prio-row";
-  prioRow.append(chips, signals);
-  prio.append(prioLabel, prioRow);
 
   const attrs = document.createElement("div");
   attrs.className = "panel-attrs multi-meta";
-  attrs.append(prio);
+  attrs.append(metadata);
 
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
@@ -764,13 +761,9 @@ export function renderPanel(panel: HTMLElement): void {
 
   const dates = itemDateEditor(item);
 
-  // Priority: four chips (P1 highest .. P4 lowest). Clicking the active chip
-  // clears the priority back to unset. Chip classes are toggled directly
-  // because the panel skips its own rebuild while a chip holds focus.
-  const prio = document.createElement("div");
-  prio.className = "panel-field";
-  const prioLabel = document.createElement("span");
-  prioLabel.textContent = "Priority";
+  // Four priority chips (P1 highest .. P4 lowest) trail the planning signals
+  // in Metadata. Clicking the active chip clears priority back to unset. Chip
+  // classes toggle directly because the panel skips rebuilding while focused.
   const chips = document.createElement("div");
   chips.className = "prio-chips";
   for (let p = 1; p <= 4; p++) {
@@ -786,18 +779,14 @@ export function renderPanel(panel: HTMLElement): void {
     });
     chips.append(chip);
   }
-  // The planning signals — tentative, at-risk, and the flag — ride at the
-  // trailing edge of the priority row: item attributes like priority, and
-  // three lone toggles do not deserve a row of their own. Kept out of `chips`
-  // on purpose — the handler above clears `active` from every child of that
-  // container.
-  const prioRow = document.createElement("div");
-  prioRow.className = "prio-row";
-  const signals = document.createElement("div");
-  signals.className = "signal-btns";
-  signals.append(tentativeButton(item), riskButton(item), flagButton(item));
-  prioRow.append(chips, signals);
-  prio.append(prioLabel, prioRow);
+  // The planning signals — tentative, at-risk, and the flag — lead the
+  // metadata row; priority is the less important classification and trails.
+  // They stay out of `chips` because the handler above clears `active` from
+  // every child of that container.
+  const metadata = metadataField(
+    [tentativeButton(item), riskButton(item), flagButton(item)],
+    chips,
+  );
 
   const labels = labelsField(item);
 
@@ -831,7 +820,7 @@ export function renderPanel(panel: HTMLElement): void {
   attrs.className = "panel-attrs";
   attrs.append(dates.dateRow);
   if (dates.periodRow) attrs.append(dates.periodRow);
-  attrs.append(prio, labels, dependenciesSection({ kind: "item", id: item.id }));
+  attrs.append(metadata, labels, dependenciesSection({ kind: "item", id: item.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }
@@ -883,6 +872,29 @@ function metadataSignalButton(
   return btn;
 }
 
+// metadataField is the shared panel scaffold for planning-signal buttons and,
+// for items, the trailing priority picker. A milestone uses the same structure
+// with only its tentative signal, so the alignment and spacing stay identical.
+function metadataField(
+  signals: HTMLButtonElement[],
+  chips?: HTMLElement,
+  label = "Metadata",
+): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "panel-field";
+  const heading = document.createElement("span");
+  heading.textContent = label;
+  const row = document.createElement("div");
+  row.className = "metadata-row";
+  const signalGroup = document.createElement("div");
+  signalGroup.className = "signal-btns";
+  signalGroup.append(...signals);
+  row.append(signalGroup);
+  if (chips) row.append(chips);
+  wrap.append(heading, row);
+  return wrap;
+}
+
 // flagButton is the flag's only label anywhere in the UI: an icon-only toggle
 // whose tooltip says what the marker means. That is affordable precisely
 // because the meaning is the product's and not the user's — there is one flag
@@ -906,6 +918,16 @@ function tentativeButton(item: Item): HTMLButtonElement {
     icons.approx(16),
     item.tentative,
     (tentative) => void actions.updateItem(item.id, { tentative }),
+  );
+}
+
+function milestoneTentativeButton(milestone: Milestone): HTMLButtonElement {
+  return metadataSignalButton(
+    "tent-btn",
+    "Tentative timing: date is not a precise commitment",
+    icons.approx(16),
+    milestone.tentative,
+    (tentative) => void actions.updateMilestone(milestone.id, { tentative }),
   );
 }
 
@@ -1057,7 +1079,8 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   attrs.className = "panel-attrs";
   attrs.append(dates.dateRow);
   if (dates.periodRow) attrs.append(dates.periodRow);
-  attrs.append(dependenciesSection({ kind: "milestone", id: milestone.id }));
+  const metadata = metadataField([milestoneTentativeButton(milestone)]);
+  attrs.append(metadata, dependenciesSection({ kind: "milestone", id: milestone.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }

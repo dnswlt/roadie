@@ -325,7 +325,9 @@ function renderMilestoneLine(m: Milestone): HTMLElement {
 // layoutLane assigned it; row 0 needs no inline offset since it is the CSS
 // default.
 function renderMilestone(m: Milestone, row: number): HTMLElement {
-  const el = div(state.selectedMilestoneId === m.id ? "milestone selected" : "milestone");
+  let className = state.selectedMilestoneId === m.id ? "milestone selected" : "milestone";
+  if (m.tentative) className += " tentative";
+  const el = div(className);
   el.dataset.milestoneId = String(m.id);
   el.style.left = `${xOf(scale, dayOf(m.date))}px`;
   if (row > 0) el.style.top = `${row * MS_ROW_H}px`;

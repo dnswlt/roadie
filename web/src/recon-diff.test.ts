@@ -42,6 +42,7 @@ function roadmap(...items: ItemFull[]): RoadmapFull {
         title: "Launch",
         description: "https://jira.example.test/jira/browse/PAY-3",
         date: "2026-02-01",
+        tentative: false,
       },
     ],
   };

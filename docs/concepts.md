@@ -45,7 +45,8 @@ the outcomes and relationships the roadmap is meant to communicate.
 
 A **milestone** marks a significant date: a decision, release, review, handover,
 or other event with no duration. Unlike an item, it is a point in time rather
-than work spanning a period.
+than work spanning a period. Its date may be tentative, shown as a hollow
+diamond.
 
 Milestones can participate in dependencies, so a plan can express that an item
 must finish before a decision date, or that later work depends on a milestone.
@@ -88,9 +89,9 @@ Roadie shows an entity's immediate prerequisites and dependents, never the
 whole graph at once. A chain is followed by moving from one entity to the next,
 which is what keeps the plan free of a spaghetti of dependency lines.
 
-## Item metadata
+## Metadata
 
-Roadie keeps item metadata deliberately limited:
+Roadie keeps metadata deliberately limited:
 
 - **Priority** is an optional P1–P4 ordering signal, with P1 highest. It says
   that an item matters more or less relative to other roadmap items; it is not
@@ -99,10 +100,11 @@ Roadie keeps item metadata deliberately limited:
   and can be used to filter the current view down to them.
 - A **flag** means that an item needs human attention. It is intentionally a
   single, lightweight marker with no type, owner, due date, or workflow.
-- **Tentative timing** means that an item's dates are an estimate rather than a
-  commitment—typically for work that is distant or not yet well understood. The
-  timeline draws such items with ragged ends, and the WBS view prefixes their
-  dates with "≈".
+- **Tentative timing** means that an item's dates or a milestone's date are an
+  estimate rather than a commitment—typically when planning is distant or not
+  yet well understood. The timeline draws tentative items with ragged ends and
+  milestones as hollow diamonds. The WBS uses "≈" for both and also keeps the
+  hollow milestone diamond.
 - **At risk** means that an item's dates are still the plan, but something now
   threatens them. It is shown as a warning triangle.
 

@@ -1295,21 +1295,23 @@ kbd {
   background: color-mix(in oklab, var(--focus) 24%, transparent);
 }
 
-/* Priority chips and the flag toggle share one row, the flag pushed to the
-   trailing edge. */
-.prio-row {
+/* Metadata controls share one row. Planning signals lead; the less important
+   priority picker trails. Milestones reuse the row with no priority chips. */
+.metadata-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-/* The planning-signal toggles — tentative, at-risk, flag — at the prio row's
-   trailing edge. Each is an .icon-btn given a chip's border so the group reads
-   as a peer of the priority chips beside it. */
+/* Each planning signal is an .icon-btn given a chip's border so the group
+   reads as a peer of the priority chips beside it. */
 .signal-btns {
-  margin-left: auto;
   display: flex;
   gap: 4px;
+}
+
+.metadata-row > .prio-chips {
+  margin-left: auto;
 }
 
 .flag-btn,
@@ -1418,6 +1420,19 @@ kbd {
 
 .milestone:hover .milestone-diamond {
   background: color-mix(in oklab, var(--c) 88%, black);
+}
+
+/* A hollow diamond carries the same "estimated date" meaning as an item's
+   sawtooth silhouette. The stronger lane-colored ring keeps the point visible
+   without turning tentative into a warning color. */
+.milestone.tentative .milestone-diamond {
+  background: var(--surface);
+  border: 2px solid var(--c);
+}
+
+.milestone.tentative:hover .milestone-diamond {
+  background: var(--surface);
+  border-color: color-mix(in oklab, var(--c) 88%, black);
 }
 
 .milestone.selected .milestone-diamond {
@@ -1770,6 +1785,11 @@ kbd {
   border-radius: 2px;
   transform: rotate(45deg);
   background: var(--c);
+}
+
+.wbs-milestone.tentative .wbs-ms-diamond {
+  background: var(--surface);
+  border: 2px solid var(--c);
 }
 
 .wbs-ms-title {

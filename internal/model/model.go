@@ -121,7 +121,7 @@ type Item struct {
 	StartDate   Date      `json:"startDate"`
 	EndDate     Date      `json:"endDate"`
 	Rank        int       `json:"rank"`
-	Priority    *int      `json:"priority"` // 1..4 (1 = highest); nil = unprioritized
+	Priority    *int      `json:"priority"`  // 1..4 (1 = highest); nil = unprioritized
 	Labels      []string  `json:"labels"`    // free-form tags, shared across the roadmap
 	Flagged     bool      `json:"flagged"`   // "needs attention" marker; meaning owned by the app
 	Tentative   bool      `json:"tentative"` // timing is not a precise commitment
@@ -143,6 +143,7 @@ type Milestone struct {
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Date        Date      `json:"date"`
+	Tentative   bool      `json:"tentative"` // timing is not a precise commitment
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
