@@ -1,6 +1,6 @@
 // API helpers for the e2e gesture tests. Everything here talks to the same
 // JSON API the app uses — with auth off that is plain fetch, a deliberate
-// product property (CLAUDE.md). Tests seed their own uniquely named roadmap
+// product property (AGENTS.md). Tests seed their own uniquely named roadmap
 // and purge it afterwards, so they are safe to run against a live `make dev`
 // server: no pre-existing row is ever read or written.
 

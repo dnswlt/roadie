@@ -177,7 +177,7 @@ export function emptyState(): HTMLElement {
 
 // projectSelection stamps the current selection onto the already-rendered
 // chart — the subscriber side of state.notifySelection (rationale in
-// CLAUDE.md: selection changes no geometry, and click gestures need the DOM
+// AGENTS.md: selection changes no geometry, and click gestures need the DOM
 // nodes to survive). The honesty rule: recompute the predicate for EVERY
 // element from state, never patch only the nodes assumed to have changed —
 // so a stale .selected is as impossible as it is under a full rebuild.

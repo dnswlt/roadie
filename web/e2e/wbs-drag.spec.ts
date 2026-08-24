@@ -2,7 +2,7 @@
 // no unit test can reach: pointer gestures against real layout —
 // elementFromPoint, bounding boxes, and the class contracts between renderer
 // and controller mean nothing in Node. Everything that CAN be tested DOM-free
-// stays in src/*.test.ts (CLAUDE.md).
+// stays in src/*.test.ts (AGENTS.md).
 //
 // The pattern, binding for every e2e test:
 //

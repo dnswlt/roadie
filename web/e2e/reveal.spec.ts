@@ -1,7 +1,7 @@
 // Jumping to an entity from Find, across all three ways it can be off-screen.
 //
 // revealAndSelect's contract is that anything hiding the target is undone
-// first: a hidden context, a folded parent, an active filter (CLAUDE.md). The
+// first: a hidden context, a folded parent, an active filter (AGENTS.md). The
 // undoing is unit-tested in src/state.test.ts; what is not, and cannot be, is
 // that the target is then really on the chart — every hider is client-only
 // state, so the server has no answer, exactly as in filter.spec.ts. Dropping
@@ -79,7 +79,7 @@ test("jumping to an item outside the filter clears the filter", async ({ page, r
   // only a genuinely cleared filter brings it back. Asserting on the jump
   // target alone would also pass for a chart that merely exempts the selected
   // item — the coherent-chart-not-an-exception design this deliberately is not
-  // (CLAUDE.md), and a difference invisible from the target's own row.
+  // (AGENTS.md), and a difference invisible from the target's own row.
   const bystander = await addItem(request, seeded.laneId, "Gamma");
   await open(page);
   await pickFilter(page, /^Flagged \(/);

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for Claude Code working in this repository.
+Guidance for AI coding agents working in this repository.
 
 This file holds only what the code cannot tell you: rules, settled decisions, and
 environment facts. Mechanics live in comments next to the code they constrain —

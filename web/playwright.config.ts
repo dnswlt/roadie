@@ -11,7 +11,7 @@ export default defineConfig({
   // The tests get their own server on their own port rather than reusing
   // whatever runs on 8080: the dev server there may be `make dev-oidc`, and
   // the gesture tests are written against the open-auth product surface
-  // (seeding is plain fetch — CLAUDE.md: "auth off must keep working").
+  // (seeding is plain fetch — AGENTS.md: "auth off must keep working").
   // Needs the dev DB up (`make db-up`); tests create and purge their own
   // throwaway roadmaps there, never touching existing rows. The frontend is
   // built first since -dev serves web/dist from disk. reuseExistingServer

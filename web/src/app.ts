@@ -664,7 +664,7 @@ function wireChart(): void {
   // (either view's) to rename it in the panel. Real dblclick events, possible
   // because neither pointerdown is preventDefault-ed and selection no longer
   // rebuilds the chart between the clicks. Bars get theirs from dnd.ts, WBS
-  // item rows from wbs-dnd.ts (CLAUDE.md).
+  // item rows from wbs-dnd.ts (AGENTS.md).
   chart.addEventListener("dblclick", (e) => {
     const t = e.target as HTMLElement;
     const nameEl = t.closest<HTMLElement>(".lane-name");

@@ -536,7 +536,7 @@ function onPointerUp(e: PointerEvent): void {
     // a plain click selects it alone and shows the edit panel; two plain clicks
     // in quick succession jump into renaming it there — detected by hand
     // because onPointerDown's preventDefault suppresses native click/dblclick
-    // on bars (see CLAUDE.md).
+    // on bars (see AGENTS.md).
     if (e.shiftKey) {
       dblClick.reset(); // a Shift-click is selection-building, not a rename pair
       state.toggleItem(d.id);

@@ -252,7 +252,7 @@ class AppState {
 
   // The narrower of the two invalidation scopes: selection-only changes,
   // projected onto the existing chart DOM instead of rebuilding it (see
-  // render.ts projectSelection; rationale in CLAUDE.md). notify() is the
+  // render.ts projectSelection; rationale in AGENTS.md). notify() is the
   // superset — when in doubt, use it.
   private selectionListeners: Array<() => void> = [];
 
