@@ -827,9 +827,10 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ow
 // The operation picks it before inserting anything; what is already in the
 // database never picks it (notes/stable_uids.md).
 type insertPolicy struct {
-	// preserveIDs writes the source's own database IDs and updated_at stamps
-	// instead of letting the sequence and now() assign them. Only a restore
-	// does this: a database ID names a logical entity, not a physical row. It
+	// preserveIDs writes the source's own database IDs instead of letting the
+	// sequence assign them, and an item's or milestone's own updated_at instead
+	// of now(). Only a restore does this: a database ID names a logical entity,
+	// not a physical row. It
 	// cannot collide — sequences never rewind, and the restore deletes the
 	// roadmap's lanes first, in the same transaction, under the roadmap lock.
 	preserveIDs bool
@@ -853,6 +854,8 @@ func (p insertPolicy) dbID(id int64) *int64 {
 
 // stamp returns the updated_at to insert, nil for now(). It rides with
 // preserveIDs: restoring the same entity must not claim it was just edited.
+// Items and milestones only — model.Lane carries no timestamp, so a snapshot
+// has none to restore and a restored lane's updated_at is the restore itself.
 func (p insertPolicy) stamp(t time.Time) *time.Time {
 	if !p.preserveIDs {
 		return nil

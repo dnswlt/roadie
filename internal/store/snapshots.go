@@ -228,10 +228,11 @@ func (s *Store) DeleteSnapshot(ctx context.Context, snapID int64) error {
 // undo snapshot (committed before us) or fully rejected (blocked until we
 // finish), never silently lost in between.
 //
-// The restored lanes, items and milestones keep the database IDs and the
-// updated_at stamps the snapshot recorded (insertPolicy.preserveIDs), because a
-// database ID names a logical entity rather than a physical row: a restored item
-// is the item that came back, not a new one wearing its number. That is what
+// The restored lanes, items and milestones keep the database IDs the snapshot
+// recorded, and its items and milestones their updated_at as well — a lane has
+// none to keep (insertPolicy.stamp). A database ID names a logical entity
+// rather than a physical row: a restored item is the item that came back, not a
+// new one wearing its number. That is what
 // makes a version diff across a restore describe content rather than reading as
 // replace-all, and what keeps a shareable ?item= link, the per-roadmap view
 // preferences and a consumer's external dependency pointing where they did.
