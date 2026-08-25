@@ -52,7 +52,7 @@ func TestReplaceScheduleValidation(t *testing.T) {
 	rm := newRoadmap(t)
 
 	cases := map[string][]SchedulePeriodInput{
-		"empty label": {{Label: "  ", StartDate: date("2026-01-05"), EndDate: date("2026-01-16")}},
+		"empty label":      {{Label: "  ", StartDate: date("2026-01-05"), EndDate: date("2026-01-16")}},
 		"end before start": {{Label: "Bad", StartDate: date("2026-01-16"), EndDate: date("2026-01-05")}},
 		"overlap": {
 			{Label: "A", StartDate: date("2026-01-05"), EndDate: date("2026-01-20")},
