@@ -169,7 +169,7 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 		log.Printf("recon: no script for roadmap %d, dropping %d keys: %v", roadmapID, len(batch), err)
 		return
 	}
-	fingerprint := scriptFingerprint(source)
+	fingerprint := newScriptFingerprint(source)
 	script, err := extractor.Compile(source)
 	if err != nil {
 		// The script author's own error, verbatim: it names a line to fix.
@@ -228,7 +228,7 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 // enqueueing again, so a broken deployment is not hammered in a loop.
 //
 // The message reaches a browser: see trackerMessage for what may go in one.
-func (f *Fetcher) record(fingerprint string, keys []string, message string) {
+func (f *Fetcher) record(fingerprint scriptFingerprint, keys []string, message string) {
 	results := make([]Result, 0, len(keys))
 	for _, key := range keys {
 		results = append(results, Result{Key: key, State: StateError, Error: message})
@@ -261,7 +261,7 @@ func (f *Fetcher) Status(ctx context.Context, roadmapID int64, keys []string) (S
 	if err != nil {
 		return Status{}, err
 	}
-	fingerprint := scriptFingerprint(source)
+	fingerprint := newScriptFingerprint(source)
 
 	// An edited script has a different fingerprint, so answers produced by the
 	// previous one are not found and read as unchecked, which is what they are.

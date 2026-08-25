@@ -12,7 +12,6 @@ package recon
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"sync"
 	"time"
@@ -25,8 +24,8 @@ import (
 // the next check a minute later.
 const DefaultFreshness = time.Minute
 
-// Cache holds what the fetcher established about one issue. The fetcher is its
-// only writer; a poll only reads.
+// Cache holds issue results established by the fetcher. The fetcher is its only
+// writer; a poll only reads.
 //
 // Entries hold the extracted result, never the raw issue: JIRA_FIELDS is
 // user-supplied, so caching before extraction would let a script naming
@@ -38,8 +37,15 @@ type Cache struct {
 	now func() time.Time
 
 	mu      sync.Mutex
-	entries map[string]entry
+	entries map[entryKey]entry
 }
+
+type entryKey struct {
+	fingerprint scriptFingerprint
+	issueKey    string
+}
+
+type scriptFingerprint [sha256.Size]byte
 
 type entry struct {
 	result Result
@@ -47,7 +53,7 @@ type entry struct {
 }
 
 func newCache(freshness time.Duration) *Cache {
-	return &Cache{freshness: freshness, entries: map[string]entry{}}
+	return &Cache{freshness: freshness, entries: map[entryKey]entry{}}
 }
 
 func (c *Cache) clock() time.Time {
@@ -57,30 +63,31 @@ func (c *Cache) clock() time.Time {
 	return time.Now()
 }
 
-// scriptFingerprint identifies a script by its source. Truncated because this
-// names a cache entry rather than authenticating anything.
-func scriptFingerprint(source string) string {
-	sum := sha256.Sum256([]byte(source))
-	return hex.EncodeToString(sum[:8])
+func newScriptFingerprint(source string) scriptFingerprint {
+	return sha256.Sum256([]byte(source))
 }
 
-func entryKey(fingerprint, issueKey string) string {
-	return fingerprint + "\x00" + strings.ToUpper(issueKey)
+func newEntryKey(fingerprint scriptFingerprint, issueKey string) entryKey {
+	return entryKey{fingerprint: fingerprint, issueKey: strings.ToUpper(issueKey)}
 }
 
 // lookup returns the results still fresh for these keys, and the keys that have
 // to be checked. A cached result is returned under the spelling the caller
 // used, since Jira keys are case-insensitive and a link may not match.
-func (c *Cache) lookup(fingerprint string, keys []string) (map[string]Result, []string) {
+func (c *Cache) lookup(fingerprint scriptFingerprint, keys []string) (map[string]Result, []string) {
 	now := c.clock()
 	hits := make(map[string]Result, len(keys))
 	misses := make([]string, 0, len(keys))
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.evictExpired(now)
 	for _, key := range keys {
-		entry, ok := c.entries[entryKey(fingerprint, key)]
+		cacheKey := newEntryKey(fingerprint, key)
+		entry, ok := c.entries[cacheKey]
+		if ok && now.Sub(entry.stored) >= c.freshness {
+			delete(c.entries, cacheKey)
+			ok = false
+		}
 		if !ok {
 			misses = append(misses, key)
 			continue
@@ -92,23 +99,16 @@ func (c *Cache) lookup(fingerprint string, keys []string) (map[string]Result, []
 	return hits, misses
 }
 
-func (c *Cache) store(fingerprint string, results []Result) {
+func (c *Cache) store(fingerprint scriptFingerprint, results []Result) {
 	now := c.clock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Swept on write as well as on read, so the bound holds however the cache
-	// is used: a path that only ever writes must not accumulate.
 	c.evictExpired(now)
 	for _, result := range results {
-		c.entries[entryKey(fingerprint, result.Key)] = entry{result: result, stored: now}
+		c.entries[newEntryKey(fingerprint, result.Key)] = entry{result: result, stored: now}
 	}
 }
 
-// evictExpired keeps the map bounded by recent traffic rather than by how many
-// roadmaps or issues exist: entries live for the freshness window, so sweeping
-// on every read and write is enough and there is no size cap to tune. Sweeping
-// on writes too is what makes the bound independent of how the cache is read.
-// Call under the lock.
 func (c *Cache) evictExpired(now time.Time) {
 	for k, entry := range c.entries {
 		if now.Sub(entry.stored) >= c.freshness {
