@@ -201,6 +201,14 @@ func normalizeLabels(labels []string) []string {
 	return out
 }
 
+const laneCols = "id, roadmap_id, name, position, color, updated_at"
+
+func scanLane(r rowScanner) (model.Lane, error) {
+	var l model.Lane
+	err := r.Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color, &l.UpdatedAt)
+	return l, err
+}
+
 const milestoneCols = "id, uid, lane_id, title, description, date, tentative, updated_at"
 
 func scanMilestone(r rowScanner) (model.Milestone, error) {
@@ -463,7 +471,7 @@ func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull
 	full.Roadmap = rm
 
 	laneRows, err := q.Query(ctx,
-		`SELECT id, roadmap_id, name, position, color FROM lanes WHERE roadmap_id = $1 ORDER BY position, id`, id)
+		`SELECT `+laneCols+` FROM lanes WHERE roadmap_id = $1 ORDER BY position, id`, id)
 	if err != nil {
 		return full, err
 	}
@@ -471,8 +479,8 @@ func getRoadmapFull(ctx context.Context, q querier, id int64) (model.RoadmapFull
 	full.Lanes = []model.LaneFull{}
 	laneIdx := map[int64]int{}
 	for laneRows.Next() {
-		var l model.Lane
-		if err := laneRows.Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color); err != nil {
+		l, err := scanLane(laneRows)
+		if err != nil {
 			return full, err
 		}
 		laneIdx[l.ID] = len(full.Lanes)
@@ -828,9 +836,9 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ow
 // database never picks it (notes/stable_uids.md).
 type insertPolicy struct {
 	// preserveIDs writes the source's own database IDs instead of letting the
-	// sequence assign them, and an item's or milestone's own updated_at instead
-	// of now(). Only a restore does this: a database ID names a logical entity,
-	// not a physical row. It
+	// sequence assign them, and each entity's own updated_at instead of now().
+	// Only a restore does this: a database ID names a logical entity, not a
+	// physical row. It
 	// cannot collide — sequences never rewind, and the restore deletes the
 	// roadmap's lanes first, in the same transaction, under the roadmap lock.
 	preserveIDs bool
@@ -854,10 +862,12 @@ func (p insertPolicy) dbID(id int64) *int64 {
 
 // stamp returns the updated_at to insert, nil for now(). It rides with
 // preserveIDs: restoring the same entity must not claim it was just edited.
-// Items and milestones only — model.Lane carries no timestamp, so a snapshot
-// has none to restore and a restored lane's updated_at is the restore itself.
+//
+// A zero time means the blob predates the field — every snapshot taken before
+// lanes carried one — and then now() is the honest answer, since the restore
+// really is the last thing that wrote the row.
 func (p insertPolicy) stamp(t time.Time) *time.Time {
-	if !p.preserveIDs {
+	if !p.preserveIDs || t.IsZero() {
 		return nil
 	}
 	return &t
@@ -930,9 +940,10 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 		}
 		var laneID int64
 		if err := tx.QueryRow(ctx,
-			`INSERT INTO lanes (id, roadmap_id, name, position, color)
-			 VALUES (`+nextID("lanes")+`, $2, $3, $4, $5) RETURNING id`,
-			pol.dbID(lane.ID), roadmapID, laneName, pos, color).Scan(&laneID); err != nil {
+			`INSERT INTO lanes (id, roadmap_id, name, position, color, updated_at)
+			 VALUES (`+nextID("lanes")+`, $2, $3, $4, $5, COALESCE($6::timestamptz, now())) RETURNING id`,
+			pol.dbID(lane.ID), roadmapID, laneName, pos, color,
+			pol.stamp(lane.UpdatedAt)).Scan(&laneID); err != nil {
 			return err
 		}
 		for rank, item := range lane.Items {
@@ -1024,14 +1035,13 @@ func (s *Store) CreateLane(ctx context.Context, roadmapID int64, name string) (m
 		return model.Lane{}, err
 	}
 
-	var l model.Lane
-	err = tx.QueryRow(ctx,
+	l, err := scanLane(tx.QueryRow(ctx,
 		`WITH pos AS (SELECT COALESCE(MAX(position) + 1, 0) AS p FROM lanes WHERE roadmap_id = $1)
 		 INSERT INTO lanes (roadmap_id, name, position, color)
 		 SELECT r.id, $2, pos.p, ($3::text[])[(pos.p % array_length($3::text[], 1)) + 1]
 		 FROM roadmaps r, pos WHERE r.id = $1
-		 RETURNING id, roadmap_id, name, position, color`,
-		roadmapID, name, laneColors).Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color)
+		 RETURNING `+laneCols,
+		roadmapID, name, laneColors))
 	if err != nil {
 		return model.Lane{}, err
 	}
@@ -1060,15 +1070,13 @@ func (s *Store) UpdateLane(ctx context.Context, id int64, p LanePatch) (model.La
 		return model.Lane{}, err
 	}
 
-	var l model.Lane
-	err = tx.QueryRow(ctx,
+	l, err := scanLane(tx.QueryRow(ctx,
 		`UPDATE lanes SET name = CASE WHEN $2 THEN $3 ELSE name END,
 		        color = CASE WHEN $4 THEN $5 ELSE color END,
 		        updated_at = now()
 		 WHERE id = $1
-		 RETURNING id, roadmap_id, name, position, color`,
-		id, p.Name.Set, p.Name.Value, p.Color.Set, p.Color.Value).
-		Scan(&l.ID, &l.RoadmapID, &l.Name, &l.Position, &l.Color)
+		 RETURNING `+laneCols,
+		id, p.Name.Set, p.Name.Value, p.Color.Set, p.Color.Value))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Lane{}, ErrNotFound
 	}

@@ -222,8 +222,7 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
 - **A checkpoint is a snapshot with a name**: the name is what promotes it to
   `kind = manual` and exempts it from pruning. No separate table, flag or concept.
 - **A database ID names a logical entity, not a physical row.** Restore reinserts
-  the snapshot's own lane/item/milestone IDs, and item/milestone `updated_at`
-  (a lane carries none); anything storing a
+  the snapshot's own lane/item/milestone IDs and `updated_at`; anything storing a
   reference outside the roadmap's delete cascade must accept being re-bound.
 - **Only roadmaps and milestones have a UID** — portable identity, immutable from
   creation, returned by APIs and never accepted in a patch. Lanes, items,

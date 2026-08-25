@@ -512,6 +512,36 @@ func TestRestorePreUIDSnapshotInheritsUIDs(t *testing.T) {
 	}
 }
 
+// A blob taken before lanes carried a timestamp has none to restore, and the
+// restore must not write the zero time into the column. It is the last thing
+// that wrote the row, so now() is the honest answer.
+func TestRestoreOfBlobWithoutLaneTimestamp(t *testing.T) {
+	ctx := context.Background()
+	rm := newRoadmap(t)
+	seedSmallRoadmap(t, rm.ID)
+
+	full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := full
+	legacy.Lanes = append([]model.LaneFull(nil), full.Lanes...)
+	legacy.Lanes[0].UpdatedAt = time.Time{} // as an older blob decodes
+	snapID := insertSnapshotBlob(t, rm.ID, legacy)
+
+	before := time.Now().Add(-time.Minute)
+	if _, err := testStore.RestoreSnapshot(ctx, snapID); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restored.Lanes[0].UpdatedAt; !got.After(before) {
+		t.Errorf("lane updated_at = %v, want the restore's own time", got)
+	}
+}
+
 // insertSnapshotBlob stores full as a snapshot payload directly, bypassing
 // CreateSnapshot so a test can capture a payload the current code would never
 // produce (see TestRestorePreUIDSnapshotInheritsUIDs).
