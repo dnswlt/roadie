@@ -219,7 +219,7 @@ Roadmaps expose a handful of meaningful **integration milestones**. Other roadma
 
 This preserves local roadmap ownership while allowing program-level coordination without dependency spaghetti.
 
-# Implementation Plan
+## Backend Implementation Plan
 
 This implementation assumes [stable identity and explicit import
 semantics](stable_uids.md) are complete. Restore preserves database IDs;
@@ -228,7 +228,7 @@ duplicate and copy import generate new owned UIDs; transfer import preserves
 owned UIDs without collision fallbacks. Lanes and items have no UID — a
 consumer names its own item by database ID.
 
-## Representation
+### Representation
 
 Keep local dependencies in `dependencies`, with their existing hard foreign
 keys and roadmap-local DAG guarantees. Store cross-roadmap dependencies
@@ -254,14 +254,14 @@ This is still one user-facing dependency concept. The separate persistence
 models the failure boundary; it does not introduce another edge kind, type,
 lag, or label. No milestone copy or stored `neededBy` relationship is needed.
 
-## Integration Milestone State
+### Integration Milestone State
 
 Add an `integration_milestone BOOLEAN NOT NULL DEFAULT false` column to
 `milestones` in a new migration and in `schema.sql`. Carry the field through
 `model.Milestone`, milestone creation and patch types, store reads and writes,
 imports, snapshots, and the API as `integrationMilestone`.
 
-## Dependency Invariants
+### Dependency Invariants
 
 Preserve the existing `dependencies` table and all same-roadmap dependency
 combinations unchanged. When creating an external dependency, enforce the
@@ -282,7 +282,7 @@ The existing DAG check remains roadmap-local. An external milestone is a root
 in the consuming graph, so it cannot create a local cycle. The backend should
 not traverse all roadmaps to construct a second, global dependency graph.
 
-## Failure Isolation
+### Failure Isolation
 
 External dependencies must be a failure-containment boundary:
 
@@ -298,7 +298,7 @@ Local writes continue to enforce local structure. External resolution must not
 participate in transactions that replace local roadmap content, and an outage
 or inconsistency in a source roadmap must not roll such a transaction back.
 
-## Contract Lifecycle
+### Contract Lifecycle
 
 Derive consumers by querying `external_dependencies` for the source roadmap and
 milestone locators. This supports warnings such as `Used by 4 roadmaps` before
@@ -307,11 +307,11 @@ consumer veto power over the source roadmap.
 
 Clearing the integration property, deleting the milestone or lane, trashing or
 purging its roadmap, and restoring its roadmap remain valid source-roadmap
-operations. They leave consumer references unresolved and notify the affected
-consumers. Only the consuming roadmap may remove the dependency itself;
+operations. They leave consumer references unresolved.
+Only the consuming roadmap may remove the dependency itself;
 deleting its dependent item or roadmap removes the row by cascade.
 
-## API Projections
+### API Projections
 
 A consuming roadmap needs the current source milestone data when it is
 available, but must not own a copy of it. Add an `externalDependencies`
@@ -334,10 +334,10 @@ lookup, never independently stored.
 
 Discovery and dependency creation apply the source roadmap's visibility rules.
 Resolution after creation must degrade to an availability state rather than
-failing the roadmap read. The API may return a limited established projection
-or redact it as `inaccessible`, according to the final visibility policy.
+failing the roadmap read. Inaccessible milestones should be treated the same
+as non-existent ones.
 
-## History, Duplication, and Import
+### History, Duplication, and Import
 
 An integration milestone's property belongs to its owning roadmap. An external
 dependency belongs to its consuming roadmap. Apply the restore test and the
@@ -365,43 +365,8 @@ No restore, duplicate, or import resolves an external source as a transaction
 precondition. Missing, unpublished, or inaccessible sources affect only the
 returned availability state and warnings.
 
-## Notifications
+### Notifications
 
-Updating a referenced milestone must broadcast an SSE doorbell to each
-consuming roadmap so its projection is refetched. Creating or deleting an
-external dependency must also notify the source roadmap so its derived consumer
-count updates.
-
-Before deleting or replacing source milestones, collect the affected consumer
-roadmap IDs by source UID so they can be notified after the mutation. A source
-restore collects the union of milestone UIDs present before and after the
-restore, which also wakes consumers whose previously missing reference became
-available again. Notification is best-effort invalidation; failure to notify
-does not block either roadmap, and the next ordinary refetch still derives the
-correct availability state.
-
-Only the roadmap whose content changed is snapshotted. Updating a source
-milestone snapshots the source; adding or deleting the dependency snapshots the
-consumer. The additional roadmaps receive notifications only.
-
-## Delivery Order
-
-Implement the backend in separate, reviewable slices:
-
-1. Complete the stable-UID and import-semantics prerequisite.
-2. Add the integration-milestone schema and model field, including ordinary
-   CRUD, import, snapshot, and API coverage.
-3. Add the consumer-owned `external_dependencies` table and constrained create
-   and delete operations without changing local dependency behavior.
-4. Add resilient resolution, warning states, discovery, and reverse consumer
-   APIs, including access rules.
-5. Add snapshot preview, restore, duplicate, and import behavior with explicit
-   failure-isolation tests.
-6. Add best-effort SSE propagation for source changes.
-
-Tests should cover every allowed and rejected endpoint combination, lifecycle
-changes, consumer restore and duplication, resolved and unresolved imported
-references, live source updates, consumer counts, visibility enforcement, and
-unchanged local DAG behavior. Negative tests must prove that broken external
-references cannot make roadmap reads, snapshot preview, comparison, duplicate,
-import, or restore fail.
+SSE doorbells remain roadmap local: modifying an integration milestone
+or its roadmap does not notify other roadmaps. Adding a dependency on
+an integration milestone does not notify the owning roadmap of the milesone.
