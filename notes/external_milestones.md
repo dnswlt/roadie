@@ -250,6 +250,9 @@ source roadmap or milestone may disappear without deleting the consumer's
 reference or preventing either roadmap from functioning. The dependent item
 remains a hard reference because it is content owned by the consumer.
 
+A unique index on `(dependent_item_id, source_milestone_uid)`: one dependency
+per pair, as `dependencies_edge_idx` does for local edges.
+
 This is still one user-facing dependency concept. The separate persistence
 models the failure boundary; it does not introduce another edge kind, type,
 lag, or label. No milestone copy or stored `neededBy` relationship is needed.
@@ -315,18 +318,28 @@ deleting its dependent item or roadmap removes the row by cascade.
 
 A consuming roadmap needs the current source milestone data when it is
 available, but must not own a copy of it. Add an `externalDependencies`
-collection to its API representation containing, at minimum:
+collection to its API representation, with the owned reference flat and the
+resolved source nested under it:
 
-* the dependency ID and dependent item ID,
-* source roadmap and milestone UIDs,
-* the resolution state,
-* when available, the milestone title, description, date, and tentative state,
-  plus its source roadmap and lane names.
+* owned, and stored: the dependency ID, the dependent item ID, and the source
+  roadmap and milestone UIDs,
+* resolved per request and never stored: a nested `source`, carrying the
+  resolution state and, when available, the milestone title, description, date
+  and tentative state, plus its source roadmap and lane names.
 
-Resolve the projection on every read. Store the consumer-owned reference in
-snapshots and exports, but never store the projected source milestone as local
-roadmap content. Snapshot previews resolve their historical references against
-the current source and show unavailable references rather than failing.
+`RoadmapFull` is not only the client payload: snapshot capture, export and
+duplicate serialize the same struct. So resolution happens in the single-roadmap
+read handler and in the snapshot preview handler, never in the store. The store
+leaves `source` unset, so a payload built for a snapshot or an export never
+contains a projection in the first place. Put the resolved fields alongside the
+owned ones instead, and every writer has to remember to blank them.
+
+The client reads a roadmap in one request, so the resolved state arrives with
+it and the consumer side needs no second endpoint. `model.Roadmap.Owned` is
+derived per request and kept out of stored payloads the same way.
+
+Snapshot previews resolve their historical references against the current source
+and show unavailable references rather than failing.
 
 Add read-only APIs for discovering available integration milestones and for
 reading a milestone's derived consumer count. `neededBy` remains a reverse
