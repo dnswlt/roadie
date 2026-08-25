@@ -18,6 +18,7 @@ type stubTracker struct {
 	pageSize            int
 	page                tracker.Page
 	err                 error
+	baseURL             string
 }
 
 func (s *stubTracker) Search(_ context.Context, query, continuation string, pageSize int) (tracker.Page, error) {
@@ -28,6 +29,8 @@ func (s *stubTracker) Search(_ context.Context, query, continuation string, page
 func (s *stubTracker) GetIssue(context.Context, string) (tracker.Issue, error) {
 	return tracker.Issue{}, errors.New("not implemented")
 }
+
+func (s *stubTracker) BaseURL() string { return s.baseURL }
 
 func TestTrackerSearch(t *testing.T) {
 	stub := &stubTracker{page: tracker.Page{

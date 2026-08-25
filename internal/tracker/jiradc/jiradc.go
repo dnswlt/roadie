@@ -393,6 +393,10 @@ func (c *Client) restEndpoint(parts ...string) *url.URL {
 	return c.restURL.JoinPath(parts...)
 }
 
+// BaseURL reports the configured web base, the authority for which links count
+// as this deployment's.
+func (c *Client) BaseURL() string { return c.webURL.String() }
+
 // browseURL is built from the web base even when the REST API answers on another
 // host: this is the link a person follows, and the identity the frontend matches
 // an item's description links against.

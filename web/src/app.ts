@@ -197,7 +197,7 @@ function renderTopbar(): void {
   $("view-timeline").classList.toggle("active", !comparing && state.viewMode === "timeline");
   $("view-wbs").classList.toggle("active", !comparing && state.viewMode === "wbs");
   const reconBtn = $("view-recon") as HTMLButtonElement;
-  reconBtn.classList.toggle("hidden", !state.me.trackerAvailable);
+  reconBtn.classList.toggle("hidden", !state.trackerConfigured);
   reconBtn.classList.toggle("active", !comparing && recon);
   reconBtn.disabled = !state.current;
   const timeline = !comparing && state.viewMode === "timeline";
@@ -1112,7 +1112,7 @@ async function boot(): Promise<void> {
   const storedView = localStorage.getItem("roadie.view");
   const wantView: UrlView =
     target.view ?? (storedView === "wbs" || storedView === "recon" ? storedView : "timeline");
-  state.viewMode = wantView === "recon" && !state.me.trackerAvailable ? "timeline" : wantView;
+  state.viewMode = wantView === "recon" && !state.trackerConfigured ? "timeline" : wantView;
 
   await actions.loadRoadmaps();
 

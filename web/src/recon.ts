@@ -330,7 +330,7 @@ export function renderRecon(container: HTMLElement): void {
       : null;
 
   const root = div("recon");
-  const unreferenced = roadieItemsWithoutJiraReference(state.current);
+  const unreferenced = roadieItemsWithoutJiraReference(state.current, state.me.trackerUrl);
   // Resolved once per render: the lookup also drops a target that has since
   // vanished, which every issue row would otherwise repeat.
   const target = currentLinkTarget();

@@ -70,8 +70,11 @@ func TestGetMeOpenMode(t *testing.T) {
 	}
 }
 
-func TestGetMeReportsTrackerAvailability(t *testing.T) {
-	s := &Server{tracker: &stubTracker{}}
+// The tracker's base URL is how the frontend knows a tracker exists at all, and
+// also which links belong to it, so an empty one must mean unconfigured and
+// nothing else.
+func TestGetMeReportsTrackerURL(t *testing.T) {
+	s := &Server{tracker: &stubTracker{baseURL: "https://jira.example.test/jira"}}
 	w := httptest.NewRecorder()
 	s.getMe(w, httptest.NewRequest("GET", "/api/me", nil))
 
@@ -79,8 +82,8 @@ func TestGetMeReportsTrackerAvailability(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !got.TrackerAvailable {
-		t.Errorf("getMe = %+v, want tracker available", got)
+	if got.TrackerURL != "https://jira.example.test/jira" {
+		t.Errorf("getMe = %+v, want the tracker base URL", got)
 	}
 }
 

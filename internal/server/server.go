@@ -242,30 +242,40 @@ func requireClientHeader(next http.Handler) http.Handler {
 }
 
 // meResponse gives the frontend its runtime capabilities alongside identity.
-// Mode is what the UI keys off for account affordances; TrackerAvailable tells
-// it whether to offer Recon without probing the search endpoint for a 503.
+// Mode is what the UI keys off for account affordances.
+//
+// TrackerURL is empty exactly when no tracker is configured, which is how the
+// frontend knows whether to offer Recon without probing the search endpoint for
+// a 503. It is one value rather than a flag beside a URL, because two would be
+// two answers to one question and free to disagree. When set it is also the
+// authority for which links in an item description are tracker issue links. No
+// secret: it is the host of every issue link Recon already renders.
 type meResponse struct {
-	Mode             string `json:"mode"` // "open" or "oidc"
-	Authenticated    bool   `json:"authenticated"`
-	Name             string `json:"name,omitempty"`
-	Email            string `json:"email,omitempty"`
-	TrackerAvailable bool   `json:"trackerAvailable"`
+	Mode          string `json:"mode"` // "open" or "oidc"
+	Authenticated bool   `json:"authenticated"`
+	Name          string `json:"name,omitempty"`
+	Email         string `json:"email,omitempty"`
+	TrackerURL    string `json:"trackerUrl"`
 }
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
+	trackerURL := ""
+	if s.tracker != nil {
+		trackerURL = s.tracker.BaseURL()
+	}
 	if s.auth == nil {
-		writeJSON(w, http.StatusOK, meResponse{Mode: "open", TrackerAvailable: s.tracker != nil})
+		writeJSON(w, http.StatusOK, meResponse{Mode: "open", TrackerURL: trackerURL})
 		return
 	}
 	// Reaching here with auth on means the middleware admitted the request, so
 	// there is always an identity.
 	id := auth.From(r.Context())
 	writeJSON(w, http.StatusOK, meResponse{
-		Mode:             "oidc",
-		Authenticated:    true,
-		Name:             id.Name,
-		Email:            id.Email,
-		TrackerAvailable: s.tracker != nil,
+		Mode:          "oidc",
+		Authenticated: true,
+		Name:          id.Name,
+		Email:         id.Email,
+		TrackerURL:    trackerURL,
 	})
 }
 

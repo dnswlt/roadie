@@ -68,7 +68,7 @@ class AppState {
   // neither can change without a page load. Visibility decisions still arrive
   // on each roadmap as `visibility`/`owned`; auth mode is not a permission
   // system in the frontend.
-  me: Me = { mode: "open", authenticated: false, trackerAvailable: false };
+  me: Me = { mode: "open", authenticated: false, trackerUrl: "" };
   // The set of selected items. Usually empty or a single item; shift-click
   // builds a multi-selection that drags together (time-shift only). The item
   // and milestone selections are mutually exclusive (item vs. milestone
@@ -406,7 +406,12 @@ class AppState {
   // a roadmap is open. The topbar button expresses the two separately (hidden,
   // then disabled); the "r" shortcut has no such affordance, so it asks here.
   get canShowRecon(): boolean {
-    return this.me.trackerAvailable && this.current !== null;
+    return this.trackerConfigured && this.current !== null;
+  }
+
+  // A tracker is configured exactly when /api/me carried its base URL.
+  get trackerConfigured(): boolean {
+    return this.me.trackerUrl !== "";
   }
 
   // setViewMode switches what the main area shows. Any current selection is

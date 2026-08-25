@@ -4,6 +4,9 @@ import { test } from "node:test";
 import { diffTrackerIssues, roadieItemsWithoutJiraReference } from "./recon-diff";
 import type { Item, ItemFull, LaneFull, RoadmapFull, TrackerIssue } from "./types";
 
+// The configured deployment, context path included: only links under it count.
+const JIRA = "https://jira.example.test/jira";
+
 function child(id: number, title: string, description = ""): Item {
   return {
     id,
@@ -148,7 +151,7 @@ test("unreferenced Roadie items are flat, individually checked, and keep roadmap
     milestones: [],
   });
 
-  assert.deepEqual(roadieItemsWithoutJiraReference(rm), [
+  assert.deepEqual(roadieItemsWithoutJiraReference(rm, JIRA), [
     {
       itemId: 2,
       title: "Unlinked child",
@@ -173,14 +176,30 @@ test("unreferenced Roadie items are flat, individually checked, and keep roadmap
   ]);
 });
 
-test("unreferenced Roadie items reject malformed Jira-shaped links and ignore milestones", () => {
+test("unreferenced Roadie items only count links under the configured deployment", () => {
   const rm = roadmap(
-    item(1, "Zero key", "https://jira.example.test/browse/PAY-0"),
-    item(2, "Not browse", "https://jira.example.test/issues/PAY-2"),
+    item(1, "Other host", "https://jira.other.test/jira/browse/PAY-1"),
+    item(2, "Other installation", "https://jira.example.test/jira2/browse/PAY-2"),
+    item(3, "No context path", "https://jira.example.test/browse/PAY-3"),
+    item(4, "This deployment", "https://jira.example.test/jira/browse/PAY-4"),
   );
   assert.deepEqual(
-    roadieItemsWithoutJiraReference(rm).map((row) => row.title),
+    roadieItemsWithoutJiraReference(rm, JIRA).map((row) => row.title),
+    ["Other host", "Other installation", "No context path"],
+  );
+  // A mixed-case configured host still matches the lowercased origin a parsed
+  // link yields.
+  assert.deepEqual(roadieItemsWithoutJiraReference(rm, "https://Jira.Example.Test/jira").length, 3);
+});
+
+test("unreferenced Roadie items reject malformed Jira-shaped links and ignore milestones", () => {
+  const rm = roadmap(
+    item(1, "Zero key", "https://jira.example.test/jira/browse/PAY-0"),
+    item(2, "Not browse", "https://jira.example.test/jira/issues/PAY-2"),
+  );
+  assert.deepEqual(
+    roadieItemsWithoutJiraReference(rm, JIRA).map((row) => row.title),
     ["Zero key", "Not browse"],
   );
-  assert.deepEqual(roadieItemsWithoutJiraReference(null), []);
+  assert.deepEqual(roadieItemsWithoutJiraReference(null, JIRA), []);
 });

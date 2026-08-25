@@ -236,5 +236,9 @@ export interface Me {
   authenticated: boolean;
   name?: string;
   email?: string;
-  trackerAvailable: boolean;
+  // The tracker deployment's base URL, empty when none is configured — the
+  // presence of the URL is what "a tracker is configured" means. It is also
+  // what decides whether a link in a description is a tracker issue link
+  // (recon-diff.ts); read it through state.trackerUrl.
+  trackerUrl: string;
 }

@@ -1,8 +1,10 @@
-// Pure reconciliation between tracker results and Roadie items. The tracker
-// supplies each issue's canonical URL, which makes it the authority for the
-// configured deployment (host and any context path): a lookalike /browse/ URL
-// on another host, or under another Jira installation on the same host, never
-// becomes a match.
+// Pure reconciliation between tracker results and Roadie items. One rule
+// throughout: a link belongs to this tracker when it sits under the configured
+// deployment (host and any context path), so a lookalike /browse/ URL on
+// another host, or under another Jira installation on the same host, is not a
+// reference. Issue matching reads that deployment off the issue's own canonical
+// URL; the Roadie-side list, which has no issue in hand, reads it off
+// state.me.trackerUrl.
 
 import { extractLinks } from "./links";
 import type { RoadmapFull, TrackerIssue } from "./types";
@@ -46,26 +48,36 @@ function issueIdentity(raw: string, expectedKey?: string): string | null {
   }
 }
 
-// The Roadie-side list is deliberately independent of a Jira query, so it has
-// no canonical result URL from which to infer the configured deployment. At
-// this frontend-only stage, "has a Jira reference" therefore means a valid
-// HTTP(S) Jira issue-link shape. Exact deployment identity is still enforced
-// by diffTrackerIssues whenever a concrete Jira issue is being matched.
-function hasJiraIssueReference(description: string): boolean {
-  return extractLinks(description).some((link) => issueIdentity(link.url) !== null);
+// Every issue link under a deployment starts with this prefix, which is what
+// makes it comparable against a link's identity. The URL goes through URL()
+// rather than being concatenated, so a configured host in mixed case still
+// matches the lowercased origin a parsed link yields.
+function browsePrefix(trackerUrl: string): string {
+  const base = new URL(trackerUrl);
+  return `${base.origin}${base.pathname.replace(/\/+$/, "")}/browse/`;
+}
+
+function hasJiraIssueReference(description: string, prefix: string): boolean {
+  return extractLinks(description).some((link) => issueIdentity(link.url)?.startsWith(prefix));
 }
 
 // A flat projection in the roadmap's own order: lanes, then each top-level
 // item immediately followed by its children. Parent and child references are
 // checked independently, and milestones never enter the traversal.
+//
+// trackerUrl is the configured deployment (state.me.trackerUrl). An item whose
+// only issue link points at some other Jira is unreferenced *here*, which is
+// the answer this list exists to give.
 export function roadieItemsWithoutJiraReference(
   roadmap: RoadmapFull | null,
+  trackerUrl: string,
 ): UnreferencedRoadieItem[] {
   if (!roadmap) return [];
+  const prefix = browsePrefix(trackerUrl);
   const rows: UnreferencedRoadieItem[] = [];
   for (const lane of roadmap.lanes) {
     for (const top of lane.items) {
-      if (!hasJiraIssueReference(top.description)) {
+      if (!hasJiraIssueReference(top.description, prefix)) {
         rows.push({
           itemId: top.id,
           title: top.title,
@@ -75,7 +87,7 @@ export function roadieItemsWithoutJiraReference(
         });
       }
       for (const child of top.children) {
-        if (hasJiraIssueReference(child.description)) continue;
+        if (hasJiraIssueReference(child.description, prefix)) continue;
         rows.push({
           itemId: child.id,
           title: child.title,

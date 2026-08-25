@@ -44,4 +44,10 @@ type Page struct {
 type Client interface {
 	Search(ctx context.Context, query, continuation string, pageSize int) (Page, error)
 	GetIssue(ctx context.Context, externalID string) (Issue, error)
+	// BaseURL is the deployment as a browser reaches it, without a trailing
+	// slash — the same authority Issue.URL is built from. Reconciliation needs
+	// it to decide which links in an item description belong to this tracker at
+	// all, which is not answerable from an issue's own URL when there is no
+	// issue in hand.
+	BaseURL() string
 }
