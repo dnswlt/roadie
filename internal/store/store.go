@@ -68,6 +68,21 @@ func (s *Store) lockRoadmapByItem(ctx context.Context, tx pgx.Tx, itemID int64) 
 	return roadmapID, s.lockRoadmap(ctx, tx, roadmapID)
 }
 
+// lockRoadmapByMilestone locks the roadmap owning milestoneID and returns its id.
+func (s *Store) lockRoadmapByMilestone(ctx context.Context, tx pgx.Tx, milestoneID int64) (int64, error) {
+	var roadmapID int64
+	err := tx.QueryRow(ctx,
+		`SELECT roadmap_id FROM lanes WHERE id = (SELECT lane_id FROM milestones WHERE id = $1)`,
+		milestoneID).Scan(&roadmapID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	return roadmapID, s.lockRoadmap(ctx, tx, roadmapID)
+}
+
 // RoadmapIDByLane returns the roadmap that owns laneID, or ErrNotFound. It is a
 // plain (non-locking) lookup used to resolve which roadmap a request touches,
 // e.g. for auto snapshots.
@@ -1480,19 +1495,25 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 	if n.Date.IsZero() {
 		return model.Milestone{}, invalidf("milestone date is required")
 	}
-	var exists bool
-	if err := s.pool.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM lanes WHERE id = $1)`, laneID).Scan(&exists); err != nil {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
 		return model.Milestone{}, err
 	}
-	if !exists {
-		return model.Milestone{}, ErrNotFound
+	defer tx.Rollback(ctx)
+
+	// Locking by lane also answers "does this lane exist, in a live roadmap",
+	// which is what the plain existence check here used to do on its own.
+	if _, err := s.lockRoadmapByLane(ctx, tx, laneID); err != nil {
+		return model.Milestone{}, err
 	}
-	row := s.pool.QueryRow(ctx,
+	m, err := scanMilestone(tx.QueryRow(ctx,
 		`INSERT INTO milestones (lane_id, title, description, date, tentative)
 		 VALUES ($1, $2, $3, $4, $5) RETURNING `+milestoneCols,
-		laneID, n.Title, n.Description, n.Date.Time, n.Tentative)
-	return scanMilestone(row)
+		laneID, n.Title, n.Description, n.Date.Time, n.Tentative))
+	if err != nil {
+		return model.Milestone{}, err
+	}
+	return m, tx.Commit(ctx)
 }
 
 type MilestonePatch struct {
@@ -1509,7 +1530,16 @@ func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch)
 	if p.Date.Set && p.Date.Value.IsZero() {
 		return model.Milestone{}, invalidf("milestone date must not be null")
 	}
-	row := s.pool.QueryRow(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return model.Milestone{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := s.lockRoadmapByMilestone(ctx, tx, id); err != nil {
+		return model.Milestone{}, err
+	}
+	row := tx.QueryRow(ctx,
 		`UPDATE milestones SET title = CASE WHEN $2 THEN $3 ELSE title END,
 		        description = CASE WHEN $4 THEN $5 ELSE description END,
 		        date = CASE WHEN $6 THEN $7 ELSE date END,
@@ -1523,16 +1553,28 @@ func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Milestone{}, ErrNotFound
 	}
-	return m, err
+	if err != nil {
+		return model.Milestone{}, err
+	}
+	return m, tx.Commit(ctx)
 }
 
 func (s *Store) DeleteMilestone(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM milestones WHERE id = $1`, id)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := s.lockRoadmapByMilestone(ctx, tx, id); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM milestones WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit(ctx)
 }

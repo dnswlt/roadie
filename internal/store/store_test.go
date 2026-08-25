@@ -1062,6 +1062,11 @@ func TestRoadmapTrash(t *testing.T) {
 		Title: "Item", StartDate: date("2026-01-01"), EndDate: date("2026-02-01")}); err != nil {
 		t.Fatal(err)
 	}
+	ms, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
+		Title: "Launch", Date: date("2026-03-01")})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := testStore.CreateSnapshot(ctx, rm.ID, model.SnapshotManual, strPtr("checkpoint")); err != nil {
 		t.Fatal(err)
 	}
@@ -1109,6 +1114,19 @@ func TestRoadmapTrash(t *testing.T) {
 		Title: "Sneaky", StartDate: date("2026-01-01"), EndDate: date("2026-01-02")},
 	); !errors.Is(err, ErrNotFound) {
 		t.Errorf("CreateItem in trashed roadmap: got %v, want ErrNotFound", err)
+	}
+	// Milestones included: they are the mutations that used to write straight
+	// through the pool, so they neither took the lock nor saw this clause.
+	if _, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
+		Title: "Sneaky", Date: date("2026-01-01")}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("CreateMilestone in trashed roadmap: got %v, want ErrNotFound", err)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, ms.ID, MilestonePatch{
+		Title: model.Opt[string]{Set: true, Value: "Sneaky"}}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateMilestone in trashed roadmap: got %v, want ErrNotFound", err)
+	}
+	if err := testStore.DeleteMilestone(ctx, ms.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("DeleteMilestone in trashed roadmap: got %v, want ErrNotFound", err)
 	}
 
 	back, err := testStore.RestoreRoadmap(ctx, rm.ID)
