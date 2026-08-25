@@ -3,31 +3,59 @@
     "key": "PAY-101",
     "summary": "Introduce the new payment authorization flow",
     "issueType": "Epic",
-    "status": "In Progress"
+    "status": "In Progress",
+    "fields": {
+      "duedate": "2026-04-12T00:00:00.000+0200",
+      "fixVersions": [
+        {
+          "name": "26.2",
+          "releaseDate": "2026-03-31"
+        }
+      ]
+    }
   },
   {
     "key": "PAY-117",
     "summary": "Add retry handling for payment providers",
     "issueType": "Story",
-    "status": "To Do"
+    "status": "To Do",
+    "fields": {
+      "duedate": "2026-07-15",
+      "fixVersions": [
+        {
+          "name": "26.3",
+          "releaseDate": "2026-09-30"
+        }
+      ]
+    }
   },
   {
     "key": "PLAT-42",
     "summary": "Move audit events to the shared event stream",
     "issueType": "Feature",
-    "status": "In Review"
+    "status": "In Review",
+    "fields": {
+      "fixVersions": []
+    }
   },
   {
     "key": "MOB-88",
     "summary": "Refresh account recovery on mobile",
     "issueType": "Epic",
-    "status": "Done"
+    "status": "Done",
+    "fields": {
+      "duedate": "2026-02-01"
+    }
   },
   {
     "key": "PAY-123",
     "summary": "Update payment provider failure alerts",
     "issueType": "Task",
-    "status": "To Do"
+    "status": "To Do",
+    "fields": {
+      "customfield_10430": "2026-05-01",
+      "duedate": "2026-06-30"
+    }
   },
   {
     "key": "PLAT-57",

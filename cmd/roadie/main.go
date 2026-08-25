@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/dnswlt/roadie/internal/auth"
+	"github.com/dnswlt/roadie/internal/recon"
 	"github.com/dnswlt/roadie/internal/server"
 	"github.com/dnswlt/roadie/internal/store"
+	"github.com/dnswlt/roadie/internal/tracker"
 	"github.com/dnswlt/roadie/internal/tracker/jiradc"
 	"github.com/dnswlt/roadie/web"
 )
@@ -89,12 +91,22 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// The schedule check's fetcher is built here and started below, once there
+	// is a context to bound it: it outlives every request, so its lifetime is
+	// the process's, like the trash sweeper's.
+	var fetcher *recon.Fetcher
 	if *jiraURL != "" {
-		opt, err := jiraTracker(*jiraURL, *jiraRestURL)
+		jira, err := jiraTracker(*jiraURL, *jiraRestURL)
 		if err != nil {
 			return err
 		}
-		opts = append(opts, opt)
+		// A function rather than the store itself, so internal/recon stays free
+		// of the database and is handed only what it needs.
+		fetcher = recon.New(jira, func(ctx context.Context, roadmapID int64) (string, error) {
+			ext, err := st.GetTrackerExtractor(ctx, roadmapID)
+			return ext.Source, err
+		}, 0)
+		opts = append(opts, server.WithTracker(jira), server.WithRecon(fetcher))
 	}
 
 	app := server.New(st, static, opts...)
@@ -121,6 +133,13 @@ func run() error {
 	// sigCtx, so it stops with the rest of the process; nothing waits for it,
 	// since its work is a single statement that either commits or doesn't.
 	go app.RunTrashSweeper(sigCtx)
+
+	// The one goroutine that talks to Jira for schedule checks. Also bounded by
+	// sigCtx; nothing waits for it, since an abandoned batch is simply
+	// unchecked and re-enqueued by whoever asks next.
+	if fetcher != nil {
+		go fetcher.Run(sigCtx)
+	}
 
 	// Serve in the background; block until we're told to stop or serving fails
 	// to start (e.g. the port is taken), whichever comes first.
@@ -205,7 +224,7 @@ func authOptions(ctx context.Context, mode, redirectURL string, ttl time.Duratio
 // JIRA_OAUTH_TOKEN_URL plus JIRA_OAUTH_CLIENT_ID/_SECRET (and optional
 // space-separated JIRA_OAUTH_SCOPES), which then wins. Absent credentials are
 // legitimate against the dev mock; half-set ones never pass silently.
-func jiraTracker(baseURL, restURL string) (server.Option, error) {
+func jiraTracker(baseURL, restURL string) (tracker.Client, error) {
 	token := strings.TrimSpace(os.Getenv("JIRA_TOKEN"))
 	oauth := jiradc.OAuthConfig{
 		ClientID:     os.Getenv("JIRA_OAUTH_CLIENT_ID"),
@@ -245,7 +264,7 @@ func jiraTracker(baseURL, restURL string) (server.Option, error) {
 		log.Print("jira: WARNING — JIRA_OAUTH_CLIENT_ID/JIRA_OAUTH_CLIENT_SECRET ignored, JIRA_OAUTH_TOKEN_URL is not set")
 	}
 	log.Printf("jira: recon enabled (%s)", strings.Join(fields, ", "))
-	return server.WithTracker(jira), nil
+	return jira, nil
 }
 
 // sessionKey reads the 32-byte cookie sealing key from SESSION_KEY, e.g.

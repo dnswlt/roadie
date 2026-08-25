@@ -85,13 +85,17 @@ ends 31 Mar" into "Sprint 24 ends 12 Apr, item ends 31 Mar" — which names what
 to go fix in Jira, and exposes a script reading the wrong field, where the date
 alone looks perfectly plausible.
 
-Sandbox: plain Starlark is already hermetic — no `load()`, no I/O, no clock, no
-recursion, and no `while`, so the loops it can express are finite. The one
-remaining accident is a long finite one (`for i in range(10**9)`), which nothing
-in the interpreter interrupts, so a per-issue execution step budget
-(`SetMaxExecutionSteps`) is the only guard. With `-auth=off` anyone editing a
-roadmap can save a script, but that is not a new power: they can already post
-arbitrary JQL.
+Sandbox: plain Starlark is hermetic — no `load()`, no I/O, no clock, no
+recursion, and no `while` — but it is not resource-bounded, and there is **no
+step budget and no deadline**. Both were tried and removed: neither bounds the
+failure that matters, because one operation is one step whatever it allocates
+(`[0] * 1000000000` asks for ~17GB and kills the process), so a budget only
+makes the sandbox read stronger than it is. Every script terminates, but that is
+mathematical rather than useful: `range()` is lazy and takes any bound, so
+`for i in range(1000000000000)` is one statement that runs for hours. (`**` is
+not a Starlark operator at all.) A real boundary means running the script
+outside this process. Until there is one, saving a script is a **trusted
+action** — unlike posting JQL, which cannot take the server down.
 
 `print()` is captured for the editor rather than the server log — a user
 debugging a script shouldn't need shell access.
@@ -112,18 +116,106 @@ compiling twenty lines disappears next to one Jira round-trip.
 ## Running the check
 
 The frontend keeps link parsing (`links.ts`, `recon-diff.ts`): it collects the
-referenced keys and the item each came from, posts the distinct keys, and
-compares the returned ranges itself. The backend fetches those issues with
-`JIRA_FIELDS ∪ display fields`, runs the extractor, and returns per key the
-usual issue projection plus `start`/`end`/`label` or an `error`.
+referenced keys and the item each came from, and compares the returned ranges
+itself. The backend fetches those issues with `JIRA_FIELDS ∪ display fields` and
+runs the extractor.
+
+**Exactly one goroutine talks to the tracker**, process-wide. Clients feed it
+keys and poll for results, so the two are separate routes: `POST` to enqueue,
+`POST .../status` to read. **Polling has no influence on the fetcher** — it
+cannot start a fetch, hurry one, or reorder the queue — which is what makes
+Refresh free and stops a client from piling requests onto Jira by asking often.
+
+That single goroutine *is* the rate limiting. Nothing runs concurrently, so
+there is no token bucket, no per-request budget and no cap on how many keys a
+request may name: neither route does work proportional to them. Backoff on a 429
+stalls that one loop and nothing else. The queue is bounded, and enqueue reports
+how many keys it took — fewer than sent means the backlog is full, and the rest
+stay unchecked until asked for again.
+
+`unchecked` is therefore a statement about Roadie and not about the issue: not
+fetched yet, still queued, or established too long ago to be fresh. It is what a
+poll returns while work is outstanding, and it needs no explaining away.
+
+A batch is one roadmap's keys, so one script and one field set cover it. The
+script is read when the fetcher reaches the keys rather than when they were
+enqueued, so editing one takes effect on whatever has not run yet.
 
 **Deployment identity.** A link counts only when it sits under `trackerUrl` from
 `/api/me`, context path included. Already implemented in `recon-diff.ts`.
 
-**Batching.** Chunks of `key in (...)`. JQL rejects the *whole* query when one
-key is missing or invisible — and a stale link is exactly what Recon exists to
-surface — so a rejected chunk falls back to individual lookups, yielding a clean
-per-key "not found". Cap on keys per request.
+**Batching.** Batches of `key in (...)`, 100 keys each. JQL rejects the *whole*
+query when any key is missing or invisible, so without salvage one dead link
+would cost the caller the other 99 and the check would under-report a roadmap
+without saying so. Salvage is not a search: **Jira's 400 names every unknown
+key**, once each, in `errorMessages`, single-quoted, and never names a key that
+was fine —
+
+```
+{"errorMessages":["An issue with key 'RCSAM-170000' does not exist for field 'key'.",
+                  "An issue with key 'RCSAM-170001' does not exist for field 'key'."],"errors":{}}
+```
+
+— so the batch is retried once without the named keys, which then report as not
+found. Two requests per batch, worst case, whatever the number of dead links.
+Only keys we actually sent may be dropped, and a 400 naming none of them is a
+different failure (malformed JQL, `key` unavailable): it surfaces with Jira's
+own wording rather than being retried or split. Cap the rounds at three, in case
+a deployment names only the first.
+
+Reading the provider's error text is not a new posture — the adapter already
+parses this envelope to promote a JQL error into the user's own words.
+
+**A short page is truncation, never a missing issue.** Unknown keys produce a
+400, so a 200 must return exactly as many issues as the batch had keys. Anything
+less is `jira.search.views.default.max` cutting the page, and reporting the
+remainder as dead links would tell a roadmap its live links are broken. It is an
+error naming the cap.
+
+100 rather than more: a probe of one Data Center deployment returned 300/300 at
+4.5KB of JQL with no cap in sight, but that limit is per installation and Jira
+Cloud caps `maxResults` at 100. Since the fetcher is never in a hurry, headroom
+above 100 buys nothing and costs portability.
+
+**Freshness, not just batching.** Results are cached process-wide for a minute,
+so a person leaning on Refresh — or two people checking the same roadmap — does
+not spend the deployment's rate limit twice. Only the keys with no fresh answer
+reach Jira.
+
+The cache holds **extracted results, never raw issues**. `JIRA_FIELDS` is
+user-supplied and unbounded: a script naming `attachment` or `comment` pulls
+documents rather than dates, so caching before extraction would turn a field
+list into server memory. A result is six short strings whatever the script
+asked for.
+
+Entries are keyed by a **fingerprint of the script source**, which is what makes
+that affordable. Extraction depends on the script, and editing one yields a
+different fingerprint — old entries are never consulted again and lapse on their
+own, so there is no invalidation step to remember. Two roadmaps running
+identical scripts share, correctly: the same source over the same issue is the
+same answer. Absence is cached too, since a dead key is what makes a batch cost
+two requests instead of one. Entries expire, so the cache is bounded by recent
+traffic rather than by how many roadmaps exist.
+
+**Rate limiting is the deployment's, and it says so.** A 429 or 503 is honoured
+rather than retried blindly: `Retry-After` when present, otherwise a doubling
+delay, with a capped number of attempts and a bounded total wait so a wedged
+deployment stalls the fetcher for a known time rather than forever.
+
+**Only the fetcher ever waits.** Waiting is acceptable there because nobody is
+watching it and nothing else is delayed by it. The interactive JQL search shares
+the same client and must keep failing fast — a person typing a query is told the
+tracker is busy, not left on a spinner while a background goroutine's rate limit
+is waited out. Backoff therefore lives around the by-key fetch, not in the
+adapter's shared request path, and there is no process-wide hold-off: with one
+fetcher there is no concurrency to coordinate, and a shared window would only
+serve to let background work slow down foreground requests.
+
+A 429 must never be confused with the 400 above: splitting or retrying a
+rate-limit rejection multiplies exactly the pressure that caused it.
+
+Nothing races here: one goroutine is the only fetcher, so a key is in flight
+once or not at all. The queue is a set, so asking twice enqueues once.
 
 ## Comparison rule
 
@@ -165,7 +257,8 @@ favourites' shape — `guard`, not `snap`:
 
 - `GET|PUT|DELETE /api/roadmaps/{id}/tracker-extractor`
 - `POST /api/roadmaps/{id}/tracker-extractor/test`
-- `POST /api/roadmaps/{id}/schedule-check`
+- `POST /api/roadmaps/{id}/schedule-check` — enqueue keys, returns at once
+- `POST /api/roadmaps/{id}/schedule-check/status` — read what is established
 
 Roadmap-scoped, unlike `POST /api/tracker/search`, because the script belongs to
 a roadmap.
@@ -177,14 +270,18 @@ and join it. The script's *input* is not neutral — it reads `customfield_10020
 — so raw fields are a distinct, explicitly Jira-shaped channel reaching the
 extractor and the test endpoint only, never the model or frontend state.
 
-The adapter gains extra-field fetch by key; a separate package compiles and runs
-Starlark and knows no HTTP; `server/tracker.go` wires them. Adds
+The adapter gains extra-field fetch by key; `internal/tracker/extractor`
+compiles and runs Starlark; `internal/recon` owns the fetcher, its queue and its
+cache, and knows neither HTTP nor the database — it is handed a tracker client
+and a function returning a roadmap's script. `server/tracker.go` is two thin
+handlers over it, since the check's logic has nothing to do with HTTP. Adds
 `go.starlark.net` to a four-dependency go.mod — canonical, no smaller option, a
 deliberate change in posture.
 
 ## Slices
 
 1. Table, extractor CRUD with save validation, Starlark runner.
-2. By-key fetch (extra fields, chunking, fallback) and the check endpoint.
+2. By-key fetch (extra fields, batching, salvage), the fetcher goroutine with
+   its cache and backoff, and the enqueue/status routes.
 3. Recon tab: run, render ranges, filter to mismatches.
 4. Editor with Test and raw-field inspection.

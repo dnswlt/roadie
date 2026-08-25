@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dnswlt/roadie/internal/tracker"
 )
@@ -457,5 +459,606 @@ func TestValidation(t *testing.T) {
 	}
 	if _, err := c.GetIssue(context.Background(), "../search"); err == nil {
 		t.Error("invalid issue ID succeeded")
+	}
+}
+
+// jiraFixture answers the two REST resources a by-key fetch uses, from a small
+// issue table. A key listed in rejects makes the *whole* chunk search 400, the
+// way Jira rejects `key in (...)` naming an issue nobody can see.
+type jiraFixture struct {
+	issues   map[string]map[string]any
+	rejects  map[string]bool
+	searches [][]string // fields requested, one entry per search
+	jqls     []string   // the JQL of each search, in order
+	gets     []string   // keys fetched individually
+}
+
+func (f *jiraFixture) handler(t *testing.T) http.Handler {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /rest/api/2/search", func(w http.ResponseWriter, r *http.Request) {
+		var req searchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		f.searches = append(f.searches, req.Fields)
+		f.jqls = append(f.jqls, req.JQL)
+		keys := keysInJQL(req.JQL)
+		// Real Jira names *every* unknown key, one message each — measured
+		// against a live Data Center deployment. Naming only the first would
+		// make salvage look like a search and this fixture a liar.
+		var rejected []string
+		for _, key := range keys {
+			if f.rejects[key] {
+				rejected = append(rejected, fmt.Sprintf("An issue with key '%s' does not exist for field 'key'.", key))
+			}
+		}
+		if len(rejected) > 0 {
+			writeJiraJSON(w, http.StatusBadRequest,
+				map[string]any{"errorMessages": rejected, "errors": map[string]string{}})
+			return
+		}
+		issues := []map[string]any{}
+		for _, key := range keys {
+			if fields, ok := f.issues[key]; ok {
+				issues = append(issues, map[string]any{"id": "1", "key": key, "fields": fields})
+			}
+		}
+		writeJiraJSON(w, http.StatusOK, map[string]any{"issues": issues})
+	})
+	mux.HandleFunc("GET /rest/api/2/issue/{key}", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("key")
+		f.gets = append(f.gets, key)
+		fields, ok := f.issues[key]
+		if !ok {
+			writeJiraError(w, http.StatusNotFound, "Issue does not exist or you do not have permission to see it.")
+			return
+		}
+		writeJiraJSON(w, http.StatusOK, map[string]any{"id": "1", "key": key, "fields": fields})
+	})
+	return mux
+}
+
+// keysInJQL pulls the quoted keys back out of `key in ("A", "B")`.
+func keysInJQL(jql string) []string {
+	var keys []string
+	for _, part := range strings.Split(strings.Trim(strings.TrimPrefix(jql, "key in ("), ")"), ",") {
+		if key := strings.Trim(strings.TrimSpace(part), `"`); key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func writeJiraJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeJiraError(w http.ResponseWriter, status int, msg string) {
+	writeJiraJSON(w, status, map[string]any{"errorMessages": []string{msg}})
+}
+
+func namedValue(name string) map[string]any { return map[string]any{"name": name} }
+
+// rawFields reaches into the raw issue the way a script does.
+func rawFields(raw map[string]any) map[string]any { return rawObject(raw, "fields") }
+
+func newFixtureClient(t *testing.T, f *jiraFixture) *Client {
+	t.Helper()
+	ts := httptest.NewServer(f.handler(t))
+	t.Cleanup(ts.Close)
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestFetchIssues(t *testing.T) {
+	f := &jiraFixture{issues: map[string]map[string]any{
+		"PAY-1": {
+			"summary": "Payment flow", "issuetype": namedValue("Epic"), "status": namedValue("In Progress"),
+			"customfield_10430": "2026-04-12", "fixVersions": []any{map[string]any{"name": "26.3"}},
+		},
+		"PAY-2": {"summary": "Retries", "issuetype": namedValue("Story"), "status": namedValue("To Do")},
+	}}
+	c := newFixtureClient(t, f)
+
+	found, err := c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2"}, []string{"customfield_10430", "fixVersions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 2 {
+		t.Fatalf("issues = %+v", found)
+	}
+
+	// The neutral projection is derived from the same raw map the script reads.
+	got := found[0].Issue
+	if got.Key != "PAY-1" || got.Title != "Payment flow" || got.Type != "Epic" || got.Status != "In Progress" {
+		t.Fatalf("issue = %+v", got)
+	}
+	if got.URL != c.browseURL("PAY-1") {
+		t.Fatalf("URL = %q", got.URL)
+	}
+	// Raw fields ride along, nested as Jira sent them.
+	if rawFields(found[0].Raw)["customfield_10430"] != "2026-04-12" {
+		t.Fatalf("raw fields = %+v", found[0].Raw)
+	}
+	versions, ok := rawFields(found[0].Raw)["fixVersions"].([]any)
+	if !ok || len(versions) != 1 {
+		t.Fatalf("fixVersions = %+v", rawFields(found[0].Raw)["fixVersions"])
+	}
+
+	// Display fields are always asked for, so JIRA_FIELDS cannot blank them,
+	// and they are not requested twice when a script names one anyway.
+	if len(f.searches) != 1 {
+		t.Fatalf("searches = %v", f.searches)
+	}
+	want := []string{"summary", "issuetype", "status", "customfield_10430", "fixVersions"}
+	if !reflect.DeepEqual(f.searches[0], want) {
+		t.Fatalf("fields = %v, want %v", f.searches[0], want)
+	}
+	if len(f.gets) != 0 {
+		t.Fatalf("fell back to individual gets: %v", f.gets)
+	}
+}
+
+func TestFetchIssuesUnionsDisplayFieldsOnce(t *testing.T) {
+	f := &jiraFixture{issues: map[string]map[string]any{
+		"PAY-1": {"summary": "Payment flow", "issuetype": namedValue("Epic"), "status": namedValue("To Do")},
+	}}
+	c := newFixtureClient(t, f)
+	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, []string{"status", " summary ", "", "duedate"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"summary", "issuetype", "status", "duedate"}
+	if !reflect.DeepEqual(f.searches[0], want) {
+		t.Fatalf("fields = %v, want %v", f.searches[0], want)
+	}
+}
+
+// One key naming an invisible issue makes Jira reject the whole batch. Without
+// salvage the caller loses the other issues in that batch and the check
+// under-reports the roadmap without saying so.
+func TestFetchIssuesDropsKeysJiraNames(t *testing.T) {
+	f := &jiraFixture{
+		issues: map[string]map[string]any{
+			"PAY-1": {"summary": "Payment flow", "issuetype": namedValue("Epic"), "status": namedValue("To Do")},
+			"PAY-3": {"summary": "Refunds", "issuetype": namedValue("Story"), "status": namedValue("Done")},
+		},
+		rejects: map[string]bool{"PAY-2": true},
+	}
+	c := newFixtureClient(t, f)
+
+	found, err := c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2", "PAY-3"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 2 || found[0].Issue.Key != "PAY-1" || found[1].Issue.Key != "PAY-3" {
+		t.Fatalf("issues = %+v", found)
+	}
+	// One rejection, one retry: salvage is not a search.
+	if len(f.jqls) != 2 {
+		t.Fatalf("requests = %d, want 2", len(f.jqls))
+	}
+}
+
+// Jira names every unknown key at once, so the cost of salvage does not grow
+// with the number of dead links. This is the property the whole design rests
+// on, and a regression is invisible until it exhausts somebody's rate limit.
+func TestFetchIssuesSalvageCostIsFlat(t *testing.T) {
+	for _, dead := range []int{1, 5, 25, keysPerBatch} {
+		f := &jiraFixture{issues: map[string]map[string]any{}, rejects: map[string]bool{}}
+		keys := make([]string, keysPerBatch)
+		for i := range keys {
+			keys[i] = fmt.Sprintf("PAY-%d", i+1)
+			f.issues[keys[i]] = map[string]any{"summary": "x", "issuetype": namedValue("Story"), "status": namedValue("To Do")}
+		}
+		for i := range dead {
+			f.rejects[keys[i]] = true
+			delete(f.issues, keys[i])
+		}
+		c := newFixtureClient(t, f)
+		found, err := c.FetchIssues(context.Background(), keys, nil)
+		if err != nil {
+			t.Fatalf("%d dead: %v", dead, err)
+		}
+		if len(found) != len(keys)-dead {
+			t.Fatalf("%d dead: resolved %d, want %d", dead, len(found), len(keys)-dead)
+		}
+		if len(f.jqls) != 2 {
+			t.Fatalf("%d dead: %d requests, want 2", dead, len(f.jqls))
+		}
+	}
+}
+
+// A rejection that names no key we sent is a different failure — malformed
+// JQL, `key` unavailable. Retrying it identically would loop, so it comes back
+// carrying Jira's own words, as a bad query already does.
+func TestFetchIssuesSurfacesUnattributableRejection(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJiraError(w, http.StatusBadRequest, "Field 'key' does not exist or is not searchable.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "not searchable") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// Jira must not be able to make us drop a key we never asked about.
+func TestFetchIssuesOnlyDropsKeysItSent(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJiraError(w, http.StatusBadRequest,
+			"An issue with key 'OTHER-42' does not exist for field 'key'.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// OTHER-42 was not in the batch, so nothing is droppable and the rejection
+	// surfaces instead of being retried unchanged forever.
+	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, nil); err == nil {
+		t.Fatal("want the rejection to surface")
+	}
+}
+
+// The round cap holds because Jira names every unknown key at once. A
+// deployment that named them one at a time would need a round per dead key, and
+// this is what it does instead of looping: fails, loudly, naming the batch.
+func TestFetchIssuesGivesUpWhenRejectionsNeverResolve(t *testing.T) {
+	var sent [][]string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req searchRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		keys := keysInJQL(req.JQL)
+		sent = append(sent, keys)
+		// One at a time, so each round drops exactly one key.
+		writeJiraError(w, http.StatusBadRequest,
+			fmt.Sprintf("An issue with key '%s' does not exist for field 'key'.", keys[0]))
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2", "PAY-3", "PAY-4", "PAY-5"}, nil)
+	if err == nil {
+		t.Fatal("want an error rather than a round per key")
+	}
+	if len(sent) != maxSalvageRounds {
+		t.Fatalf("made %d attempts, cap is %d", len(sent), maxSalvageRounds)
+	}
+}
+
+// A short page means the deployment's page cap truncated the result. Unknown
+// keys are a 400, so the missing issues are live ones — reporting them as dead
+// links would tell a roadmap its good links are broken.
+func TestFetchIssuesRejectsATruncatedPage(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJiraJSON(w, http.StatusOK, map[string]any{"issues": []any{
+			map[string]any{"id": "1", "key": "PAY-1", "fields": map[string]any{"summary": "x"}},
+		}})
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2", "PAY-3"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "page cap") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// A 401 is the deployment's problem: retrying it would multiply one
+// misconfiguration into a burst.
+func TestFetchIssuesDoesNotRetryAuthFailure(t *testing.T) {
+	gets, requests := 0, 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method == http.MethodGet {
+			gets++
+		}
+		writeJiraError(w, http.StatusUnauthorized, "You do not have permission.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2"}, nil); err == nil {
+		t.Fatal("want an error")
+	}
+	if gets != 0 {
+		t.Fatalf("fell back %d times on a 401", gets)
+	}
+	// Not retried and not salvaged: only a 400 carries key names, and only 429
+	// and 503 ask us to come back.
+	if requests != 1 {
+		t.Fatalf("a 401 became %d requests", requests)
+	}
+}
+
+func TestFetchIssuesChunks(t *testing.T) {
+	f := &jiraFixture{issues: map[string]map[string]any{}}
+	keys := make([]string, keysPerBatch+3)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("PAY-%d", i+1)
+		f.issues[keys[i]] = map[string]any{"summary": "x", "issuetype": namedValue("Story"), "status": namedValue("To Do")}
+	}
+	c := newFixtureClient(t, f)
+	found, err := c.FetchIssues(context.Background(), keys, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != len(keys) {
+		t.Fatalf("issues = %d, want %d", len(found), len(keys))
+	}
+	if len(f.searches) != 2 {
+		t.Fatalf("searches = %d, want 2 batches", len(f.searches))
+	}
+}
+
+// Keys are interpolated into JQL, so anything that is not a key is dropped
+// before it can become syntax — and reads as "not found" to the caller.
+func TestFetchIssuesDropsUnusableKeys(t *testing.T) {
+	f := &jiraFixture{issues: map[string]map[string]any{
+		"PAY-1": {"summary": "Payment flow", "issuetype": namedValue("Epic"), "status": namedValue("To Do")},
+	}}
+	c := newFixtureClient(t, f)
+	found, err := c.FetchIssues(context.Background(),
+		[]string{"PAY-1", `PAY-1") OR project = "SECRET`, "not a key", "", "PAY-0", "-7"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].Issue.Key != "PAY-1" {
+		t.Fatalf("issues = %+v", found)
+	}
+	// Nothing but the one real key reached the query.
+	if len(f.jqls) != 1 || f.jqls[0] != `key in ("PAY-1")` {
+		t.Fatalf("jql = %q", f.jqls)
+	}
+}
+
+// Jira ids can exceed float64's exact range; a script must see the digits Jira
+// sent, not a rounded double.
+func TestFetchIssuesKeepsNumbersExact(t *testing.T) {
+	f := &jiraFixture{issues: map[string]map[string]any{
+		"PAY-1": {
+			"summary": "x", "issuetype": namedValue("Story"), "status": namedValue("To Do"),
+			"customfield_10020": json.RawMessage(`9007199254740993`),
+		},
+	}}
+	c := newFixtureClient(t, f)
+	found, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, []string{"customfield_10020"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(rawFields(found[0].Raw)["customfield_10020"]); got != "9007199254740993" {
+		t.Fatalf("number = %s", got)
+	}
+}
+
+// A deployment that asks us to slow down is obeyed rather than worked around.
+func TestBackoffHonoursRetryAfter(t *testing.T) {
+	var attempts int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("Retry-After", "0")
+			writeJiraError(w, http.StatusTooManyRequests, "Rate limit exceeded.")
+			return
+		}
+		writeJiraJSON(w, http.StatusOK, map[string]any{"issues": []any{
+			map[string]any{"id": "1", "key": "PAY-1", "fields": map[string]any{
+				"summary": "x", "issuetype": namedValue("Story"), "status": namedValue("To Do")}},
+		}})
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 || len(found) != 1 {
+		t.Fatalf("attempts = %d, issues = %d", attempts, len(found))
+	}
+}
+
+// A 429 must never take the salvage path: dropping keys or splitting the batch
+// would answer a rate limit with more requests.
+func TestRateLimitIsNotSalvaged(t *testing.T) {
+	var jqls []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req searchRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		jqls = append(jqls, req.JQL)
+		w.Header().Set("Retry-After", "0")
+		// Names a key, so a salvage path that keyed off the text rather than
+		// the status would happily drop it and retry a smaller batch.
+		writeJiraError(w, http.StatusTooManyRequests,
+			"Rate limit exceeded on 'PAY-1'.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2"}, nil); err == nil {
+		t.Fatal("want an error")
+	}
+	for _, jql := range jqls {
+		if !strings.Contains(jql, "PAY-1") || !strings.Contains(jql, "PAY-2") {
+			t.Fatalf("a rate limit shrank the batch: %q", jql)
+		}
+	}
+	if len(jqls) != maxAttempts {
+		t.Fatalf("attempts = %d, want %d", len(jqls), maxAttempts)
+	}
+}
+
+// An interactive search must fail fast. It shares a client with the by-key
+// fetch, and only the fetch may wait: a person typing JQL should be told the
+// tracker is busy, not left watching a spinner while a background goroutine's
+// rate limit is waited out.
+func TestSearchDoesNotWaitOutRateLimits(t *testing.T) {
+	var requests int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Retry-After", "30")
+		writeJiraError(w, http.StatusTooManyRequests, "Rate limit exceeded.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	if _, err := c.Search(context.Background(), "project = PAY", "", 50); err == nil {
+		t.Fatal("want an error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("search slept for %s", elapsed)
+	}
+	if requests != 1 {
+		t.Fatalf("search made %d requests, want one and out", requests)
+	}
+}
+
+// Retry-After takes delta-seconds or an HTTP date. Coming back before a
+// deployment said to is the one thing backoff must not do, so both are read.
+func TestRetryAfterHeaderForms(t *testing.T) {
+	for _, c := range []struct {
+		raw  string
+		want time.Duration
+		ok   bool
+	}{
+		{"30", 30 * time.Second, true},
+		{"  5 ", 5 * time.Second, true},
+		{"0", 0, true},
+		{"-1", 0, false},
+		{"soon", 0, false},
+		{"", 0, false},
+		// Seconds a Duration cannot hold. Multiplying these wraps — negative
+		// for some, a plausible-looking positive for others — so they come back
+		// as the longest wait there is and the caller refuses them.
+		{"9223372037", time.Duration(math.MaxInt64), true},
+		{"99999999999999", time.Duration(math.MaxInt64), true},
+	} {
+		got, ok := retryAfterHeader(c.raw)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Fatalf("retryAfterHeader(%q) = %v, %v; want %v, %v", c.raw, got, ok, c.want, c.ok)
+		}
+	}
+
+	// An HTTP date is honoured as the delay until then.
+	future := time.Now().Add(20 * time.Second).UTC().Format(http.TimeFormat)
+	got, ok := retryAfterHeader(future)
+	if !ok || got < 15*time.Second || got > 21*time.Second {
+		t.Fatalf("retryAfterHeader(%q) = %v, %v", future, got, ok)
+	}
+
+	// One already past means now, not a negative wait.
+	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
+	if got, ok := retryAfterHeader(past); !ok || got != 0 {
+		t.Fatalf("retryAfterHeader(%q) = %v, %v", past, got, ok)
+	}
+}
+
+// A date-form Retry-After further out than the fetcher may wait stops it,
+// rather than being ignored and retried in 500ms.
+func TestBackoffRespectsADistantRetryAfterDate(t *testing.T) {
+	var requests int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Retry-After", time.Now().Add(time.Hour).UTC().Format(http.TimeFormat))
+		writeJiraError(w, http.StatusTooManyRequests, "Rate limit exceeded.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, nil); err == nil {
+		t.Fatal("want an error")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("waited %s for a limit it could not honour", elapsed)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want one and out", requests)
+	}
+}
+
+// A Retry-After too large to represent must not become an immediate retry:
+// multiplying it out wraps, and a negative delay fires the timer at once —
+// hammering a deployment that asked for the opposite.
+func TestHugeRetryAfterDoesNotRetryImmediately(t *testing.T) {
+	var requests int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Retry-After", "9223372037")
+		writeJiraError(w, http.StatusTooManyRequests, "Rate limit exceeded.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, nil); err == nil {
+		t.Fatal("want an error")
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want one and out", requests)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("waited %s", elapsed)
+	}
+}
+
+// Backoff must not sleep after its last permitted attempt: no request follows
+// it, so the delay is stall for nothing — and this is the only fetcher.
+func TestBackoffDoesNotSleepAfterTheLastAttempt(t *testing.T) {
+	defer func(d time.Duration) { baseRetryDelay = d }(baseRetryDelay)
+	baseRetryDelay = 50 * time.Millisecond
+
+	var requests int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		writeJiraError(w, http.StatusTooManyRequests, "Rate limit exceeded.")
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	_, err = c.FetchIssues(context.Background(), []string{"PAY-1"}, nil)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if requests != maxAttempts {
+		t.Fatalf("requests = %d, want %d", requests, maxAttempts)
+	}
+	// Three waits between four attempts sum to 7x the base (1+2+4); a fourth
+	// would add 8x more. The threshold sits between the two.
+	if wasted := baseRetryDelay << (maxAttempts - 1); elapsed > 10*baseRetryDelay {
+		t.Fatalf("took %s; a wait of %s after the final attempt is stall for nothing", elapsed, wasted)
 	}
 }

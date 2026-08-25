@@ -192,6 +192,18 @@ CREATE TABLE tracker_queries (
 -- The store pre-checks under the roadmap lock; this index is the backstop.
 CREATE UNIQUE INDEX tracker_queries_name_idx ON tracker_queries (roadmap_id, name);
 
+-- The schedule-check extractor script (notes/schedule_check.md): the Starlark
+-- saying which tracker fields carry an issue's schedule. Operational recon
+-- config like the saved queries above, cascading on roadmap delete; roadmap_id
+-- is the primary key because a roadmap has at most one script.
+-- See migrations/019_tracker_extractors.sql.
+CREATE TABLE tracker_extractors (
+    roadmap_id BIGINT PRIMARY KEY REFERENCES roadmaps(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Who can reach a private roadmap, keyed by OIDC subject. The empty subject an
 -- anonymous identity carries is unstorable (CHECK below), which is what lets
 -- one access predicate serve both auth modes. Ownership is recorded for public

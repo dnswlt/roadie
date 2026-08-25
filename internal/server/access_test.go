@@ -72,6 +72,13 @@ func newPrivateFixture(t *testing.T) privateFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Seeded so the extractor's GET and DELETE have something to hide: on a
+	// roadmap with no script both 404 anyway, and the sweep would pass whether
+	// or not the guard was there.
+	if _, err := testStore.PutTrackerExtractor(ctx, rm.ID,
+		"def get_issue_time_range(issue):\n    return None\n"); err != nil {
+		t.Fatal(err)
+	}
 	return privateFixture{rm.ID, lane.ID, item.ID, ms.ID, dep.ID, snap.ID, tq.ID}
 }
 
@@ -131,6 +138,13 @@ func (f privateFixture) calls() []apiCall {
 			`{"name":"Stolen","query":"type = Epic"}`},
 		{"PATCH /api/tracker-queries/{id}", "PATCH", fmt.Sprintf("/api/tracker-queries/%d", f.trackerQuery), `{"name":"Stolen"}`},
 		{"DELETE /api/tracker-queries/{id}", "DELETE", fmt.Sprintf("/api/tracker-queries/%d", f.trackerQuery), ""},
+
+		{"GET /api/roadmaps/{id}/tracker-extractor", "GET", rm("/tracker-extractor"), ""},
+		{"PUT /api/roadmaps/{id}/tracker-extractor", "PUT", rm("/tracker-extractor"),
+			`{"source":"def get_issue_time_range(issue):\n    return None\n"}`},
+		{"DELETE /api/roadmaps/{id}/tracker-extractor", "DELETE", rm("/tracker-extractor"), ""},
+		{"POST /api/roadmaps/{id}/schedule-check", "POST", rm("/schedule-check"), `{"keys":["PAY-1"]}`},
+		{"POST /api/roadmaps/{id}/schedule-check/status", "POST", rm("/schedule-check/status"), `{"keys":["PAY-1"]}`},
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/dnswlt/roadie/internal/auth"
 	"github.com/dnswlt/roadie/internal/model"
+	"github.com/dnswlt/roadie/internal/recon"
 	"github.com/dnswlt/roadie/internal/store"
 	"github.com/dnswlt/roadie/internal/tracker"
 )
@@ -51,6 +52,11 @@ type Server struct {
 	// hub fans change notifications out to a roadmap's SSE subscribers, so an
 	// edit by one user prompts other viewers to refetch. See events.go.
 	hub *hub
+
+	// recon owns every tracker request the schedule check makes, in one
+	// goroutine started by the caller. Nil when reconciliation is unconfigured,
+	// exactly as tracker is. See internal/recon.
+	recon *recon.Fetcher
 }
 
 // Option configures a Server. Options keep New's signature stable as optional
@@ -67,6 +73,13 @@ func WithAuth(a *auth.Authenticator) Option {
 // WithTracker enables the read-only external issue search used by Jira Recon.
 func WithTracker(t tracker.Client) Option {
 	return func(s *Server) { s.tracker = t }
+}
+
+// WithRecon enables the schedule check. The fetcher's goroutine is the caller's
+// to start and stop: it outlives any request, so its lifetime belongs to
+// whoever owns the process, not to the server's constructor.
+func WithRecon(f *recon.Fetcher) Option {
+	return func(s *Server) { s.recon = f }
 }
 
 func New(st *store.Store, static fs.FS, opts ...Option) *Server {
@@ -105,6 +118,15 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s.mux.HandleFunc("POST /api/roadmaps/{id}/tracker-queries", s.guard(byRoadmapID, s.createTrackerQuery))
 	s.mux.HandleFunc("PATCH /api/tracker-queries/{id}", s.guard(byTrackerQueryID, s.patchTrackerQuery))
 	s.mux.HandleFunc("DELETE /api/tracker-queries/{id}", s.guard(byTrackerQueryID, s.deleteTrackerQuery))
+	// The schedule-check extractor script: roadmap-scoped like the queries
+	// above, and a singleton, so the roadmap id is its whole address.
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/tracker-extractor", s.guard(byRoadmapID, s.getTrackerExtractor))
+	s.mux.HandleFunc("PUT /api/roadmaps/{id}/tracker-extractor", s.guard(byRoadmapID, s.putTrackerExtractor))
+	s.mux.HandleFunc("DELETE /api/roadmaps/{id}/tracker-extractor", s.guard(byRoadmapID, s.deleteTrackerExtractor))
+	// Enqueue and poll are separate on purpose: a poll must never be able to
+	// cause a tracker request. See tracker.go.
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/schedule-check", s.guard(byRoadmapID, s.enqueueScheduleCheck))
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/schedule-check/status", s.guard(byRoadmapID, s.scheduleCheckStatus))
 
 	// Routes that name a roadmap — directly, or via a lane, item, milestone or
 	// snapshot id — are wrapped in guard or snap, which is where the caller is

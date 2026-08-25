@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/dnswlt/roadie/internal/model"
+	"github.com/dnswlt/roadie/internal/recon"
 	"github.com/dnswlt/roadie/internal/store"
 	"github.com/dnswlt/roadie/internal/tracker"
 )
@@ -28,6 +30,10 @@ func (s *stubTracker) Search(_ context.Context, query, continuation string, page
 
 func (s *stubTracker) GetIssue(context.Context, string) (tracker.Issue, error) {
 	return tracker.Issue{}, errors.New("not implemented")
+}
+
+func (s *stubTracker) FetchIssues(context.Context, []string, []string) ([]tracker.FetchedIssue, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (s *stubTracker) BaseURL() string { return s.baseURL }
@@ -154,5 +160,174 @@ func TestTrackerQueryRoutes(t *testing.T) {
 	// The guard resolves the vanished id to its roadmap and finds none: 404.
 	if w := do(t, http.MethodPatch, "/api/tracker-queries/"+itoa(q.ID), map[string]string{"name": "x"}); w.Code != http.StatusNotFound {
 		t.Fatalf("patch after delete = %d, body %s", w.Code, w.Body)
+	}
+}
+
+// The extractor routes are guarded CRUD plus one thing the store cannot do:
+// refuse a script that will not run. testSrv has no tracker configured, which
+// is the point — a script is editable while the connection is down.
+func TestTrackerExtractorRoutes(t *testing.T) {
+	ctx := context.Background()
+	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name(), store.Ownership{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), rm.ID) })
+	path := "/api/roadmaps/" + itoa(rm.ID) + "/tracker-extractor"
+
+	if w := do(t, http.MethodGet, path, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("get before put = %d, body %s", w.Code, w.Body)
+	}
+
+	const src = "JIRA_FIELDS = [\"fixVersions\"]\n\ndef get_issue_time_range(issue):\n    return None\n"
+	w := do(t, http.MethodPut, path, trackerExtractorRequest{Source: src})
+	if w.Code != http.StatusOK {
+		t.Fatalf("put status = %d, body %s", w.Code, w.Body)
+	}
+	if got := decode[model.TrackerExtractor](t, w); got.Source != src || got.RoadmapID != rm.ID {
+		t.Fatalf("put = %+v", got)
+	}
+	if got := decode[model.TrackerExtractor](t, do(t, http.MethodGet, path, nil)); got.Source != src {
+		t.Fatalf("get = %+v", got)
+	}
+
+	// A script that cannot run is never stored, and the response says where.
+	for name, bad := range map[string]string{
+		"syntax error":   "def get_issue_time_range(issue)\n",
+		"no entry point": "JIRA_FIELDS = [\"duedate\"]\n",
+		"bad fields":     "JIRA_FIELDS = \"duedate\"\ndef get_issue_time_range(issue):\n    return None\n",
+	} {
+		w := do(t, http.MethodPut, path, trackerExtractorRequest{Source: bad})
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, body %s", name, w.Code, w.Body)
+		}
+		if msg := decode[map[string]string](t, w)["error"]; msg == "" {
+			t.Fatalf("%s: no message", name)
+		}
+	}
+	if got := decode[model.TrackerExtractor](t, do(t, http.MethodGet, path, nil)); got.Source != src {
+		t.Fatalf("a rejected put changed the stored script: %+v", got)
+	}
+
+	if w := do(t, http.MethodDelete, path, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body %s", w.Code, w.Body)
+	}
+	if w := do(t, http.MethodDelete, path, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("second delete = %d, body %s", w.Code, w.Body)
+	}
+}
+
+// reconTracker answers one issue, so the routes can be exercised end to end.
+type reconTracker struct{ stubTracker }
+
+func (t *reconTracker) FetchIssues(_ context.Context, keys, _ []string) ([]tracker.FetchedIssue, error) {
+	var out []tracker.FetchedIssue
+	for _, key := range keys {
+		if strings.EqualFold(key, "PAY-1") {
+			out = append(out, tracker.FetchedIssue{
+				Issue: tracker.Issue{ID: "1", Key: "PAY-1", Title: "Payments"},
+				Raw:   map[string]any{"key": "PAY-1", "fields": map[string]any{"duedate": "2026-04-12"}},
+			})
+		}
+	}
+	return out, nil
+}
+
+// The two routes are a thin layer over internal/recon: enqueue takes keys and
+// returns at once, poll answers from what has been established. Neither is
+// allowed to be where the logic lives.
+func TestScheduleCheckRoutes(t *testing.T) {
+	ctx := context.Background()
+	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name(), store.Ownership{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), rm.ID) })
+	if _, err := testStore.PutTrackerExtractor(ctx, rm.ID,
+		"JIRA_FIELDS = [\"duedate\"]\n\ndef get_issue_time_range(issue):\n"+
+			"    return {\"end\": issue[\"fields\"][\"duedate\"]}\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	fetcher := recon.New(&reconTracker{}, func(ctx context.Context, id int64) (string, error) {
+		ext, err := testStore.GetTrackerExtractor(ctx, id)
+		return ext.Source, err
+	}, 0)
+	srv := New(testStore, fstest.MapFS{}, WithRecon(fetcher))
+	base := "/api/roadmaps/" + itoa(rm.ID) + "/schedule-check"
+
+	// Poll before anything is enqueued: everything unchecked, nothing queued.
+	w := doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"PAY-1", "pay-1"}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	got := decode[recon.Status](t, w)
+	// Repeats collapse, so one key is one row.
+	if len(got.Results) != 1 || got.Results[0].State != recon.StateUnchecked || got.Pending != 0 {
+		t.Fatalf("before enqueue: %+v", got)
+	}
+
+	w = doWithServer(t, srv, http.MethodPost, base, scheduleCheckRequest{Keys: []string{"PAY-1"}})
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("enqueue status = %d, body %s", w.Code, w.Body)
+	}
+	if queued := decode[map[string]int](t, w)["queued"]; queued != 1 {
+		t.Fatalf("queued = %d", queued)
+	}
+
+	// Run the one goroutine long enough to drain what was just enqueued.
+	runCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { fetcher.Run(runCtx); close(done) }()
+	deadline := time.After(5 * time.Second)
+	for {
+		w = doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"PAY-1"}})
+		got = decode[recon.Status](t, w)
+		if got.Results[0].State != recon.StateUnchecked {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("the fetcher never answered")
+		case <-time.After(2 * time.Millisecond):
+		}
+	}
+	cancel()
+	<-done
+
+	if got.Results[0].State != recon.StateOK || got.Results[0].End != "2026-04-12" {
+		t.Fatalf("after the run: %+v", got.Results[0])
+	}
+}
+
+func TestScheduleCheckRoutesWithoutRecon(t *testing.T) {
+	rm := seedRoadmap(t, "test-"+t.Name())
+	base := "/api/roadmaps/" + itoa(rm) + "/schedule-check"
+	// A disabled feature is an API response, not a fallthrough to the SPA.
+	for _, path := range []string{base, base + "/status"} {
+		if w := do(t, http.MethodPost, path, scheduleCheckRequest{Keys: []string{"PAY-1"}}); w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s: status = %d, body %s", path, w.Code, w.Body)
+		}
+	}
+}
+
+// No script is the state the Recon tab explains and offers to fix.
+func TestScheduleCheckStatusWithoutScript(t *testing.T) {
+	ctx := context.Background()
+	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name(), store.Ownership{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), rm.ID) })
+
+	fetcher := recon.New(&reconTracker{}, func(ctx context.Context, id int64) (string, error) {
+		ext, err := testStore.GetTrackerExtractor(ctx, id)
+		return ext.Source, err
+	}, 0)
+	srv := New(testStore, fstest.MapFS{}, WithRecon(fetcher))
+	w := doWithServer(t, srv, http.MethodPost,
+		"/api/roadmaps/"+itoa(rm.ID)+"/schedule-check/status", scheduleCheckRequest{Keys: []string{"PAY-1"}})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
 	}
 }

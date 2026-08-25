@@ -66,7 +66,9 @@ Home dialog (`home.ts`, name-path
 folding in `tree.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`) ·
-Jira Recon view (`recon.ts`, server `tracker.go`) ·
+Jira Recon view (`recon.ts`, server `tracker.go`) · schedule check
+(`internal/recon` owns the one tracker-fetching goroutine and its cache;
+scripts in `internal/tracker/extractor`) ·
 version diff (`diff.ts` + `diff-text.ts` + `diff-view.ts`, toggled from the
 snapshot banner).
 
@@ -105,8 +107,8 @@ A third scope means designing a real invalidation model — ask first.
 
 **The restore test**, for any new roadmap-scoped data: *if I restore a snapshot,
 should this revert too?* Yes ⇒ it belongs in the `RoadmapExport` envelope. No ⇒ it
-gets its own endpoint. Contributors, visibility and saved tracker queries are
-"no"; flags, schedule and dependencies are "yes".
+gets its own endpoint. Contributors, visibility, saved tracker queries and the
+extractor script are "no"; flags, schedule and dependencies are "yes".
 
 **Mutating routes go through the `s.snap` wrapper**, which does three jobs at once:
 pre-mutation snapshot, SSE broadcast, contributor attribution, plus `s.guard` for
@@ -203,6 +205,13 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   element themselves. **Openers must not `stopPropagation`** — dismissal runs in
   the capture phase, so swallowing protects nothing and blinds every other
   surface (that was the bug).
+- **Extractor scripts get no resource budget** (`internal/tracker/extractor`). A
+  step limit caps a long loop but not the allocation that kills the process, so
+  it reads as a sandbox without being one; saving a script is a trusted action.
+- **One goroutine makes every schedule-check request to the tracker**
+  (`internal/recon`). That is the rate limiting: nothing runs concurrently, so
+  there is no bucket or budget. Polling only reads its cache and must never be
+  able to cause, hurry or reorder a fetch.
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
 - **The address bar is the shareable link**: roadmap, view and one selection,
