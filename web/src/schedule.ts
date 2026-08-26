@@ -76,10 +76,9 @@ export function periodAtEdge(
 // The WBS speaks in periods where it can. An item is named by the periods its
 // two edges fall *inside*, not only by the ones it is flush with: someone who
 // plans in PIs wants to read which PIs a piece of work occupies, and the exact
-// dates are a click away in the edit rail. The separator carries the
-// imprecision: the en dash the column has always put between the two ends of a
-// range still means the range fills them exactly, and a tilde in its place
-// means the range merely lies within them.
+// dates are a click away in the edit rail. A tilde carries the imprecision:
+// between two labels it replaces the en dash that means the range fills them
+// exactly, and ahead of a single label it says the range lies within it.
 //
 // This is the opposite trade from periodAtEdge, which the panel's picker uses:
 // a picker must state a fact, because re-picking what it shows would move the
@@ -101,7 +100,8 @@ export function periodContaining(
 
 // periodRangeText names a range by the periods it occupies, or gives the plain
 // dates when it cannot. A range inside one period collapses to that label,
-// since the separator is the only thing a second copy of it would add.
+// since the separator is the only thing a second copy of it would add; the
+// tilde then moves in front of the label.
 //
 // Falling back is all-or-nothing: an edge outside every period sends the whole
 // range back to dates rather than printing a date beside a period name, which
@@ -117,8 +117,8 @@ export function periodRangeText(
   if (from === null || to === null) {
     return `${formatDate(startDate)} ${RANGE_SEP} ${formatDate(endDate)}`;
   }
-  if (from === to) return from.label;
   const fills = from.startDate === startDate && to.endDate === endDate;
+  if (from === to) return fills ? from.label : `${WITHIN_SEP} ${from.label}`;
   return `${from.label} ${fills ? RANGE_SEP : WITHIN_SEP} ${to.label}`;
 }
 

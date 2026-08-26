@@ -156,9 +156,11 @@ test("periodContaining finds the period a date lies in, and none in a gap", () =
 
 test("a range inside one period collapses to that period", () => {
   assert.equal(periodRangeText(PIS, "2026-01-05", "2026-02-27", iso), "PI2026-01");
-  // Merely inside, not filling it — the same answer, since the exact dates are
-  // in the edit rail and the WBS is about structure.
-  assert.equal(periodRangeText(PIS, "2026-01-20", "2026-02-10", iso), "PI2026-01");
+  // Merely inside, not filling it — the same label, marked as the two-period
+  // form is: the tilde has no separator to sit in, so it leads.
+  assert.equal(periodRangeText(PIS, "2026-01-20", "2026-02-10", iso), "~ PI2026-01");
+  assert.equal(periodRangeText(PIS, "2026-01-05", "2026-02-10", iso), "~ PI2026-01");
+  assert.equal(periodRangeText(PIS, "2026-01-20", "2026-02-27", iso), "~ PI2026-01");
 });
 
 test("a range filling its periods exactly uses the en dash", () => {
