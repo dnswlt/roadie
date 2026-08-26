@@ -91,17 +91,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// The schedule check's fetcher is built here and started below, once there
-	// is a context to bound it: it outlives every request, so its lifetime is
-	// the process's, like the trash sweeper's.
 	var fetcher *recon.Fetcher
 	if *jiraURL != "" {
 		jira, err := jiraTracker(*jiraURL, *jiraRestURL)
 		if err != nil {
 			return err
 		}
-		// A function rather than the store itself, so internal/recon stays free
-		// of the database and is handed only what it needs.
 		fetcher = recon.New(jira, func(ctx context.Context, roadmapID int64) (string, error) {
 			ext, err := st.GetTrackerExtractor(ctx, roadmapID)
 			return ext.Source, err
@@ -134,9 +129,7 @@ func run() error {
 	// since its work is a single statement that either commits or doesn't.
 	go app.RunTrashSweeper(sigCtx)
 
-	// The one goroutine that talks to Jira for schedule checks. Also bounded by
-	// sigCtx; nothing waits for it, since an abandoned batch is simply
-	// unchecked and re-enqueued by whoever asks next.
+	// Schedule checks use one process-wide worker.
 	if fetcher != nil {
 		go fetcher.Run(sigCtx)
 	}

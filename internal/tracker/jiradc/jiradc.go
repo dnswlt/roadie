@@ -26,15 +26,10 @@ import (
 
 const maxResponseBytes = 16 << 20
 
-// Config describes one Jira Data Center deployment. Credentials are optional so
-// the local development mock can run without authentication.
-//
-// The two credential kinds are alternatives, and OAuth wins when both are set:
-// Token is a static personal access token, OAuth mints short-lived ones.
+// Config describes one Jira Data Center deployment. OAuth takes precedence
+// over Token when both are configured.
 type Config struct {
-	// BaseURL is the deployment as a browser reaches it, and the authority for
-	// issue links: the frontend reconciles an item's description links against
-	// the URL an issue carries, so the wrong host matches nothing.
+	// BaseURL is the deployment's browser-facing URL.
 	BaseURL string
 	// RestURL is where the REST API answers, for deployments that publish it on
 	// a different host from the web UI. Empty means BaseURL serves both.
@@ -44,37 +39,28 @@ type Config struct {
 	Client  *http.Client
 }
 
-// OAuthConfig is an OAuth 2.0 client-credentials grant, in force when TokenURL
-// is set. Roadie authenticates as itself rather than as a user, so there is no
-// interactive flow and no refresh token: the token source fetches an access
-// token on first use and again once it expires.
+// OAuthConfig configures an OAuth 2.0 client-credentials grant. TokenURL
+// enables it.
 type OAuthConfig struct {
 	ClientID     string
 	ClientSecret string
 	TokenURL     string
-	// Scopes the authorization server needs before it will issue a token Jira
-	// accepts. Many deployments need none.
-	Scopes []string
+	Scopes       []string
 }
 
-// Client translates Jira's REST representation and offset paging into the
-// deliberately smaller tracker.Client contract.
+// Client implements tracker.Client for Jira Data Center.
 type Client struct {
-	// webURL builds the links people follow; restURL is where requests go. They
-	// are the same URL unless the deployment splits the two.
 	webURL  *url.URL
 	restURL *url.URL
-	// Exactly one of these carries credentials, or neither does: tokens is nil
-	// unless OAuth is configured, and configuring OAuth clears token.
-	token  string
-	tokens oauth2.TokenSource
-	http   *http.Client
+	token   string
+	tokens  oauth2.TokenSource
+	http    *http.Client
+	wait    func(context.Context, time.Duration) error
 }
 
 var _ tracker.Client = (*Client)(nil)
 
-// New validates the deployment URLs once, so request methods can safely append
-// paths to Jira installations both at a host root and below a context path.
+// New validates the deployment configuration.
 func New(cfg Config) (*Client, error) {
 	web, err := parseBaseURL(cfg.BaseURL, "base")
 	if err != nil {
@@ -91,22 +77,23 @@ func New(cfg Config) (*Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
-	c := &Client{webURL: web, restURL: rest, token: strings.TrimSpace(cfg.Token), http: httpClient}
+	c := &Client{
+		webURL:  web,
+		restURL: rest,
+		token:   strings.TrimSpace(cfg.Token),
+		http:    httpClient,
+		wait:    waitFor,
+	}
 	if cfg.OAuth.enabled() {
 		tokens, err := cfg.OAuth.tokenSource(httpClient)
 		if err != nil {
 			return nil, err
 		}
-		// A PAT left in the environment alongside OAuth must not silently decide
-		// authentication; the caller reports which one won.
 		c.token, c.tokens = "", tokens
 	}
 	return c, nil
 }
 
-// parseBaseURL validates one configured Jira URL and strips a trailing slash so
-// JoinPath is predictable. what names the URL in the error, since a deployment
-// can configure two of them.
 func parseBaseURL(raw, what string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -122,13 +109,8 @@ func parseBaseURL(raw, what string) (*url.URL, error) {
 	return u, nil
 }
 
-// enabled treats the token URL as the switch: an authorization server is the one
-// part of a client-credentials grant with no default.
 func (o OAuthConfig) enabled() bool { return strings.TrimSpace(o.TokenURL) != "" }
 
-// tokenSource validates the grant as a whole — half a credential is a
-// misconfiguration to fail startup on, not to discover on the first search —
-// and returns a source that caches the access token until it expires.
 func (o OAuthConfig) tokenSource(httpClient *http.Client) (oauth2.TokenSource, error) {
 	tokenURL := strings.TrimSpace(o.TokenURL)
 	u, err := url.Parse(tokenURL)
@@ -147,21 +129,12 @@ func (o OAuthConfig) tokenSource(httpClient *http.Client) (oauth2.TokenSource, e
 		ClientSecret: clientSecret,
 		TokenURL:     tokenURL,
 		Scopes:       o.Scopes,
-		// AuthStyleAutoDetect (the zero value) tries HTTP Basic first, then form
-		// parameters, and remembers what the server accepted — so which of the
-		// two spellings a deployment wants is not another thing to configure.
 	}
-	// The context carries our HTTP client, and with it the timeout. Not a request
-	// context: a token outlives the request that first needed it.
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, httpClient)
-	// The source caches the token and refetches on expiry only.
 	return cfg.TokenSource(ctx), nil
 }
 
-// displayFields are the Jira fields tracker.Issue is built from. Every read
-// asks for them, and a by-key fetch unions them with whatever the caller wants
-// on top, so an extractor script cannot blank the identity columns by leaving
-// them out of JIRA_FIELDS.
+// displayFields are required to build tracker.Issue.
 var displayFields = []string{"summary", "issuetype", "status"}
 
 type searchRequest struct {
@@ -172,11 +145,10 @@ type searchRequest struct {
 }
 
 type jiraPage struct {
-	StartAt    int `json:"startAt"`
-	MaxResults int `json:"maxResults"`
-	// Atlassian documents total as optional and liable to change between pages.
-	Total  *int        `json:"total"`
-	Issues []jiraIssue `json:"issues"`
+	StartAt    int         `json:"startAt"`
+	MaxResults int         `json:"maxResults"`
+	Total      *int        `json:"total"`
+	Issues     []jiraIssue `json:"issues"`
 }
 
 type jiraIssue struct {
@@ -193,9 +165,7 @@ type jiraIssue struct {
 	} `json:"fields"`
 }
 
-// Search passes JQL through unchanged and asks Jira only for fields Recon
-// displays. continuation is opaque to callers; this adapter represents it as
-// Jira's next startAt offset.
+// Search passes JQL through unchanged and uses startAt as its continuation.
 func (c *Client) Search(ctx context.Context, query, continuation string, pageSize int) (tracker.Page, error) {
 	if pageSize <= 0 {
 		return tracker.Page{}, fmt.Errorf("jira search page size must be positive")
@@ -223,8 +193,7 @@ func (c *Client) Search(ctx context.Context, query, continuation string, pageSiz
 	for i, issue := range result.Issues {
 		page.Issues[i] = c.normalize(issue)
 	}
-	// An empty page must end iteration even if a stale total claims that more
-	// exists; returning the same offset would make Load more loop forever.
+	// An empty page ends iteration even when total is stale.
 	nextAt := result.StartAt + len(result.Issues)
 	more := len(result.Issues) > 0
 	if more {
@@ -264,30 +233,17 @@ func (c *Client) GetIssue(ctx context.Context, externalID string) (tracker.Issue
 	return c.normalize(issue), nil
 }
 
-// keysPerBatch is how many keys go into one `key in (...)` search. The page cap
-// is per installation (jira.search.views.default.max) and Jira Cloud caps
-// maxResults at 100, so 100 is the portable choice; the fetcher is never in a
-// hurry, so headroom above it buys nothing. searchKeys rejects a short page,
-// which catches an installation capped lower still.
+// keysPerBatch stays within Jira's common search page limit.
 const keysPerBatch = 100
 
-// maxSalvageRounds bounds the retry loop below. One retry is the observed case,
-// because Jira names every unknown key at once — that measurement is what makes
-// a small cap safe. A deployment that named them one at a time would need a
-// round per dead key; rather than loop or storm, salvage gives up after this
-// many and says so.
+// maxSalvageRounds bounds recovery when a rejection names only some bad keys.
 const maxSalvageRounds = 3
 
-// jiraKey is Jira's default issue-key grammar. Keys are interpolated into JQL,
-// so anything that is not a key is dropped before it can become syntax — which
-// also reports as "not found", the answer a nonsense key deserves.
-var jiraKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*-[1-9][0-9]*$`)
+// jiraKey prevents issue keys from changing the generated JQL.
+var jiraKey = regexp.MustCompile(`^[A-Z][A-Z0-9_]*-[1-9][0-9]*$`)
 
-// namedKey finds the issue keys Jira quotes in a rejection, e.g. "An issue with
-// key 'PAY-9' does not exist for field 'key'." The key stays quoted whatever
-// the deployment's locale, which is what makes reading it safer than it looks;
-// the caller additionally discards any key it did not send.
-var namedKey = regexp.MustCompile(`['"]([A-Za-z][A-Za-z0-9_]*-[1-9][0-9]*)['"]`)
+// namedKey extracts quoted issue keys from Jira rejection messages.
+var namedKey = regexp.MustCompile(`['"]([A-Z][A-Z0-9_]*-[1-9][0-9]*)['"]`)
 
 // FetchIssues resolves keys in batches, asking for the display fields plus
 // extraFields.
@@ -307,8 +263,9 @@ func (c *Client) FetchIssues(ctx context.Context, keys, extraFields []string) ([
 	}
 
 	issues := []tracker.FetchedIssue{}
+	remainingWait := maxRetryWait
 	for batch := range slices.Chunk(usable, keysPerBatch) {
-		got, err := c.fetchBatch(ctx, batch, fields)
+		got, err := c.fetchBatch(ctx, batch, fields, &remainingWait)
 		if err != nil {
 			return nil, err
 		}
@@ -317,24 +274,15 @@ func (c *Client) FetchIssues(ctx context.Context, keys, extraFields []string) ([
 	return issues, nil
 }
 
-// fetchBatch asks for a batch and, when Jira rejects it, asks again without the
-// keys Jira named.
-//
-// JQL rejects the *entire* query over one missing or invisible key, so without
-// this a single dead link costs the caller the other ninety-nine and the check
-// under-reports the roadmap silently. Jira names every unknown key at once, so
-// this costs one more request whatever the number of dead links.
-//
-// Only keys this batch sent may be dropped. A 400 naming none of them is a
-// different failure — malformed JQL, `key` unavailable — and it returns with
-// Jira's wording rather than being retried, which would loop.
-func (c *Client) fetchBatch(ctx context.Context, batch, fields []string) ([]tracker.FetchedIssue, error) {
+// fetchBatch retries a rejected JQL batch without the keys Jira named. It never
+// drops a key that was not in the request.
+func (c *Client) fetchBatch(ctx context.Context, batch, fields []string, remainingWait *time.Duration) ([]tracker.FetchedIssue, error) {
 	sent := batch
 	for range maxSalvageRounds {
 		if len(sent) == 0 {
 			return nil, nil
 		}
-		issues, err := c.withBackoff(ctx, func() ([]tracker.FetchedIssue, error) {
+		issues, err := c.withBackoff(ctx, remainingWait, func() ([]tracker.FetchedIssue, error) {
 			return c.searchKeys(ctx, sent, fields)
 		})
 		if err == nil {
@@ -346,7 +294,6 @@ func (c *Client) fetchBatch(ctx context.Context, batch, fields []string) ([]trac
 		}
 		remaining := dropNamed(sent, resp.detail)
 		if len(remaining) == len(sent) {
-			// Rejected, but not over any key we sent: not ours to salvage.
 			return nil, searchError(err)
 		}
 		sent = remaining
@@ -354,46 +301,33 @@ func (c *Client) fetchBatch(ctx context.Context, batch, fields []string) ([]trac
 	return nil, fmt.Errorf("Jira kept rejecting a batch of %d issue keys after %d attempts", len(batch), maxSalvageRounds)
 }
 
-// dropNamed returns keys minus those the rejection named. Matching is
-// case-insensitive because Jira echoes a key as the query spelled it.
+// dropNamed returns keys minus those named in a Jira rejection.
 func dropNamed(keys []string, detail string) []string {
 	named := map[string]bool{}
 	for _, m := range namedKey.FindAllStringSubmatch(detail, -1) {
-		named[strings.ToUpper(m[1])] = true
+		named[m[1]] = true
 	}
 	if len(named) == 0 {
 		return keys
 	}
 	kept := make([]string, 0, len(keys))
 	for _, key := range keys {
-		if !named[strings.ToUpper(key)] {
+		if !named[key] {
 			kept = append(kept, key)
 		}
 	}
 	return kept
 }
 
-// Waiting out a rate limit, for the by-key fetch only. Roadie makes those from
-// one background goroutine (internal/recon), which is why waiting is acceptable
-// there and nowhere else: no user is watching it, and no other request is
-// delayed by it. An interactive search on the same client still fails fast.
 const (
-	maxAttempts  = 4
-	maxTotalWait = 30 * time.Second
+	maxAttempts    = 4
+	maxRetryWait   = 30 * time.Second
+	baseRetryDelay = 500 * time.Millisecond
 )
 
-// baseRetryDelay doubles per attempt when Jira names no Retry-After. A variable
-// so a test need not spend the real delays.
-var baseRetryDelay = 500 * time.Millisecond
-
-// maxRetryAfterSeconds is the largest delta-seconds a Duration can hold. Beyond
-// it the multiplication below wraps — to a negative delay, which would retry
-// *immediately* against a deployment asking for the opposite.
+// maxRetryAfterSeconds prevents duration overflow.
 const maxRetryAfterSeconds = int64(math.MaxInt64) / int64(time.Second)
 
-// retryable is what a deployment returns when it wants us to slow down or come
-// back: 429 outright, 503 when Jira sheds load. Never 400 — that one carries the
-// key names salvage reads, and retrying it unchanged would loop.
 func retryable(err error) (*responseError, bool) {
 	var resp *responseError
 	if !errors.As(err, &resp) {
@@ -402,14 +336,8 @@ func retryable(err error) (*responseError, bool) {
 	return resp, resp.statusCode == http.StatusTooManyRequests || resp.statusCode == http.StatusServiceUnavailable
 }
 
-// retryAfterHeader reads the delay Jira asks for. RFC 9110 allows either
-// delta-seconds or an HTTP date, and both are honoured: coming back before a
-// deployment said to is the one thing this must not do. A date already past
-// means now; anything too far out to represent returns the longest Duration
-// there is, so the caller's deadline refuses it rather than a wrapped value
-// being mistaken for a short wait. (time.Until saturates, so the date form
-// needs no such guard.)
-func retryAfterHeader(raw string) (time.Duration, bool) {
+// retryAfterHeader parses delta-seconds and HTTP-date forms.
+func retryAfterHeader(raw string, now time.Time) (time.Duration, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, false
@@ -427,14 +355,11 @@ func retryAfterHeader(raw string) (time.Duration, bool) {
 	if err != nil {
 		return 0, false
 	}
-	return max(time.Until(when), 0), true
+	return max(when.Sub(now), 0), true
 }
 
-// withBackoff runs one by-key search, waiting and repeating while Jira asks it
-// to. Bounded both ways, so a wedged deployment stalls the fetcher for a known
-// time rather than forever.
-func (c *Client) withBackoff(ctx context.Context, run func() ([]tracker.FetchedIssue, error)) ([]tracker.FetchedIssue, error) {
-	deadline := time.Now().Add(maxTotalWait)
+// withBackoff retries one by-key search within the call's remaining wait budget.
+func (c *Client) withBackoff(ctx context.Context, remainingWait *time.Duration, run func() ([]tracker.FetchedIssue, error)) ([]tracker.FetchedIssue, error) {
 	var lastErr error
 	for attempt := range maxAttempts {
 		issues, err := run()
@@ -443,32 +368,36 @@ func (c *Client) withBackoff(ctx context.Context, run func() ([]tracker.FetchedI
 			return issues, err
 		}
 		lastErr = err
-		// Waiting is only worth anything if an attempt follows it. On the last
-		// one there is none, and the sole fetcher would stall for a delay it
-		// can no longer spend.
 		if attempt == maxAttempts-1 {
 			break
 		}
-		delay, ok := retryAfterHeader(resp.retryAfter)
+		delay, ok := retryAfterHeader(resp.retryAfter, time.Now())
 		if !ok {
 			delay = baseRetryDelay << attempt
 		}
-		if time.Now().Add(delay).After(deadline) {
-			return nil, fmt.Errorf("Jira is rate limiting and asked for longer than %s: %w", maxTotalWait, err)
+		if delay > *remainingWait {
+			return nil, fmt.Errorf("Jira retry wait exceeds the %s budget: %w", maxRetryWait, err)
 		}
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
+		*remainingWait -= delay
+		if err := c.wait(ctx, delay); err != nil {
+			return nil, err
 		}
 	}
 	return nil, fmt.Errorf("Jira kept rate limiting after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// searchKeys is one `key in (...)` request. Keys are already validated against
-// jiraKey, so quoting them is enough to keep the query well formed.
+func waitFor(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// searchKeys performs one `key in (...)` request.
 func (c *Client) searchKeys(ctx context.Context, keys, fields []string) ([]tracker.FetchedIssue, error) {
 	quoted := make([]string, len(keys))
 	for i, key := range keys {
@@ -482,18 +411,13 @@ func (c *Client) searchKeys(ctx context.Context, keys, fields []string) ([]track
 	if err != nil {
 		return nil, fmt.Errorf("encode Jira fetch: %w", err)
 	}
-	// Decoded as plain JSON, not into a struct: a script reads the issue as
-	// Jira nests it, so the whole object is what has to survive.
 	var result struct {
 		Issues []map[string]any `json:"issues"`
 	}
 	if err := c.do(ctx, http.MethodPost, c.restEndpoint("rest", "api", "2", "search").String(), body, &result); err != nil {
 		return nil, err
 	}
-	// Unknown keys are a 400, never a short page, so a 200 must carry exactly
-	// as many issues as the batch had keys. Fewer means the deployment's page
-	// cap truncated the result, and reporting the remainder as not found would
-	// tell a roadmap its live links are dead.
+	// Unknown keys produce 400, so a successful short page is truncation.
 	if len(result.Issues) != len(keys) {
 		return nil, fmt.Errorf("Jira returned %d issues for %d keys; the deployment's search page cap (jira.search.views.default.max) is below %d",
 			len(result.Issues), len(keys), len(keys))
@@ -505,10 +429,7 @@ func (c *Client) searchKeys(ctx context.Context, keys, fields []string) ([]track
 	return issues, nil
 }
 
-// normalizeFetched derives the neutral projection from the raw issue rather
-// than decoding it a second time, so there is one representation and not two
-// that can disagree. The display fields are always requested, so what is read
-// here cannot be defeated by a script's JIRA_FIELDS.
+// normalizeFetched derives tracker.Issue from the raw extractor input.
 func (c *Client) normalizeFetched(raw map[string]any) tracker.FetchedIssue {
 	fields := rawObject(raw, "fields")
 	key := rawString(raw, "key")
@@ -525,9 +446,6 @@ func (c *Client) normalizeFetched(raw map[string]any) tracker.FetchedIssue {
 	}
 }
 
-// rawString and rawObject walk decoded JSON. A member Jira omitted or sent as
-// another type reads as empty rather than failing the whole fetch — a custom
-// field is absent whenever the deployment does not define it.
 func rawString(m map[string]any, name string) string {
 	s, _ := m[name].(string)
 	return s
@@ -549,9 +467,6 @@ func decodeContinuation(raw string) (int, error) {
 	return n, nil
 }
 
-// normalize is the only place Jira's field nesting crosses into the generic
-// model. The browser URL is constructed because Jira's self link targets REST —
-// on a split deployment, a different host altogether.
 func (c *Client) normalize(issue jiraIssue) tracker.Issue {
 	return tracker.Issue{
 		ID:     issue.ID,
@@ -563,15 +478,8 @@ func (c *Client) normalize(issue jiraIssue) tracker.Issue {
 	}
 }
 
-// searchError promotes a rejection Jira explained into tracker.QueryError, so
-// the server can pass Jira's own wording to the user — a JQL syntax error is
-// only actionable in Jira's words.
-//
-// Exactly 400, not 4xx. The request body a user controls is the query, so only
-// "your request was malformed" can be attributed to them. 401/403 means the
-// deployment's token is wrong or unprivileged and 404 that the base URL is:
-// operator faults that must stay a logged 502, because blaming them on
-// whoever typed the query sends every user hunting a JQL bug that isn't there.
+// searchError exposes Jira's message only for rejected queries. Authentication,
+// authorization and deployment errors remain internal.
 func searchError(err error) error {
 	var resp *responseError
 	if errors.As(err, &resp) && resp.statusCode == http.StatusBadRequest {
@@ -585,12 +493,8 @@ func searchError(err error) error {
 type responseError struct {
 	statusCode int
 	status     string
-	// retryAfter is Jira's header verbatim, empty when absent. Kept on the
-	// error rather than acted on here: only the fetcher waits.
 	retryAfter string
-	// The raw bounded response body. Kept verbatim for the log; userMessage
-	// derives the part fit to show a user.
-	detail string
+	detail     string
 }
 
 func (e *responseError) Error() string {
@@ -600,11 +504,7 @@ func (e *responseError) Error() string {
 	return fmt.Sprintf("Jira returned %s", e.status)
 }
 
-// userMessage unwraps Jira's error envelope — {"errorMessages": [...],
-// "errors": {field: msg}} — into one line. Anything else (an HTML error page
-// from a proxy, an empty body) yields "", so only text Jira composed as an
-// explanation can reach a user. Field errors are sorted so one rejection
-// always reads the same way.
+// userMessage flattens Jira's error envelope into a stable line.
 func (e *responseError) userMessage() string {
 	var env struct {
 		ErrorMessages []string          `json:"errorMessages"`
@@ -620,9 +520,7 @@ func (e *responseError) userMessage() string {
 	return strings.TrimSpace(strings.Join(parts, "; "))
 }
 
-// authorize attaches the configured credential, if there is one. An OAuth token
-// comes from a cache that refetches only once the current token expires, so on
-// all but the first request this is a mutex and an expiry check.
+// authorize attaches the configured credential.
 func (c *Client) authorize(req *http.Request) error {
 	switch {
 	case c.tokens != nil:
@@ -637,13 +535,7 @@ func (c *Client) authorize(req *http.Request) error {
 	return nil
 }
 
-// do owns the shared wire policy: JSON headers, bearer authentication, bounded
-// error text and response decoding. It intentionally does not interpret HTTP
-// statuses, and it never waits: an interactive search must fail fast and say
-// so. Backing off is the by-key fetch's business alone — see withBackoff.
-//
-// body is bytes rather than a Reader so that a caller which does retry can send
-// it again.
+// do applies the shared request and response policy. It never retries.
 func (c *Client) do(ctx context.Context, method, endpoint string, body []byte, dst any) error {
 	resp, err := c.send(ctx, method, endpoint, body)
 	if err != nil {
@@ -660,9 +552,7 @@ func (c *Client) do(ctx context.Context, method, endpoint string, body []byte, d
 		}
 	}
 	dec := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes))
-	// A raw field map decodes into `any`, where the default is float64 and a
-	// large Jira id would lose digits before the extractor ever sees it.
-	// Irrelevant to the typed decodes, which never consult this.
+	// Preserve large numeric custom fields for extractor scripts.
 	dec.UseNumber()
 	if err := dec.Decode(dst); err != nil {
 		return fmt.Errorf("decode Jira response: %w", err)
@@ -698,9 +588,6 @@ func (c *Client) restEndpoint(parts ...string) *url.URL {
 // as this deployment's.
 func (c *Client) BaseURL() string { return c.webURL.String() }
 
-// browseURL is built from the web base even when the REST API answers on another
-// host: this is the link a person follows, and the identity the frontend matches
-// an item's description links against.
 func (c *Client) browseURL(key string) string {
 	return c.webURL.JoinPath("browse", key).String()
 }

@@ -1,13 +1,3 @@
-// The schedule-check extractor script (notes/schedule_check.md), one per
-// roadmap at most: operational recon config exactly like the saved queries in
-// queries.go — the FK cascades on roadmap delete, but nothing here appears in
-// RoadmapFull, snapshots, exports or a duplicate, so restoring a plan never
-// resurrects an old script.
-//
-// The store holds the source opaquely. Whether it compiles is a semantic
-// question needing the Starlark interpreter, and it is answered in the server
-// layer, the way JQL validity is.
-
 package store
 
 import (
@@ -27,9 +17,7 @@ func scanTrackerExtractor(r rowScanner) (model.TrackerExtractor, error) {
 	return e, err
 }
 
-// GetTrackerExtractor returns a roadmap's script, or ErrNotFound when it has
-// none — which is the state the Recon tab explains and offers to fix, not an
-// error.
+// GetTrackerExtractor returns a roadmap's script or ErrNotFound.
 func (s *Store) GetTrackerExtractor(ctx context.Context, roadmapID int64) (model.TrackerExtractor, error) {
 	e, err := scanTrackerExtractor(s.pool.QueryRow(ctx,
 		`SELECT `+trackerExtractorCols+` FROM tracker_extractors WHERE roadmap_id = $1`, roadmapID))
@@ -39,8 +27,7 @@ func (s *Store) GetTrackerExtractor(ctx context.Context, roadmapID int64) (model
 	return e, err
 }
 
-// PutTrackerExtractor stores the roadmap's script, replacing any earlier one.
-// There is no create/update distinction to make: the roadmap is the identity.
+// PutTrackerExtractor replaces a roadmap's script.
 func (s *Store) PutTrackerExtractor(ctx context.Context, roadmapID int64, source string) (model.TrackerExtractor, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

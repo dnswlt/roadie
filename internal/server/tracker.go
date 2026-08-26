@@ -148,11 +148,7 @@ func (s *Server) deleteTrackerQuery(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// The schedule-check extractor script (notes/schedule_check.md). Same route
-// shape and same reasoning as the saved queries above — guard, not snap — and
-// likewise independent of s.tracker: a script is editable while the connection
-// is down. Roadmap-scoped rather than deployment-wide, unlike search, because
-// the script belongs to a roadmap.
+// Extractor scripts are operational data: guarded, but not snapshotted.
 
 type trackerExtractorRequest struct {
 	Source string `json:"source"`
@@ -172,12 +168,7 @@ func (s *Server) getTrackerExtractor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, e)
 }
 
-// putTrackerExtractor validates before storing: the script is compiled, its top
-// level executed and its well-known names checked, so a script that cannot run
-// is never saved. That check needs the interpreter and is semantic, which is
-// why it lives here rather than in the store — JQL validity sits the same way.
-// Every failure extractor.Compile reports is the author's to fix, so all of
-// them are a 400 carrying Starlark's own wording and line.
+// putTrackerExtractor validates the script before storing it.
 func (s *Server) putTrackerExtractor(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -214,24 +205,12 @@ func (s *Server) deleteTrackerExtractor(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// The schedule check (notes/schedule_check.md): are the issues linked from an
-// item still scheduled inside that item's time range?
-//
-// Two routes and no work. internal/recon's one goroutine makes every tracker
-// request, so enqueueing appends to its queue and polling reads its cache;
-// neither reaches Jira, and neither does work proportional to the keys it is
-// given, which is why there is no cap on how many a request may name.
-//
-// Link parsing (links.ts, recon-diff.ts) and the comparison stay in the
-// frontend, which is where the items are.
-
 type scheduleCheckRequest struct {
 	Keys []string `json:"keys"`
 }
 
-// enqueueScheduleCheck hands keys to the fetcher and returns at once, reporting
-// how many it took. Fewer than were sent means its queue is full; the rest stay
-// unchecked and the caller may ask again.
+// enqueueScheduleCheck reports how many distinct keys the queue covers. A
+// short count means the queue is full.
 func (s *Server) enqueueScheduleCheck(w http.ResponseWriter, r *http.Request) {
 	id, req, ok := s.readScheduleCheck(w, r)
 	if !ok {
@@ -241,15 +220,12 @@ func (s *Server) enqueueScheduleCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]int{"queued": queued})
 }
 
-// scheduleCheckStatus answers for exactly the keys asked about, from what the
-// fetcher has established so far. Anything else reads as unchecked.
+// scheduleCheckStatus returns cached results without enqueuing work.
 func (s *Server) scheduleCheckStatus(w http.ResponseWriter, r *http.Request) {
 	id, req, ok := s.readScheduleCheck(w, r)
 	if !ok {
 		return
 	}
-	// A roadmap with no script is a 404, the state the Recon tab explains and
-	// offers to fix; the store's error carries that through writeErr.
 	status, err := s.recon.Status(r.Context(), id, distinctKeys(req.Keys))
 	if err != nil {
 		s.writeErr(w, err)
@@ -258,9 +234,6 @@ func (s *Server) scheduleCheckStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-// readScheduleCheck is the part both routes share: the roadmap, the key list,
-// and the check that reconciliation is configured at all. It writes the
-// response itself when it returns false.
 func (s *Server) readScheduleCheck(w http.ResponseWriter, r *http.Request) (int64, scheduleCheckRequest, bool) {
 	var req scheduleCheckRequest
 	id, err := pathID(r)
@@ -279,17 +252,16 @@ func (s *Server) readScheduleCheck(w http.ResponseWriter, r *http.Request) (int6
 	return id, req, true
 }
 
-// distinctKeys drops blanks and repeats, comparing case-insensitively because
-// Jira keys do, so one key is one row in a status response.
+// distinctKeys normalizes Jira keys at the schedule-check HTTP boundary.
 func distinctKeys(keys []string) []string {
 	seen := make(map[string]bool, len(keys))
 	out := make([]string, 0, len(keys))
 	for _, key := range keys {
-		key = strings.TrimSpace(key)
-		if key == "" || seen[strings.ToUpper(key)] {
+		key = strings.ToUpper(strings.TrimSpace(key))
+		if key == "" || seen[key] {
 			continue
 		}
-		seen[strings.ToUpper(key)] = true
+		seen[key] = true
 		out = append(out, key)
 	}
 	return out

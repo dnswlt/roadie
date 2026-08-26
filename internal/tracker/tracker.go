@@ -40,14 +40,8 @@ type Page struct {
 	Next   string  `json:"next,omitempty"`
 }
 
-// FetchedIssue is one issue from a by-key fetch: the neutral projection, plus
-// the provider's own JSON for the same issue.
-//
-// Raw is the whole issue object as the provider sent and nested it, named as
-// the provider names it (customfield_10020, not "Begin Date"): the one
-// deliberately provider-shaped thing here, because an extractor script receives
-// exactly this as its `issue` argument. It is never serialized — it must not
-// reach the model, an export, or the frontend — hence no JSON tags.
+// FetchedIssue pairs the neutral projection with provider-shaped JSON for the
+// extractor. Raw is never serialized.
 type FetchedIssue struct {
 	Issue Issue
 	Raw   map[string]any
@@ -57,14 +51,9 @@ type FetchedIssue struct {
 type Client interface {
 	Search(ctx context.Context, query, continuation string, pageSize int) (Page, error)
 	GetIssue(ctx context.Context, externalID string) (Issue, error)
-	// FetchIssues resolves issue keys, asking the provider for extraFields on
-	// top of whatever Issue itself needs. Keys the provider does not return —
-	// deleted, renamed, invisible, or not a key at all — are absent from the
-	// result rather than an error: one unusable key must not cost the caller
-	// the issues alongside it. Callers pair the result back up by key.
-	//
-	// One call must make a bounded number of provider requests, however many
-	// keys are unusable.
+	// FetchIssues resolves keys with the fields required by Issue plus
+	// extraFields. Unusable keys are absent from the result. Recovery from
+	// unusable keys must use a fixed request bound.
 	FetchIssues(ctx context.Context, keys, extraFields []string) ([]FetchedIssue, error)
 	// BaseURL is the deployment as a browser reaches it, without a trailing
 	// slash — the same authority Issue.URL is built from. Reconciliation needs

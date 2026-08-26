@@ -1,7 +1,5 @@
 // Jira is a tiny, read-only Jira Data Center stand-in for local development.
-// It implements only the two REST resources Roadie uses. The JQL string is
-// interpreted as a deliberately tiny title search; field selection is ignored
-// and issues come from a JSON fixture loaded at startup.
+// It implements the two REST resources and JQL forms Roadie uses.
 package main
 
 import (
@@ -22,10 +20,7 @@ type fixtureIssue struct {
 	Summary   string `json:"summary"`
 	IssueType string `json:"issueType"`
 	Status    string `json:"status"`
-	// Fields are extra Jira fields, spelled and nested exactly as Jira spells
-	// them (duedate, fixVersions, customfield_10430), so an extractor script
-	// developed against the mock reads the same shapes it will read in
-	// production. They cannot shadow the four above.
+	// Fields cannot override the display fields above.
 	Fields map[string]any `json:"fields,omitempty"`
 }
 
@@ -121,11 +116,7 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 				matches = append(matches, i)
 			}
 		}
-		// Jira rejects the whole query when a key names an issue nobody can
-		// see, and names every such key, one message each — measured against a
-		// live Data Center deployment. Roadie retries without the named keys,
-		// so a mock that rejected without naming them, or named only the
-		// first, would make that path untestable here.
+		// Jira rejects the whole query and names each unknown key.
 		if len(matches) != len(keys) {
 			found := map[string]bool{}
 			for _, i := range matches {
@@ -157,10 +148,7 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// matchingIssueIndices is the mock's whole "JQL" implementation: split the
-// query on whitespace, then require every term to occur somewhere in the
-// summary, case-insensitively. Returning fixture indices keeps Jira issue ids
-// stable across different searches and pages.
+// matchingIssueIndices implements the mock's summary search.
 func matchingIssueIndices(issues []fixtureIssue, query string) []int {
 	terms := strings.Fields(strings.ToLower(query))
 	matches := make([]int, 0, len(issues))
@@ -191,9 +179,7 @@ func (s *server) getIssue(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "Issue does not exist or you do not have permission to see it.")
 }
 
-// keysFromJQL recognizes the one real JQL form the mock implements,
-// `key in ("A", "B")`, which is how Roadie fetches issues by key. ok is false
-// for anything else, leaving the title search below to handle it.
+// keysFromJQL recognizes `key in ("A", "B")` queries.
 func keysFromJQL(jql string) (map[string]bool, bool) {
 	jql = strings.TrimSpace(jql)
 	rest, ok := strings.CutPrefix(strings.ToLower(jql), "key in (")
@@ -216,9 +202,7 @@ func splitFields(raw string) []string {
 	return strings.Split(raw, ",")
 }
 
-// toJiraIssue renders one fixture issue, honouring field selection: a client
-// that asks for a field it never requested would not notice a script reading a
-// field nobody fetched.
+// toJiraIssue applies Jira's field selection to a fixture issue.
 func toJiraIssue(r *http.Request, id int, issue fixtureIssue, fields []string) jiraIssue {
 	all := map[string]any{
 		"summary":   issue.Summary,

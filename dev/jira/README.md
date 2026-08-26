@@ -15,8 +15,8 @@ supported and applies after filtering.
 
 The one real JQL form it implements is `key in ("A", "B")`, the by-key fetch
 behind the schedule check. As Jira does, it rejects the **whole** query with a
-400 when any key is unknown — that rejection is what makes Roadie fall back to
-one request per key, and this is the only way to exercise that path locally.
+400 when any key is unknown. Roadie retries the batch without the keys named in
+that rejection.
 
 Field selection is honoured, so a script cannot read a field nobody asked Jira
 for and discover it only in production. Beyond `summary`, `issuetype` and

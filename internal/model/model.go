@@ -268,11 +268,8 @@ type TrackerQuery struct {
 	Query     string `json:"query"`
 }
 
-// TrackerExtractor is a roadmap's schedule-extractor script
-// (notes/schedule_check.md): the Starlark that says which tracker fields carry
-// an issue's schedule. Roadmap-scoped operational data like TrackerQuery, and
-// at most one per roadmap, so the roadmap is its identity. Source is opaque
-// here; internal/tracker/extractor is what makes sense of it.
+// TrackerExtractor is a roadmap's schedule-extractor script. There is at most
+// one per roadmap, and it is not roadmap content.
 type TrackerExtractor struct {
 	RoadmapID int64     `json:"roadmapId"`
 	Source    string    `json:"source"`

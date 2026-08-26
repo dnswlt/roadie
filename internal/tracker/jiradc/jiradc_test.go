@@ -462,21 +462,21 @@ func TestValidation(t *testing.T) {
 	}
 }
 
-// jiraFixture answers the two REST resources a by-key fetch uses, from a small
-// issue table. A key listed in rejects makes the *whole* chunk search 400, the
-// way Jira rejects `key in (...)` naming an issue nobody can see.
+// jiraFixture answers by-key searches from a small issue table.
 type jiraFixture struct {
 	issues   map[string]map[string]any
 	rejects  map[string]bool
 	searches [][]string // fields requested, one entry per search
 	jqls     []string   // the JQL of each search, in order
-	gets     []string   // keys fetched individually
 }
 
 func (f *jiraFixture) handler(t *testing.T) http.Handler {
 	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /rest/api/2/search", func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/rest/api/2/search" {
+			http.NotFound(w, r)
+			return
+		}
 		var req searchRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatal(err)
@@ -484,9 +484,6 @@ func (f *jiraFixture) handler(t *testing.T) http.Handler {
 		f.searches = append(f.searches, req.Fields)
 		f.jqls = append(f.jqls, req.JQL)
 		keys := keysInJQL(req.JQL)
-		// Real Jira names *every* unknown key, one message each — measured
-		// against a live Data Center deployment. Naming only the first would
-		// make salvage look like a search and this fixture a liar.
 		var rejected []string
 		for _, key := range keys {
 			if f.rejects[key] {
@@ -506,17 +503,6 @@ func (f *jiraFixture) handler(t *testing.T) http.Handler {
 		}
 		writeJiraJSON(w, http.StatusOK, map[string]any{"issues": issues})
 	})
-	mux.HandleFunc("GET /rest/api/2/issue/{key}", func(w http.ResponseWriter, r *http.Request) {
-		key := r.PathValue("key")
-		f.gets = append(f.gets, key)
-		fields, ok := f.issues[key]
-		if !ok {
-			writeJiraError(w, http.StatusNotFound, "Issue does not exist or you do not have permission to see it.")
-			return
-		}
-		writeJiraJSON(w, http.StatusOK, map[string]any{"id": "1", "key": key, "fields": fields})
-	})
-	return mux
 }
 
 // keysInJQL pulls the quoted keys back out of `key in ("A", "B")`.
@@ -600,9 +586,6 @@ func TestFetchIssues(t *testing.T) {
 	if !reflect.DeepEqual(f.searches[0], want) {
 		t.Fatalf("fields = %v, want %v", f.searches[0], want)
 	}
-	if len(f.gets) != 0 {
-		t.Fatalf("fell back to individual gets: %v", f.gets)
-	}
 }
 
 func TestFetchIssuesUnionsDisplayFieldsOnce(t *testing.T) {
@@ -619,9 +602,6 @@ func TestFetchIssuesUnionsDisplayFieldsOnce(t *testing.T) {
 	}
 }
 
-// One key naming an invisible issue makes Jira reject the whole batch. Without
-// salvage the caller loses the other issues in that batch and the check
-// under-reports the roadmap without saying so.
 func TestFetchIssuesDropsKeysJiraNames(t *testing.T) {
 	f := &jiraFixture{
 		issues: map[string]map[string]any{
@@ -639,15 +619,12 @@ func TestFetchIssuesDropsKeysJiraNames(t *testing.T) {
 	if len(found) != 2 || found[0].Issue.Key != "PAY-1" || found[1].Issue.Key != "PAY-3" {
 		t.Fatalf("issues = %+v", found)
 	}
-	// One rejection, one retry: salvage is not a search.
 	if len(f.jqls) != 2 {
 		t.Fatalf("requests = %d, want 2", len(f.jqls))
 	}
 }
 
-// Jira names every unknown key at once, so the cost of salvage does not grow
-// with the number of dead links. This is the property the whole design rests
-// on, and a regression is invisible until it exhausts somebody's rate limit.
+// Jira names every unknown key at once, so salvage costs one retry.
 func TestFetchIssuesSalvageCostIsFlat(t *testing.T) {
 	for _, dead := range []int{1, 5, 25, keysPerBatch} {
 		f := &jiraFixture{issues: map[string]map[string]any{}, rejects: map[string]bool{}}
@@ -674,9 +651,6 @@ func TestFetchIssuesSalvageCostIsFlat(t *testing.T) {
 	}
 }
 
-// A rejection that names no key we sent is a different failure — malformed
-// JQL, `key` unavailable. Retrying it identically would loop, so it comes back
-// carrying Jira's own words, as a bad query already does.
 func TestFetchIssuesSurfacesUnattributableRejection(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeJiraError(w, http.StatusBadRequest, "Field 'key' does not exist or is not searchable.")
@@ -703,16 +677,11 @@ func TestFetchIssuesOnlyDropsKeysItSent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// OTHER-42 was not in the batch, so nothing is droppable and the rejection
-	// surfaces instead of being retried unchanged forever.
 	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, nil); err == nil {
 		t.Fatal("want the rejection to surface")
 	}
 }
 
-// The round cap holds because Jira names every unknown key at once. A
-// deployment that named them one at a time would need a round per dead key, and
-// this is what it does instead of looping: fails, loudly, naming the batch.
 func TestFetchIssuesGivesUpWhenRejectionsNeverResolve(t *testing.T) {
 	var sent [][]string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -720,7 +689,6 @@ func TestFetchIssuesGivesUpWhenRejectionsNeverResolve(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&req)
 		keys := keysInJQL(req.JQL)
 		sent = append(sent, keys)
-		// One at a time, so each round drops exactly one key.
 		writeJiraError(w, http.StatusBadRequest,
 			fmt.Sprintf("An issue with key '%s' does not exist for field 'key'.", keys[0]))
 	}))
@@ -738,9 +706,6 @@ func TestFetchIssuesGivesUpWhenRejectionsNeverResolve(t *testing.T) {
 	}
 }
 
-// A short page means the deployment's page cap truncated the result. Unknown
-// keys are a 400, so the missing issues are live ones — reporting them as dead
-// links would tell a roadmap its good links are broken.
 func TestFetchIssuesRejectsATruncatedPage(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeJiraJSON(w, http.StatusOK, map[string]any{"issues": []any{
@@ -758,15 +723,10 @@ func TestFetchIssuesRejectsATruncatedPage(t *testing.T) {
 	}
 }
 
-// A 401 is the deployment's problem: retrying it would multiply one
-// misconfiguration into a burst.
 func TestFetchIssuesDoesNotRetryAuthFailure(t *testing.T) {
-	gets, requests := 0, 0
+	requests := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		if r.Method == http.MethodGet {
-			gets++
-		}
 		writeJiraError(w, http.StatusUnauthorized, "You do not have permission.")
 	}))
 	defer ts.Close()
@@ -777,11 +737,6 @@ func TestFetchIssuesDoesNotRetryAuthFailure(t *testing.T) {
 	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2"}, nil); err == nil {
 		t.Fatal("want an error")
 	}
-	if gets != 0 {
-		t.Fatalf("fell back %d times on a 401", gets)
-	}
-	// Not retried and not salvaged: only a 400 carries key names, and only 429
-	// and 503 ask us to come back.
 	if requests != 1 {
 		t.Fatalf("a 401 became %d requests", requests)
 	}
@@ -822,7 +777,6 @@ func TestFetchIssuesDropsUnusableKeys(t *testing.T) {
 	if len(found) != 1 || found[0].Issue.Key != "PAY-1" {
 		t.Fatalf("issues = %+v", found)
 	}
-	// Nothing but the one real key reached the query.
 	if len(f.jqls) != 1 || f.jqls[0] != `key in ("PAY-1")` {
 		t.Fatalf("jql = %q", f.jqls)
 	}
@@ -847,7 +801,6 @@ func TestFetchIssuesKeepsNumbersExact(t *testing.T) {
 	}
 }
 
-// A deployment that asks us to slow down is obeyed rather than worked around.
 func TestBackoffHonoursRetryAfter(t *testing.T) {
 	var attempts int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -908,10 +861,6 @@ func TestRateLimitIsNotSalvaged(t *testing.T) {
 	}
 }
 
-// An interactive search must fail fast. It shares a client with the by-key
-// fetch, and only the fetch may wait: a person typing JQL should be told the
-// tracker is busy, not left watching a spinner while a background goroutine's
-// rate limit is waited out.
 func TestSearchDoesNotWaitOutRateLimits(t *testing.T) {
 	var requests int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -925,21 +874,16 @@ func TestSearchDoesNotWaitOutRateLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	start := time.Now()
 	if _, err := c.Search(context.Background(), "project = PAY", "", 50); err == nil {
 		t.Fatal("want an error")
-	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("search slept for %s", elapsed)
 	}
 	if requests != 1 {
 		t.Fatalf("search made %d requests, want one and out", requests)
 	}
 }
 
-// Retry-After takes delta-seconds or an HTTP date. Coming back before a
-// deployment said to is the one thing backoff must not do, so both are read.
 func TestRetryAfterHeaderForms(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	for _, c := range []struct {
 		raw  string
 		want time.Duration
@@ -951,28 +895,23 @@ func TestRetryAfterHeaderForms(t *testing.T) {
 		{"-1", 0, false},
 		{"soon", 0, false},
 		{"", 0, false},
-		// Seconds a Duration cannot hold. Multiplying these wraps — negative
-		// for some, a plausible-looking positive for others — so they come back
-		// as the longest wait there is and the caller refuses them.
 		{"9223372037", time.Duration(math.MaxInt64), true},
 		{"99999999999999", time.Duration(math.MaxInt64), true},
 	} {
-		got, ok := retryAfterHeader(c.raw)
+		got, ok := retryAfterHeader(c.raw, now)
 		if ok != c.ok || (ok && got != c.want) {
 			t.Fatalf("retryAfterHeader(%q) = %v, %v; want %v, %v", c.raw, got, ok, c.want, c.ok)
 		}
 	}
 
-	// An HTTP date is honoured as the delay until then.
-	future := time.Now().Add(20 * time.Second).UTC().Format(http.TimeFormat)
-	got, ok := retryAfterHeader(future)
-	if !ok || got < 15*time.Second || got > 21*time.Second {
+	future := now.Add(20 * time.Second).Format(http.TimeFormat)
+	got, ok := retryAfterHeader(future, now)
+	if !ok || got != 20*time.Second {
 		t.Fatalf("retryAfterHeader(%q) = %v, %v", future, got, ok)
 	}
 
-	// One already past means now, not a negative wait.
-	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
-	if got, ok := retryAfterHeader(past); !ok || got != 0 {
+	past := now.Add(-time.Hour).Format(http.TimeFormat)
+	if got, ok := retryAfterHeader(past, now); !ok || got != 0 {
 		t.Fatalf("retryAfterHeader(%q) = %v, %v", past, got, ok)
 	}
 }
@@ -991,12 +930,12 @@ func TestBackoffRespectsADistantRetryAfterDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now()
+	c.wait = func(context.Context, time.Duration) error {
+		t.Fatal("wait called for a delay outside the retry budget")
+		return nil
+	}
 	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, nil); err == nil {
 		t.Fatal("want an error")
-	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Fatalf("waited %s for a limit it could not honour", elapsed)
 	}
 	if requests != 1 {
 		t.Fatalf("requests = %d, want one and out", requests)
@@ -1018,24 +957,19 @@ func TestHugeRetryAfterDoesNotRetryImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now()
+	c.wait = func(context.Context, time.Duration) error {
+		t.Fatal("wait called for an unrepresentable delay")
+		return nil
+	}
 	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1"}, nil); err == nil {
 		t.Fatal("want an error")
 	}
 	if requests != 1 {
 		t.Fatalf("requests = %d, want one and out", requests)
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("waited %s", elapsed)
-	}
 }
 
-// Backoff must not sleep after its last permitted attempt: no request follows
-// it, so the delay is stall for nothing — and this is the only fetcher.
 func TestBackoffDoesNotSleepAfterTheLastAttempt(t *testing.T) {
-	defer func(d time.Duration) { baseRetryDelay = d }(baseRetryDelay)
-	baseRetryDelay = 50 * time.Millisecond
-
 	var requests int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -1046,19 +980,56 @@ func TestBackoffDoesNotSleepAfterTheLastAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var waits []time.Duration
+	c.wait = func(_ context.Context, delay time.Duration) error {
+		waits = append(waits, delay)
+		return nil
+	}
 
-	start := time.Now()
 	_, err = c.FetchIssues(context.Background(), []string{"PAY-1"}, nil)
-	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("want an error")
 	}
 	if requests != maxAttempts {
 		t.Fatalf("requests = %d, want %d", requests, maxAttempts)
 	}
-	// Three waits between four attempts sum to 7x the base (1+2+4); a fourth
-	// would add 8x more. The threshold sits between the two.
-	if wasted := baseRetryDelay << (maxAttempts - 1); elapsed > 10*baseRetryDelay {
-		t.Fatalf("took %s; a wait of %s after the final attempt is stall for nothing", elapsed, wasted)
+	want := []time.Duration{baseRetryDelay, 2 * baseRetryDelay, 4 * baseRetryDelay}
+	if !reflect.DeepEqual(waits, want) {
+		t.Fatalf("waits = %v, want %v", waits, want)
+	}
+}
+
+func TestRetryWaitBudgetSpansSalvageRounds(t *testing.T) {
+	requests := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		switch requests {
+		case 1, 3:
+			w.Header().Set("Retry-After", "20")
+			writeJiraError(w, http.StatusTooManyRequests, "Rate limit exceeded.")
+		case 2:
+			writeJiraError(w, http.StatusBadRequest,
+				"An issue with key 'PAY-1' does not exist for field 'key'.")
+		}
+	}))
+	defer ts.Close()
+	c, err := New(Config{BaseURL: ts.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var waits []time.Duration
+	c.wait = func(_ context.Context, delay time.Duration) error {
+		waits = append(waits, delay)
+		return nil
+	}
+
+	if _, err := c.FetchIssues(context.Background(), []string{"PAY-1", "PAY-2"}, nil); err == nil {
+		t.Fatal("want the second 20-second wait to exceed the remaining budget")
+	}
+	if requests != 3 {
+		t.Fatalf("requests = %d, want 3", requests)
+	}
+	if want := []time.Duration{20 * time.Second}; !reflect.DeepEqual(waits, want) {
+		t.Fatalf("waits = %v, want %v", waits, want)
 	}
 }

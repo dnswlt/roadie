@@ -85,17 +85,10 @@ ends 31 Mar" into "Sprint 24 ends 12 Apr, item ends 31 Mar" — which names what
 to go fix in Jira, and exposes a script reading the wrong field, where the date
 alone looks perfectly plausible.
 
-Sandbox: plain Starlark is hermetic — no `load()`, no I/O, no clock, no
-recursion, and no `while` — but it is not resource-bounded, and there is **no
-step budget and no deadline**. Both were tried and removed: neither bounds the
-failure that matters, because one operation is one step whatever it allocates
-(`[0] * 1000000000` asks for ~17GB and kills the process), so a budget only
-makes the sandbox read stronger than it is. Every script terminates, but that is
-mathematical rather than useful: `range()` is lazy and takes any bound, so
-`for i in range(1000000000000)` is one statement that runs for hours. (`**` is
-not a Starlark operator at all.) A real boundary means running the script
-outside this process. Until there is one, saving a script is a **trusted
-action** — unlike posting JQL, which cannot take the server down.
+Plain Starlark is hermetic — no `load()`, I/O, clock, recursion or `while` — but
+it is not resource-bounded. A step budget does not bound allocation within one
+step, and a deadline cannot interrupt it safely. Resource isolation requires a
+separate process. Saving a script is therefore a **trusted action**.
 
 `print()` is captured for the editor rather than the server log — a user
 debugging a script shouldn't need shell access.
@@ -109,9 +102,8 @@ teams on fix versions, labels, or date fields.
 strings; failure is a 400 with Starlark's message and line, nothing stored. This
 lives in the server layer, not the store — it needs the interpreter and is
 semantic, like JQL validity. Runtime failure is **per issue**: one raising issue
-gets an error state, the rest still render. A check compiles and execs the
-script once, then calls the function per issue — no cache across requests, since
-compiling twenty lines disappears next to one Jira round-trip.
+gets an error state, the rest still render. A due batch compiles and execs the
+script once, then calls the function per issue.
 
 ## Running the check
 
@@ -120,22 +112,19 @@ referenced keys and the item each came from, and compares the returned ranges
 itself. The backend fetches those issues with `JIRA_FIELDS ∪ display fields` and
 runs the extractor.
 
-**Exactly one goroutine talks to the tracker**, process-wide. Clients feed it
-keys and poll for results, so the two are separate routes: `POST` to enqueue,
-`POST .../status` to read. **Polling has no influence on the fetcher** — it
-cannot start a fetch, hurry one, or reorder the queue — which is what makes
+**Exactly one goroutine performs schedule-check fetches**, process-wide. Clients
+feed it keys and poll for results, so the two are separate routes: `POST` to
+enqueue, `POST .../status` to read. **Polling has no influence on the fetcher** —
+it cannot start a fetch, hurry one, or reorder the queue — which is what makes
 Refresh free and stops a client from piling requests onto Jira by asking often.
 
-That single goroutine *is* the rate limiting. Nothing runs concurrently, so
-there is no token bucket, no per-request budget and no cap on how many keys a
-request may name: neither route does work proportional to them. Backoff on a 429
-stalls that one loop and nothing else. The queue is bounded, and enqueue reports
-how many keys it took — fewer than sent means the backlog is full, and the rest
-stay unchecked until asked for again.
+The worker serializes tracker traffic; there is no token bucket. The queue is
+bounded, and enqueue reports how many distinct keys it covers. A short count
+means the backlog is full, and the rest stay unchecked until asked for again.
 
 `unchecked` is therefore a statement about Roadie and not about the issue: not
-fetched yet, still queued, or established too long ago to be fresh. It is what a
-poll returns while work is outstanding, and it needs no explaining away.
+fetched yet or still queued. It is what a poll returns while work is
+outstanding, and it needs no explaining away.
 
 A batch is one roadmap's keys, so one script and one field set cover it. The
 script is read when the fetcher reaches the keys rather than when they were
@@ -156,12 +145,11 @@ was fine —
                   "An issue with key 'RCSAM-170001' does not exist for field 'key'."],"errors":{}}
 ```
 
-— so the batch is retried once without the named keys, which then report as not
-found. Two requests per batch, worst case, whatever the number of dead links.
-Only keys we actually sent may be dropped, and a 400 naming none of them is a
-different failure (malformed JQL, `key` unavailable): it surfaces with Jira's
-own wording rather than being retried or split. Cap the rounds at three, in case
-a deployment names only the first.
+— so the batch is retried without the named keys, which then report as not
+found. The normal case is two requests regardless of the number of dead links.
+Only keys actually sent may be dropped, and a 400 naming none of them is a
+different failure (malformed JQL, `key` unavailable). Salvage is capped at three
+requests in case a deployment names only one bad key at a time.
 
 Reading the provider's error text is not a new posture — the adapter already
 parses this envelope to promote a JQL error into the user's own words.
@@ -177,30 +165,34 @@ error naming the cap.
 Cloud caps `maxResults` at 100. Since the fetcher is never in a hurry, headroom
 above 100 buys nothing and costs portability.
 
-**Freshness, not just batching.** Results are cached process-wide for a minute,
-so a person leaning on Refresh — or two people checking the same roadmap — does
-not spend the deployment's rate limit twice. Only the keys with no fresh answer
+**Freshness is a refresh debounce, not a result TTL.** Results are cached
+process-wide with the time each was checked. Polling returns every cached
+result, however old; an old answer remains useful while a refresh is pending.
+The fetcher skips results checked less than a minute ago, so a person leaning on
+Refresh — or two people checking the same roadmap — does not spend the
+deployment's rate limit twice. Missing results and results at least a minute old
 reach Jira.
 
 The cache holds **extracted results, never raw issues**. `JIRA_FIELDS` is
 user-supplied and unbounded: a script naming `attachment` or `comment` pulls
 documents rather than dates, so caching before extraction would turn a field
-list into server memory. A result is six short strings whatever the script
-asked for.
+list into server memory. Cached results remain compact whatever fields the
+script requested.
 
 Entries are keyed by a **fingerprint of the script source**, which is what makes
 that affordable. Extraction depends on the script, and editing one yields a
-different fingerprint — old entries are never consulted again and lapse on their
-own, so there is no invalidation step to remember. Two roadmaps running
-identical scripts share, correctly: the same source over the same issue is the
-same answer. Absence is cached too, since a dead key is what makes a batch cost
-two requests instead of one. Entries expire, so the cache is bounded by recent
-traffic rather than by how many roadmaps exist.
+different fingerprint, so old entries are never consulted again and there is no
+invalidation step to remember. Two roadmaps running identical scripts share,
+correctly: the same source over the same issue is the same answer. Absence is
+cached too, since a dead key is what makes a batch cost two requests instead of
+one. Entries remain for the life of the process; each is a compact extracted
+result rather than the tracker payload that produced it.
 
 **Rate limiting is the deployment's, and it says so.** A 429 or 503 is honoured
-rather than retried blindly: `Retry-After` when present, otherwise a doubling
-delay, with a capped number of attempts and a bounded total wait so a wedged
-deployment stalls the fetcher for a known time rather than forever.
+using `Retry-After` when present and a doubling delay otherwise. Each search has
+a fixed attempt cap. One 30-second sleep budget is shared by every batch and
+salvage round in a `FetchIssues` call. Salvage itself needs no time deadline; its
+three-request cap bounds it independently.
 
 **Only the fetcher ever waits.** Waiting is acceptable there because nobody is
 watching it and nothing else is delayed by it. The interactive JQL search shares
@@ -258,7 +250,10 @@ favourites' shape — `guard`, not `snap`:
 - `GET|PUT|DELETE /api/roadmaps/{id}/tracker-extractor`
 - `POST /api/roadmaps/{id}/tracker-extractor/test`
 - `POST /api/roadmaps/{id}/schedule-check` — enqueue keys, returns at once
-- `POST /api/roadmaps/{id}/schedule-check/status` — read what is established
+- `POST /api/roadmaps/{id}/schedule-check/status` — read cached results
+
+Both routes trim keys, normalize them to uppercase and drop duplicates. Result
+keys are therefore uppercase too.
 
 Roadmap-scoped, unlike `POST /api/tracker/search`, because the script belongs to
 a roadmap.

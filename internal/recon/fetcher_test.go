@@ -41,14 +41,14 @@ func (s *stubTracker) FetchIssues(_ context.Context, keys, extraFields []string)
 	}
 	var out []tracker.FetchedIssue
 	for _, key := range keys {
-		fields, ok := s.issues[strings.ToUpper(key)]
+		fields, ok := s.issues[key]
 		if !ok {
 			continue
 		}
 		out = append(out, tracker.FetchedIssue{
-			Issue: tracker.Issue{ID: key, Key: strings.ToUpper(key), Title: key,
-				URL: "https://jira.test/browse/" + strings.ToUpper(key)},
-			Raw: map[string]any{"key": strings.ToUpper(key), "fields": fields},
+			Issue: tracker.Issue{ID: key, Key: key, Title: key,
+				URL: "https://jira.test/browse/" + key},
+			Raw: map[string]any{"key": key, "fields": fields},
 		})
 	}
 	return out, nil
@@ -69,30 +69,15 @@ func script(src string) ScriptFunc {
 	return func(context.Context, int64) (string, error) { return src, nil }
 }
 
-// drain runs the fetcher until its queue empties, then stops it. Tests want the
-// loop's behaviour without racing it.
 func drain(t *testing.T, f *Fetcher) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() { f.Run(ctx); close(done) }()
-	deadline := time.After(5 * time.Second)
-	for f.Pending(0) >= 0 {
-		f.mu.Lock()
-		empty := len(f.queue) == 0
-		f.mu.Unlock()
-		if empty {
-			break
+	for {
+		roadmapID, batch := f.take()
+		if len(batch) == 0 {
+			return
 		}
-		select {
-		case <-deadline:
-			t.Fatal("fetcher did not drain")
-		case <-time.After(time.Millisecond):
-		}
+		f.run(context.Background(), roadmapID, batch)
 	}
-	cancel()
-	<-done
 }
 
 func statusOf(t *testing.T, f *Fetcher, keys ...string) map[string]Result {
@@ -208,25 +193,35 @@ func TestFetcherSkipsFreshKeys(t *testing.T) {
 }
 
 // Freshness is a debounce, not a correctness window.
-func TestFetcherRefetchesOnceStale(t *testing.T) {
+func TestFetcherRefetchesAfterFreshnessWindow(t *testing.T) {
 	stub := &stubTracker{issues: map[string]map[string]any{"PAY-1": {"duedate": "2026-04-12"}}}
 	f := New(stub, script(dueDateScript), time.Minute)
-	now := time.Now()
+	now := time.Date(2026, 8, 26, 8, 0, 0, 0, time.UTC)
 	f.cache.now = func() time.Time { return now }
 
 	f.Enqueue(1, []string{"PAY-1"})
 	drain(t, f)
+	first := statusOf(t, f, "PAY-1")["PAY-1"].CheckedAt
+	if !first.Equal(now) {
+		t.Fatalf("checked at %v, want %v", first, now)
+	}
 	now = now.Add(30 * time.Second)
 	f.Enqueue(1, []string{"PAY-1"})
 	drain(t, f)
 	if stub.callCount() != 1 {
 		t.Fatalf("refetched inside the window: %d calls", stub.callCount())
 	}
+	if got := statusOf(t, f, "PAY-1")["PAY-1"].CheckedAt; !got.Equal(first) {
+		t.Fatalf("debounced result moved from %v to %v", first, got)
+	}
 	now = now.Add(time.Minute)
 	f.Enqueue(1, []string{"PAY-1"})
 	drain(t, f)
 	if stub.callCount() != 2 {
 		t.Fatalf("calls = %d, want a refetch once stale", stub.callCount())
+	}
+	if got := statusOf(t, f, "PAY-1")["PAY-1"].CheckedAt; !got.Equal(now) {
+		t.Fatalf("refreshed at %v, want %v", got, now)
 	}
 }
 
@@ -287,11 +282,20 @@ func TestFetchFailureIsRecordedPerKey(t *testing.T) {
 func TestCompileFailureIsRecordedPerKey(t *testing.T) {
 	stub := &stubTracker{issues: map[string]map[string]any{}}
 	f := New(stub, script("def get_issue_time_range(issue)\n"), 0)
+	now := time.Date(2026, 8, 26, 8, 0, 0, 0, time.UTC)
+	f.cache.now = func() time.Time { return now }
 	f.Enqueue(1, []string{"PAY-1"})
 	drain(t, f)
 
-	if got := statusOf(t, f, "PAY-1")["PAY-1"]; got.State != StateError {
+	got := statusOf(t, f, "PAY-1")["PAY-1"]
+	if got.State != StateError {
 		t.Fatalf("PAY-1 = %+v", got)
+	}
+	now = now.Add(30 * time.Second)
+	f.Enqueue(1, []string{"PAY-1"})
+	drain(t, f)
+	if after := statusOf(t, f, "PAY-1")["PAY-1"].CheckedAt; !after.Equal(got.CheckedAt) {
+		t.Fatalf("compile error timestamp moved from %v to %v inside freshness window", got.CheckedAt, after)
 	}
 	if stub.callCount() != 0 {
 		t.Fatalf("a script that does not compile still hit the tracker")
@@ -318,7 +322,12 @@ func TestScriptErrorIsPerIssue(t *testing.T) {
 func TestEnqueueDeduplicates(t *testing.T) {
 	stub := &stubTracker{issues: map[string]map[string]any{"PAY-1": {"duedate": "2026-04-12"}}}
 	f := New(stub, script(dueDateScript), 0)
-	f.Enqueue(1, []string{"PAY-1", "pay-1", "PAY-1"})
+	if n := f.Enqueue(1, []string{"PAY-1"}); n != 1 {
+		t.Fatalf("first enqueue covered %d keys", n)
+	}
+	if n := f.Enqueue(1, []string{"PAY-1"}); n != 1 {
+		t.Fatalf("second enqueue covered %d keys", n)
+	}
 	if f.Pending(1) != 1 {
 		t.Fatalf("pending = %d, want the repeats collapsed", f.Pending(1))
 	}
@@ -432,31 +441,27 @@ func TestCacheHoldsNoRawIssuePayload(t *testing.T) {
 	if len(f.cache.entries) != 1 {
 		t.Fatalf("entries = %d", len(f.cache.entries))
 	}
-	for _, e := range f.cache.entries {
-		if strings.Contains(fmt.Sprint(e.result), bulky) {
+	for _, result := range f.cache.entries {
+		if strings.Contains(fmt.Sprint(result), bulky) {
 			t.Fatal("the cache is holding raw issue payload")
 		}
 	}
 }
 
-// Entries lapse, so the map is bounded by recent traffic rather than by how
-// many roadmaps or issues exist.
-func TestCacheEvictsLapsedEntries(t *testing.T) {
+func TestStatusReturnsOldResults(t *testing.T) {
 	stub := &stubTracker{issues: map[string]map[string]any{"PAY-1": {"duedate": "2026-04-12"}}}
 	f := New(stub, script(dueDateScript), time.Minute)
-	now := time.Now()
+	checkedAt := time.Date(2026, 8, 25, 8, 0, 0, 0, time.UTC)
+	now := checkedAt
 	f.cache.now = func() time.Time { return now }
 
 	f.Enqueue(1, []string{"PAY-1"})
 	drain(t, f)
-	now = now.Add(2 * time.Minute)
-	// Any lookup sweeps; a poll is enough.
-	statusOf(t, f, "PAY-1")
+	now = now.Add(24 * time.Hour)
 
-	f.cache.mu.Lock()
-	defer f.cache.mu.Unlock()
-	if len(f.cache.entries) != 0 {
-		t.Fatalf("entries = %d, want the lapsed one swept", len(f.cache.entries))
+	got := statusOf(t, f, "PAY-1")["PAY-1"]
+	if got.State != StateOK || !got.CheckedAt.Equal(checkedAt) {
+		t.Fatalf("old result = %+v, want the cached answer from %v", got, checkedAt)
 	}
 }
 
@@ -486,9 +491,7 @@ func TestNoScriptDoesNotGrowTheCache(t *testing.T) {
 	}
 }
 
-// Lapsed entries go even on a path that only ever writes, so the bound does not
-// depend on anybody reading.
-func TestCacheSweepsOnWrite(t *testing.T) {
+func TestCacheRetainsOldEntriesAcrossWrites(t *testing.T) {
 	stub := &stubTracker{issues: map[string]map[string]any{}}
 	f := New(stub, script("def get_issue_time_range(issue)\n"), time.Minute) // never compiles
 	now := time.Now()
@@ -502,8 +505,8 @@ func TestCacheSweepsOnWrite(t *testing.T) {
 
 	f.cache.mu.Lock()
 	defer f.cache.mu.Unlock()
-	if len(f.cache.entries) != 1 {
-		t.Fatalf("entries = %d, want the lapsed one swept by the write", len(f.cache.entries))
+	if len(f.cache.entries) != 2 {
+		t.Fatalf("entries = %d, want both recorded results", len(f.cache.entries))
 	}
 }
 

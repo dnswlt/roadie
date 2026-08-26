@@ -223,7 +223,7 @@ type reconTracker struct{ stubTracker }
 func (t *reconTracker) FetchIssues(_ context.Context, keys, _ []string) ([]tracker.FetchedIssue, error) {
 	var out []tracker.FetchedIssue
 	for _, key := range keys {
-		if strings.EqualFold(key, "PAY-1") {
+		if key == "PAY-1" {
 			out = append(out, tracker.FetchedIssue{
 				Issue: tracker.Issue{ID: "1", Key: "PAY-1", Title: "Payments"},
 				Raw:   map[string]any{"key": "PAY-1", "fields": map[string]any{"duedate": "2026-04-12"}},
@@ -257,17 +257,17 @@ func TestScheduleCheckRoutes(t *testing.T) {
 	base := "/api/roadmaps/" + itoa(rm.ID) + "/schedule-check"
 
 	// Poll before anything is enqueued: everything unchecked, nothing queued.
-	w := doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"PAY-1", "pay-1"}})
+	w := doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"pay-1", " PAY-1 "}})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body)
 	}
 	got := decode[recon.Status](t, w)
 	// Repeats collapse, so one key is one row.
-	if len(got.Results) != 1 || got.Results[0].State != recon.StateUnchecked || got.Pending != 0 {
+	if len(got.Results) != 1 || got.Results[0].Key != "PAY-1" || got.Results[0].State != recon.StateUnchecked || got.Pending != 0 {
 		t.Fatalf("before enqueue: %+v", got)
 	}
 
-	w = doWithServer(t, srv, http.MethodPost, base, scheduleCheckRequest{Keys: []string{"PAY-1"}})
+	w = doWithServer(t, srv, http.MethodPost, base, scheduleCheckRequest{Keys: []string{"pay-1"}})
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("enqueue status = %d, body %s", w.Code, w.Body)
 	}
@@ -281,7 +281,7 @@ func TestScheduleCheckRoutes(t *testing.T) {
 	go func() { fetcher.Run(runCtx); close(done) }()
 	deadline := time.After(5 * time.Second)
 	for {
-		w = doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"PAY-1"}})
+		w = doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"pay-1"}})
 		got = decode[recon.Status](t, w)
 		if got.Results[0].State != recon.StateUnchecked {
 			break
@@ -295,7 +295,7 @@ func TestScheduleCheckRoutes(t *testing.T) {
 	cancel()
 	<-done
 
-	if got.Results[0].State != recon.StateOK || got.Results[0].End != "2026-04-12" {
+	if got.Results[0].State != recon.StateOK || got.Results[0].End != "2026-04-12" || got.Results[0].CheckedAt.IsZero() {
 		t.Fatalf("after the run: %+v", got.Results[0])
 	}
 }

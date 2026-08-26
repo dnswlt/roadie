@@ -106,8 +106,7 @@ func fieldName(fields map[string]any, name string) string {
 	return s
 }
 
-// The by-key fetch behind the schedule check, including the whole-query
-// rejection that makes Roadie fall back to one request per key.
+// The by-key fetch rejects the whole query when any requested key is unknown.
 func TestSearchByKey(t *testing.T) {
 	issues := []fixtureIssue{
 		{Key: "PAY-1", Summary: "First", IssueType: "Epic", Status: "To Do",
@@ -127,8 +126,6 @@ func TestSearchByKey(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	// Decoded fresh each time: unmarshalling into a reused map merges into it,
-	// which would hide exactly the field selection asserted below.
 	decodeIssues := func(w *httptest.ResponseRecorder) []jiraIssue {
 		t.Helper()
 		var got struct {

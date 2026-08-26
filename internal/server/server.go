@@ -53,9 +53,7 @@ type Server struct {
 	// edit by one user prompts other viewers to refetch. See events.go.
 	hub *hub
 
-	// recon owns every tracker request the schedule check makes, in one
-	// goroutine started by the caller. Nil when reconciliation is unconfigured,
-	// exactly as tracker is. See internal/recon.
+	// recon is nil when schedule checks are unconfigured.
 	recon *recon.Fetcher
 }
 
@@ -75,9 +73,7 @@ func WithTracker(t tracker.Client) Option {
 	return func(s *Server) { s.tracker = t }
 }
 
-// WithRecon enables the schedule check. The fetcher's goroutine is the caller's
-// to start and stop: it outlives any request, so its lifetime belongs to
-// whoever owns the process, not to the server's constructor.
+// WithRecon enables schedule-check endpoints.
 func WithRecon(f *recon.Fetcher) Option {
 	return func(s *Server) { s.recon = f }
 }
