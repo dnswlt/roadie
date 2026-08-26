@@ -275,7 +275,7 @@ func TestTrackerExtractorTestRoute(t *testing.T) {
 		t.Fatalf("output = %v", got.Output)
 	}
 	const periodSrc = "def get_issue_time_range(issue):\n" +
-		"    return {\"start_period\": \"PI2026-09\", \"end_period\": \"PI2026-09\"}\n"
+		"    return {\"startPeriod\": \"PI2026-09\", \"endPeriod\": \"PI2026-09\"}\n"
 	w = doWithServer(t, srv, http.MethodPost, path, trackerExtractorTestRequest{Source: periodSrc, Key: "PAY-1"})
 	got = decode[trackerExtractorTestResponse](t, w)
 	if w.Code != http.StatusOK || got.State != recon.StateOK || got.Start != "" || got.End != "" || got.StartPeriod != "PI2026-09" || got.EndPeriod != "PI2026-09" {
@@ -332,7 +332,7 @@ func TestTrackerExtractorTestWithoutTracker(t *testing.T) {
 }
 
 // The two routes are a thin layer over internal/recon: enqueue takes keys and
-// returns at once, poll answers from what has been established. Neither is
+// returns at once, status answers from what has been established. Neither is
 // allowed to be where the logic lives.
 func TestScheduleCheckRoutes(t *testing.T) {
 	ctx := context.Background()
@@ -354,14 +354,14 @@ func TestScheduleCheckRoutes(t *testing.T) {
 	srv := New(testStore, fstest.MapFS{}, WithRecon(fetcher))
 	base := "/api/roadmaps/" + itoa(rm.ID) + "/schedule-check"
 
-	// Poll before anything is enqueued: everything unchecked, nothing queued.
+	// No result is cached before anything is enqueued.
 	w := doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"pay-1", "PAY-1"}})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body)
 	}
 	got := decode[recon.Status](t, w)
 	// Repeats collapse, so one key is one row.
-	if len(got.Results) != 1 || got.Results[0].Key != "PAY-1" || got.Results[0].State != recon.StateUnchecked || got.Pending != 0 {
+	if len(got.Results) != 1 || got.Results[0].Key != "PAY-1" || got.Results[0].State != recon.StateUnchecked {
 		t.Fatalf("before enqueue: %+v", got)
 	}
 
@@ -369,8 +369,15 @@ func TestScheduleCheckRoutes(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("enqueue status = %d, body %s", w.Code, w.Body)
 	}
-	if queued := decode[map[string]int](t, w)["queued"]; queued != 1 {
-		t.Fatalf("queued = %d", queued)
+	enqueued := decode[map[string]int](t, w)
+	if enqueued["queued"] != 1 || enqueued["pending"] != 1 {
+		t.Fatalf("enqueue response = %v", enqueued)
+	}
+
+	w = doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"pay-1"}})
+	got = decode[recon.Status](t, w)
+	if got.Pending != 1 {
+		t.Fatalf("pending before run = %d, want 1", got.Pending)
 	}
 
 	// Run the one goroutine long enough to drain what was just enqueued.
@@ -392,9 +399,14 @@ func TestScheduleCheckRoutes(t *testing.T) {
 	}
 	cancel()
 	<-done
+	w = doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"pay-1"}})
+	got = decode[recon.Status](t, w)
 
 	if got.Results[0].State != recon.StateOK || got.Results[0].End != "2026-04-12" || got.Results[0].CheckedAt.IsZero() {
 		t.Fatalf("after the run: %+v", got.Results[0])
+	}
+	if got.Pending != 0 {
+		t.Fatalf("pending after run = %d, want 0", got.Pending)
 	}
 }
 

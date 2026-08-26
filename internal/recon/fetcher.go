@@ -25,18 +25,17 @@ const (
 type ScriptFunc func(ctx context.Context, roadmapID int64) (string, error)
 
 // Fetcher serializes schedule-check requests through one queue.
-//
-// A poll is a pure read of the cache. It must never be able to start a fetch,
-// hurry one, or reorder the queue.
 type Fetcher struct {
 	tracker   tracker.Client
 	script    ScriptFunc
 	cache     *cache
 	freshness time.Duration
 
-	mu    sync.Mutex
-	queue []queued
-	seen  map[queued]bool
+	mu              sync.Mutex
+	queue           []queued
+	seen            map[queued]bool
+	activeRoadmapID int64
+	activeKeys      int
 	// wake is a non-blocking notification that the queue is non-empty.
 	wake chan struct{}
 }
@@ -127,29 +126,45 @@ func (f *Fetcher) take() (int64, []string) {
 	for _, q := range f.queue {
 		if q.roadmapID == roadmapID && len(batch) < keysPerRun {
 			batch = append(batch, q.key)
-			delete(f.seen, q)
 			continue
 		}
 		kept = append(kept, q)
 	}
 	f.queue = kept
+	f.activeRoadmapID = roadmapID
+	f.activeKeys = len(batch)
 	return roadmapID, batch
 }
 
-// Pending reports how many of a roadmap's keys are still waiting.
+func (f *Fetcher) finish(roadmapID int64, batch []string) {
+	f.mu.Lock()
+	for _, key := range batch {
+		delete(f.seen, queued{roadmapID: roadmapID, key: key})
+	}
+	f.activeRoadmapID = 0
+	f.activeKeys = 0
+	f.mu.Unlock()
+}
+
+// Pending returns this roadmap's keys waiting in the queue or in the active
+// batch.
 func (f *Fetcher) Pending(roadmapID int64) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	n := 0
+	pending := 0
 	for _, q := range f.queue {
 		if q.roadmapID == roadmapID {
-			n++
+			pending++
 		}
 	}
-	return n
+	if f.activeRoadmapID == roadmapID {
+		pending += f.activeKeys
+	}
+	return pending
 }
 
 func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
+	defer f.finish(roadmapID, batch)
 	source, err := f.script(ctx, roadmapID)
 	if err != nil {
 		log.Printf("recon: no script for roadmap %d, dropping %d keys: %v", roadmapID, len(batch), err)
@@ -170,13 +185,13 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 	}
 	script, err := extractor.Compile(source)
 	if err != nil {
-		f.record(fingerprint, due, err.Error())
+		f.record(fingerprint, due, ErrorScript, err.Error())
 		return
 	}
 
 	issues, err := f.tracker.FetchIssues(ctx, due, script.Fields())
 	if err != nil {
-		f.record(fingerprint, due, trackerMessage(roadmapID, len(due), err))
+		f.record(fingerprint, due, ErrorTracker, trackerMessage(roadmapID, len(due), err))
 		return
 	}
 
@@ -198,7 +213,7 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 		res, err := script.TimeRange(issue.Raw)
 		switch {
 		case err != nil:
-			row.State, row.Error = StateError, err.Error()
+			row.State, row.ErrorKind, row.Error = StateError, ErrorScript, err.Error()
 		case res.Skip:
 			row.State = StateSkipped
 		default:
@@ -213,10 +228,17 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 }
 
 // record stores the same error result for every key in a batch.
-func (f *Fetcher) record(fingerprint scriptFingerprint, keys []string, message string) {
+func (f *Fetcher) record(
+	fingerprint scriptFingerprint,
+	keys []string,
+	kind string,
+	message string,
+) {
 	results := make([]Result, 0, len(keys))
 	for _, key := range keys {
-		results = append(results, Result{Key: key, State: StateError, Error: message})
+		results = append(results, Result{
+			Key: key, State: StateError, ErrorKind: kind, Error: message,
+		})
 	}
 	f.cache.store(fingerprint, results)
 }
@@ -234,9 +256,6 @@ func trackerMessage(roadmapID int64, keys int, err error) string {
 // Status answers for exactly the keys asked about. Keys with nothing
 // established read as StateUnchecked, whether they are queued, still being
 // fetched, or were never asked for at all.
-//
-// This never touches the queue except to count it: polling has no influence on
-// the fetcher.
 func (f *Fetcher) Status(ctx context.Context, roadmapID int64, keys []string) (Status, error) {
 	source, err := f.script(ctx, roadmapID)
 	if err != nil {

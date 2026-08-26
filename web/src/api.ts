@@ -20,6 +20,7 @@ import type {
   TrackerExtractorTest,
   TrackerPage,
   TrackerQuery,
+  TrackerScheduleStatus,
   TrashedRoadmap,
   Visibility,
 } from "./types";
@@ -178,6 +179,18 @@ export const api = {
       "POST",
       `/api/roadmaps/${roadmapId}/tracker-extractor/test`,
       { source, key },
+    ),
+  enqueueScheduleCheck: (roadmapId: number, keys: string[]) =>
+    req<{ queued: number; pending: number }>(
+      "POST",
+      `/api/roadmaps/${roadmapId}/schedule-check`,
+      { keys },
+    ),
+  getScheduleCheckStatus: (roadmapId: number, keys: string[]) =>
+    req<TrackerScheduleStatus>(
+      "POST",
+      `/api/roadmaps/${roadmapId}/schedule-check/status`,
+      { keys },
     ),
 
   listContributors: (roadmapId: number) =>

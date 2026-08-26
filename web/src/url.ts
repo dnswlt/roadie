@@ -1,12 +1,13 @@
 // URL <-> view mapping.
 //
 // The address bar is the shareable link. It carries the open roadmap, the view
-// it is being read in, and the one selected item or milestone — continuously,
-// so copying the location bar is all sharing takes. Zoom and scroll position
-// stay out: `pxPerDay` is a pixel scale, which frames a different span of time
-// on someone else's screen, and neither is worth the churn of writing on every
-// wheel tick. Filter, hidden lanes and folds stay out too — the recipient reads
-// the roadmap through their own settings.
+// it is being read in, the active tab within that view, and the one selected
+// item or milestone — continuously, so copying the location bar is all sharing
+// takes.
+// Zoom and scroll position stay out: `pxPerDay` is a pixel scale, which frames
+// a different span of time on someone else's screen, and neither is worth the
+// churn of writing on every wheel tick. Filter, hidden lanes and folds stay out
+// too — the recipient reads the roadmap through their own settings.
 //
 // Selection is a query param rather than a fragment. The app reads the URL once,
 // at boot, and editing a fragment by hand does not reload the page: `#item-43`
@@ -17,7 +18,9 @@
 // All writes use replaceState, so navigating inside the app never grows the
 // browser history.
 
-export type UrlView = "timeline" | "wbs" | "recon";
+import type { NavigationState, ViewMode, ViewTab } from "./state";
+
+export type UrlView = ViewMode;
 
 export interface UrlSelection {
   kind: "item" | "milestone";
@@ -27,14 +30,17 @@ export interface UrlSelection {
 export interface UrlTarget {
   roadmapId: number | null;
   view: UrlView | null;
+  tab: ViewTab | null;
   selection: UrlSelection | null;
 }
 
-// The state the address bar mirrors. `view` is always concrete; the writer is
-// what decides that the default is expressed by leaving the param out.
+// The state the address bar mirrors. `view` is always concrete; `tab` is the
+// active view's tab, or null when that view has no tabs. The writer expresses
+// defaults by leaving their params out.
 export interface UrlState {
   roadmap: { id: number; name: string } | null;
   view: UrlView;
+  tab: ViewTab | null;
   selection: UrlSelection | null;
 }
 
@@ -48,6 +54,7 @@ function posInt(raw: string | null): number | null {
 export function parseUrl(search: string): UrlTarget {
   const params = new URLSearchParams(search);
   const view = params.get("view");
+  const tab = params.get("tab");
   const item = posInt(params.get("item"));
   const milestone = posInt(params.get("milestone"));
   // Only a hand-edited URL can name both kinds; item wins, so every URL maps to
@@ -61,6 +68,10 @@ export function parseUrl(search: string): UrlTarget {
   return {
     roadmapId: posInt(params.get("roadmap")),
     view: view === "timeline" || view === "wbs" || view === "recon" ? view : null,
+    tab:
+      view === "recon" && (tab === "issues" || tab === "roadie" || tab === "schedule")
+        ? tab
+        : null,
     selection,
   };
 }
@@ -100,17 +111,28 @@ export function writeParams(params: URLSearchParams, s: UrlState): void {
   // stays short, and only a deliberately different view says so.
   if (s.view === "timeline") params.delete("view");
   else params.set("view", s.view);
+  if (s.view === "recon" && s.tab !== null && s.tab !== "issues") params.set("tab", s.tab);
+  else params.delete("tab");
   params.delete("item");
   params.delete("milestone");
   if (s.selection) params.set(s.selection.kind, String(s.selection.id));
 }
 
-// syncUrl reflects the current view state in the address bar. The single writer:
-// every path that changes what the URL should say goes through here, so the two
-// can never drift apart in the way two writers would.
-export function syncUrl(s: UrlState): void {
+interface UrlStateSource {
+  current: UrlState["roadmap"];
+  navigation: NavigationState;
+  singleSelection(): UrlSelection | null;
+}
+
+// syncUrl reflects the current navigation state in the address bar.
+export function syncUrl(source: UrlStateSource): void {
   const url = new URL(window.location.href);
-  writeParams(url.searchParams, s);
+  writeParams(url.searchParams, {
+    roadmap: source.current,
+    view: source.navigation.view,
+    tab: source.navigation.view === "recon" ? source.navigation.tabs.recon : null,
+    selection: source.singleSelection(),
+  });
   url.hash = ""; // fragments are not part of the mapping (see above)
   if (url.href !== window.location.href) window.history.replaceState(null, "", url.href);
 }

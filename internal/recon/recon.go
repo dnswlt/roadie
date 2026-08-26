@@ -18,12 +18,17 @@ const (
 	StateError = "error"
 	// StateUnchecked means no result is cached for the current script.
 	StateUnchecked = "unchecked"
+
+	// ErrorScript means the saved extractor could not compile or execute.
+	ErrorScript = "script"
+	// ErrorTracker means fetching issue data failed before extraction.
+	ErrorTracker = "tracker"
 )
 
 // Result is one issue key's answer. Range fields and Label are set only in
-// StateOK; Error only in StateError. A period field supplies its corresponding
-// boundary instead of Start or End; the frontend resolves it against the
-// roadmap schedule it already holds.
+// StateOK; Error and ErrorKind only in StateError. A period field supplies its
+// corresponding boundary instead of Start or End; the frontend resolves it
+// against the roadmap schedule it already holds.
 type Result struct {
 	Key         string         `json:"key"`
 	State       string         `json:"state"`
@@ -34,12 +39,13 @@ type Result struct {
 	EndPeriod   string         `json:"endPeriod,omitempty"`
 	Label       string         `json:"label,omitempty"`
 	Error       string         `json:"error,omitempty"`
+	ErrorKind   string         `json:"errorKind,omitempty"`
 	// CheckedAt is when this result was stored. It is zero for unchecked keys.
 	CheckedAt time.Time `json:"checkedAt,omitzero"`
 }
 
-// Status is what a poll returns: an answer for every key asked about, and how
-// many of this roadmap's keys are still waiting on the fetcher.
+// Status contains the cached answer for every requested key and the roadmap's
+// refresh work still queued or running.
 type Status struct {
 	Results []Result `json:"results"`
 	Pending int      `json:"pending"`

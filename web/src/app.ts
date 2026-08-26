@@ -70,26 +70,14 @@ function snapActive(): boolean {
   return true;
 }
 
-// syncUrlFromState keeps the address bar current, so copying the location bar
-// is all sharing takes. Called from both render scopes: a view switch or a
-// roadmap change is a full notify, a click is a selection notify, and both
-// change what the link should say.
-function syncUrlFromState(): void {
-  syncUrl({
-    roadmap: state.current,
-    view: state.viewMode,
-    selection: state.singleSelection(),
-  });
-}
-
 function render(): void {
-  syncUrlFromState();
+  syncUrl(state);
   renderTopbar();
   // The version diff overrides the chart views while it is on screen; picking
-  // any view exits it (state.setViewMode), so viewMode never fights it.
+  // any view exits it (state.setViewMode), so navigation.view never fights it.
   if (state.preview?.compare) renderDiff(chart);
-  else if (state.viewMode === "recon") renderRecon(chart);
-  else if (state.viewMode === "wbs") renderWbs(chart);
+  else if (state.navigation.view === "recon") renderRecon(chart);
+  else if (state.navigation.view === "wbs") renderWbs(chart);
   else renderChart(chart);
   renderPanel(panel);
   renderHistory(historyEl, snapshotBanner);
@@ -189,18 +177,21 @@ function renderTopbar(): void {
   // outright. The Recon button is absent unless the deployment has a tracker
   // connection. Snap and zoom act on the time axis, which the other views
   // project away, so they hide rather than sit around disabled.
-  const recon = state.viewMode === "recon";
+  const recon = state.navigation.view === "recon";
   // While the version diff is on screen no view button is lit (they all lead
   // away from it), and the time-axis controls hide like in the other
   // non-timeline projections.
   const comparing = state.preview?.compare !== undefined;
-  $("view-timeline").classList.toggle("active", !comparing && state.viewMode === "timeline");
-  $("view-wbs").classList.toggle("active", !comparing && state.viewMode === "wbs");
+  $("view-timeline").classList.toggle(
+    "active",
+    !comparing && state.navigation.view === "timeline",
+  );
+  $("view-wbs").classList.toggle("active", !comparing && state.navigation.view === "wbs");
   const reconBtn = $("view-recon") as HTMLButtonElement;
   reconBtn.classList.toggle("hidden", !state.trackerConfigured);
   reconBtn.classList.toggle("active", !comparing && recon);
   reconBtn.disabled = !state.current;
-  const timeline = !comparing && state.viewMode === "timeline";
+  const timeline = !comparing && state.navigation.view === "timeline";
   $("snap-wrap").classList.toggle("hidden", !timeline);
   $("zoom-controls").classList.toggle("hidden", !timeline);
   // Recon shows tracker results, not the chart: find, lane visibility, filter
@@ -221,7 +212,7 @@ function renderDependencyToggle(): void {
   const active = timelineDependenciesActive();
   btn.classList.toggle(
     "hidden",
-    state.viewMode !== "timeline" || state.preview?.compare !== undefined,
+    state.navigation.view !== "timeline" || state.preview?.compare !== undefined,
   );
   btn.classList.toggle("active", active);
   btn.setAttribute("aria-pressed", String(active));
@@ -567,7 +558,7 @@ function wireTopbar(): void {
   chart.addEventListener(
     "wheel",
     (e) => {
-      if (state.viewMode !== "timeline") return; // zoom is a time-axis concept
+      if (state.navigation.view !== "timeline") return; // zoom is a time-axis concept
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       setZoom(state.pxPerDay * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
@@ -1055,14 +1046,14 @@ async function boot(): Promise<void> {
   // guards itself against rebuilding under a focused field).
   state.subscribeSelection(() => {
     if (state.preview?.compare) return; // the diff view has no selection
-    if (state.viewMode === "wbs") projectWbsSelection(chart);
-    else if (state.viewMode === "timeline") projectSelection(chart);
+    if (state.navigation.view === "wbs") projectWbsSelection(chart);
+    else if (state.navigation.view === "timeline") projectSelection(chart);
     // Recon's lists mark the selected item too, but have no projection of
     // their own: they rebuild from state, preserving scroll and query caret.
     else renderRecon(chart);
     renderPanel(panel);
     renderDependencyToggle();
-    syncUrlFromState();
+    syncUrl(state);
   });
   injectIcons();
   wireTopbar();
@@ -1112,7 +1103,10 @@ async function boot(): Promise<void> {
   const storedView = localStorage.getItem("roadie.view");
   const wantView: UrlView =
     target.view ?? (storedView === "wbs" || storedView === "recon" ? storedView : "timeline");
-  state.viewMode = wantView === "recon" && !state.trackerConfigured ? "timeline" : wantView;
+  state.navigation.view = wantView === "recon" && !state.trackerConfigured
+    ? "timeline"
+    : wantView;
+  state.navigation.tabs.recon = target.tab ?? "issues";
 
   await actions.loadRoadmaps();
 

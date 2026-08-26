@@ -39,11 +39,22 @@ export interface MilestoneLocation {
 export type { Filter } from "./filter";
 
 // Which projection is on screen: the timeline chart (render.ts), the WBS
-// outline (wbs.ts), or the Jira Recon view (recon.ts). The chart modes render
-// the roadmap from this state; only app.ts branches on viewMode. Recon holds
-// its tracker data in its own module — none of it is roadmap content.
+// outline (wbs.ts), or the Jira Recon view (recon.ts). Recon holds its tracker
+// data in its own module — none of it is roadmap content.
 export type ChartMode = "timeline" | "wbs";
 export type ViewMode = ChartMode | "recon";
+export type ReconTab = "issues" | "roadie" | "schedule";
+
+export interface TabsByView {
+  recon: ReconTab;
+}
+
+export type ViewTab = TabsByView[keyof TabsByView];
+
+export interface NavigationState {
+  view: ViewMode;
+  tabs: TabsByView;
+}
 
 // AppState is the single source of truth on the client. All views render
 // from it; mutations go through actions.ts, which keeps it in sync with
@@ -94,13 +105,13 @@ class AppState {
   // Calendar grid a dragged/resized edge snaps to (in addition to always-on
   // item-edge snapping). A global view preference, persisted in localStorage.
   snapMode: SnapMode = "week";
-  // Timeline, WBS outline, or Jira Recon. The chart modes are a global view
-  // preference like snapMode — a way of working, not a property of any one
-  // roadmap — persisted in localStorage (read at boot in app.ts) and toggled
-  // by "v" and the topbar button. Recon is a task you visit, not a way of
-  // working, so it is never persisted: a reload lands on the chart. It is
-  // entered by "r" or its own button, never by the chart cycle.
-  viewMode: ViewMode = "timeline";
+  // Remember each tabbed view's last tab, so leaving the view and returning to
+  // it does not reset the page. A new tabbed view extends TabsByView instead of
+  // adding another page-specific field to AppState.
+  navigation: NavigationState = {
+    view: "timeline",
+    tabs: { recon: "issues" },
+  };
   // The chart view to return to when leaving Recon.
   private lastChartMode: ChartMode = "timeline";
   panelWidth = DEFAULT_PANEL_WIDTH;
@@ -396,10 +407,10 @@ class AppState {
     this.notify();
   }
 
-  // The chart view "on deck": viewMode itself while a chart is on screen,
+  // The chart view "on deck": the current view while a chart is on screen,
   // otherwise the one Recon was entered from.
   get chartMode(): ChartMode {
-    return this.viewMode === "recon" ? this.lastChartMode : this.viewMode;
+    return this.navigation.view === "recon" ? this.lastChartMode : this.navigation.view;
   }
 
   // Whether Recon can be shown at all: the server has a tracker configured and
@@ -422,20 +433,20 @@ class AppState {
   setViewMode(mode: ViewMode): void {
     // Picking a view while the diff is on screen means "show me that view":
     // the comparison closes rather than silently overriding the choice
-    // (render() draws the diff whenever `compare` is set, whatever viewMode
+    // (render() draws the diff whenever `compare` is set, whatever navigation.view
     // says). Same-mode calls exit too — pressing the active view's button is
     // that same request.
     const comparing = this.preview?.compare !== undefined;
     if (comparing) delete this.preview!.compare;
-    if (mode === this.viewMode) {
+    if (mode === this.navigation.view) {
       if (comparing) this.notify();
       return;
     }
-    const from = this.viewMode;
-    this.viewMode = mode;
+    const from = this.navigation.view;
+    this.navigation.view = mode;
     if (mode === "recon") {
       // Captured on the way in rather than assumed to have been recorded
-      // earlier: boot restores a persisted view by assigning viewMode directly.
+      // earlier: boot restores a persisted view by assigning navigation.view directly.
       // `from` cannot be "recon" — mode is, and the two differ.
       this.lastChartMode = from as ChartMode;
     } else {
@@ -454,7 +465,9 @@ class AppState {
   // enters it.
   toggleChartView(): void {
     this.setViewMode(
-      this.viewMode === "recon" ? this.chartMode : this.viewMode === "wbs" ? "timeline" : "wbs",
+      this.navigation.view === "recon"
+        ? this.chartMode
+        : this.navigation.view === "wbs" ? "timeline" : "wbs",
     );
   }
 
@@ -462,7 +475,7 @@ class AppState {
   // out to the chart view it was entered from. Leaving works even where Recon
   // could not be entered, so the shortcut can never strand the user there.
   toggleReconView(): void {
-    if (this.viewMode === "recon") this.setViewMode(this.chartMode);
+    if (this.navigation.view === "recon") this.setViewMode(this.chartMode);
     else if (this.canShowRecon) this.setViewMode("recon");
   }
 
@@ -593,7 +606,7 @@ class AppState {
   // resolved while it was off silently discards a now-useless memory instead
   // of opening an empty view.
   toggleRecentFilter(): void {
-    if (!this.current || this.viewMode === "recon") return;
+    if (!this.current || this.navigation.view === "recon") return;
     if (this.filter !== null) {
       this.filter = null;
       this.notify();

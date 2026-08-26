@@ -333,7 +333,10 @@ func (s *Server) enqueueScheduleCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	queued := s.recon.Enqueue(id, distinctKeys(req.Keys))
-	writeJSON(w, http.StatusAccepted, map[string]int{"queued": queued})
+	writeJSON(w, http.StatusAccepted, map[string]int{
+		"queued":  queued,
+		"pending": s.recon.Pending(id),
+	})
 }
 
 // scheduleCheckStatus returns cached results without enqueuing work.

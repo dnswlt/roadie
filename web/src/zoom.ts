@@ -53,7 +53,7 @@ export function setZoom(pxPerDay: number): void {
 // WBS has no time axis, so its toolbar hides zoom and the shortcut that
 // reaches this in that view is deliberately a no-op.
 export function zoomToFit(): void {
-  if (state.viewMode !== "timeline") return;
+  if (state.navigation.view !== "timeline") return;
   const chart = chartEl();
   if (!chart) return;
   // Fit what is drawn, not what exists: an active filter narrows the span the

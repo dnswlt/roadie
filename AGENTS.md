@@ -211,12 +211,14 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   it reads as a sandbox without being one; saving a script is a trusted action.
 - **One goroutine makes every schedule-check request to the tracker**
   (`internal/recon`). That is the rate limiting: nothing runs concurrently, so
-  there is no bucket or budget. Polling only reads its cache and must never be
-  able to cause, hurry or reorder a fetch.
+  there is no bucket or budget. Status reads only return cached answers and
+  must never cause, hurry or reorder a fetch. Reloading Jira and rereading the
+  result list are separate, explicit actions; the client does not poll.
 - **No read-only sharing.** Public means writable; visibility is not a permission
   system.
-- **The address bar is the shareable link**: roadmap, view and one selection,
-  never zoom, scroll, filter or folds. Selection is a query param, not a fragment.
+- **The address bar is the shareable link**: roadmap, view (including its active
+  tab) and one selection, never zoom, scroll, filter or folds. Selection is
+  a query param, not a fragment.
 - **Version history is "go back", not undo.**
 - **The version diff is computed client-side** (`diff.ts`) from two RoadmapFull
   payloads — no diff endpoint, no second wire format. Its scope is exactly what

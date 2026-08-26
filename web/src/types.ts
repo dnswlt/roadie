@@ -189,6 +189,44 @@ export interface TrackerExtractor {
 
 // The states one checked issue can be in, as internal/recon names them.
 export type TrackerScheduleState = "ok" | "skipped" | "notFound" | "error";
+export type TrackerScheduleErrorKind = "script" | "tracker";
+
+// One cached schedule-check answer. Period references remain unresolved here:
+// the frontend owns the roadmap schedule and the item/issue comparison.
+interface TrackerScheduleResultBase {
+  key: string;
+  issue?: TrackerIssue;
+  checkedAt?: string;
+}
+
+interface TrackerScheduleOKResult extends TrackerScheduleResultBase {
+  state: "ok";
+  start?: string;
+  end?: string;
+  startPeriod?: string;
+  endPeriod?: string;
+  label?: string;
+}
+
+interface TrackerScheduleErrorResult extends TrackerScheduleResultBase {
+  state: "error";
+  error: string;
+  errorKind: TrackerScheduleErrorKind;
+}
+
+interface TrackerScheduleEmptyResult extends TrackerScheduleResultBase {
+  state: "skipped" | "notFound" | "unchecked";
+}
+
+export type TrackerScheduleResult =
+  | TrackerScheduleOKResult
+  | TrackerScheduleErrorResult
+  | TrackerScheduleEmptyResult;
+
+export interface TrackerScheduleStatus {
+  results: TrackerScheduleResult[];
+  pending: number;
+}
 
 // One issue put through one script, the answer to the editor's Test.
 //

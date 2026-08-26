@@ -28,6 +28,22 @@ export interface UnreferencedRoadieItem {
   parentTitle: string | null;
 }
 
+export interface ScheduleCheckItem {
+  itemId: number;
+  title: string;
+  laneName: string;
+  laneColor: string;
+  parentTitle: string | null;
+  startDate: string;
+  endDate: string;
+  issueKeys: string[];
+}
+
+export interface RoadieJiraProjection {
+  unreferencedItems: UnreferencedRoadieItem[];
+  scheduleItems: ScheduleCheckItem[];
+}
+
 // Jira's default issue-key grammar. The key is normalized separately from the
 // rest of the URL because Jira keys are case-insensitive while a deployment's
 // context path need not be.
@@ -57,48 +73,58 @@ function browsePrefix(trackerUrl: string): string {
   return `${base.origin}${base.pathname.replace(/\/+$/, "")}/browse/`;
 }
 
-function hasJiraIssueReference(description: string, prefix: string): boolean {
-  return extractLinks(description).some((link) => issueIdentity(link.url)?.startsWith(prefix));
+function jiraIssueKeys(description: string, prefix: string): string[] {
+  const keys = new Set<string>();
+  for (const link of extractLinks(description)) {
+    const identity = issueIdentity(link.url);
+    if (identity?.startsWith(prefix)) keys.add(identity.slice(prefix.length));
+  }
+  return [...keys];
 }
 
-// A flat projection in the roadmap's own order: lanes, then each top-level
-// item immediately followed by its children. Parent and child references are
-// checked independently, and milestones never enter the traversal.
-//
-// trackerUrl is the configured deployment (state.me.trackerUrl). An item whose
-// only issue link points at some other Jira is unreferenced *here*, which is
-// the answer this list exists to give.
-export function roadieItemsWithoutJiraReference(
+// projectRoadieJiraLinks answers both Roadie-side questions in one traversal.
+// It follows roadmap order and de-duplicates repeated spellings of an issue
+// link within one item; the same issue under another item remains another pair.
+// Milestones never enter the traversal.
+export function projectRoadieJiraLinks(
   roadmap: RoadmapFull | null,
   trackerUrl: string,
-): UnreferencedRoadieItem[] {
-  if (!roadmap) return [];
+): RoadieJiraProjection {
+  const projection: RoadieJiraProjection = {
+    unreferencedItems: [],
+    scheduleItems: [],
+  };
+  if (!roadmap) return projection;
   const prefix = browsePrefix(trackerUrl);
-  const rows: UnreferencedRoadieItem[] = [];
   for (const lane of roadmap.lanes) {
     for (const top of lane.items) {
-      if (!hasJiraIssueReference(top.description, prefix)) {
-        rows.push({
-          itemId: top.id,
-          title: top.title,
-          laneName: lane.name,
-          laneColor: lane.color,
-          parentTitle: null,
-        });
-      }
-      for (const child of top.children) {
-        if (hasJiraIssueReference(child.description, prefix)) continue;
-        rows.push({
-          itemId: child.id,
-          title: child.title,
-          laneName: lane.name,
-          laneColor: lane.color,
-          parentTitle: top.title,
-        });
+      for (const item of [top, ...top.children]) {
+        const issueKeys = jiraIssueKeys(item.description, prefix);
+        const parentTitle = item.parentId === null ? null : top.title;
+        if (issueKeys.length === 0) {
+          projection.unreferencedItems.push({
+            itemId: item.id,
+            title: item.title,
+            laneName: lane.name,
+            laneColor: lane.color,
+            parentTitle,
+          });
+        } else {
+          projection.scheduleItems.push({
+            itemId: item.id,
+            title: item.title,
+            laneName: lane.name,
+            laneColor: lane.color,
+            parentTitle,
+            startDate: item.startDate,
+            endDate: item.endDate,
+            issueKeys,
+          });
+        }
       }
     }
   }
-  return rows;
+  return projection;
 }
 
 // diffTrackerIssues preserves Jira result order and roadmap order. Several

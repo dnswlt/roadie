@@ -66,7 +66,7 @@ const dueDateScript = "JIRA_FIELDS = [\"duedate\"]\n\n" +
 	"    return {\"end\": due, \"label\": \"Due date\"} if due else None\n"
 
 const periodScript = "def get_issue_time_range(issue):\n" +
-	"    return {\"start_period\": \"PI2026-09\", \"end_period\": \"PI2026-09\"}\n"
+	"    return {\"startPeriod\": \"PI2026-09\", \"endPeriod\": \"PI2026-09\"}\n"
 
 func script(src string) ScriptFunc {
 	return func(context.Context, int64) (string, error) { return src, nil }
@@ -81,6 +81,12 @@ func drain(t *testing.T, f *Fetcher) {
 		}
 		f.run(context.Background(), roadmapID, batch)
 	}
+}
+
+func queueLen(f *Fetcher) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.queue)
 }
 
 func statusOf(t *testing.T, f *Fetcher, keys ...string) map[string]Result {
@@ -140,8 +146,7 @@ func TestFetcherReturnsPeriodReferencesUnresolved(t *testing.T) {
 	}
 }
 
-// The central property: a poll is a pure read. However often a client asks,
-// nothing reaches the tracker.
+// Reading cached status never reaches the tracker or enqueues work.
 func TestStatusNeverFetches(t *testing.T) {
 	stub := &stubTracker{issues: map[string]map[string]any{}}
 	f := New(stub, script(dueDateScript), 0)
@@ -158,16 +163,15 @@ func TestStatusNeverFetches(t *testing.T) {
 		}
 	}
 	if stub.callCount() != 0 {
-		t.Fatalf("polling caused %d tracker calls", stub.callCount())
+		t.Fatalf("status reads caused %d tracker calls", stub.callCount())
 	}
-	// And nothing was queued as a side effect of asking.
-	if f.Pending(1) != 0 {
-		t.Fatalf("polling queued %d keys", f.Pending(1))
+	if got := queueLen(f); got != 0 {
+		t.Fatalf("status reads queued %d keys", got)
 	}
 }
 
-// Unchecked is a statement about Roadie, not about the issue: it is what a poll
-// says while the work is still queued.
+// Unchecked is a statement about Roadie, not about the issue: no cached result
+// is available yet.
 func TestStatusReportsQueuedKeysAsUnchecked(t *testing.T) {
 	stub := &stubTracker{issues: map[string]map[string]any{"PAY-1": {"duedate": "2026-04-12"}}}
 	f := New(stub, script(dueDateScript), 0)
@@ -177,8 +181,11 @@ func TestStatusReportsQueuedKeysAsUnchecked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Results[0].State != StateUnchecked || status.Pending != 1 {
-		t.Fatalf("before the run: %+v pending=%d", status.Results[0], status.Pending)
+	if status.Results[0].State != StateUnchecked {
+		t.Fatalf("before the run: %+v", status.Results[0])
+	}
+	if status.Pending != 1 {
+		t.Fatalf("pending before the run = %d, want 1", status.Pending)
 	}
 
 	drain(t, f)
@@ -187,8 +194,11 @@ func TestStatusReportsQueuedKeysAsUnchecked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Results[0].State != StateOK || status.Pending != 0 {
-		t.Fatalf("after the run: %+v pending=%d", status.Results[0], status.Pending)
+	if status.Pending != 0 {
+		t.Fatalf("pending after the run = %d, want 0", status.Pending)
+	}
+	if status.Results[0].State != StateOK {
+		t.Fatalf("after the run: %+v", status.Results[0])
 	}
 }
 
@@ -269,8 +279,8 @@ func TestScriptEditIsNotServedFromTheOldCache(t *testing.T) {
 	}
 }
 
-// A batch that cannot be fetched must still answer, or its keys poll as
-// unchecked forever with nothing left to produce them. What it answers is the
+// A batch that cannot be fetched must still answer, or its keys remain
+// unchecked with nothing left to produce them. What it answers is the
 // deployment's problem stated generically — see TestOperatorFailuresAreNotExposed.
 func TestFetchFailureIsRecordedPerKey(t *testing.T) {
 	stub := &stubTracker{err: errors.New("jira is down")}
@@ -283,7 +293,7 @@ func TestFetchFailureIsRecordedPerKey(t *testing.T) {
 		t.Fatalf("results = %+v", answered)
 	}
 	for key, got := range answered {
-		if got.State != StateError || got.Error == "" {
+		if got.State != StateError || got.ErrorKind != ErrorTracker || got.Error == "" {
 			t.Fatalf("%s = %+v", key, got)
 		}
 		if strings.Contains(got.Error, "jira is down") {
@@ -303,7 +313,7 @@ func TestCompileFailureIsRecordedPerKey(t *testing.T) {
 	drain(t, f)
 
 	got := statusOf(t, f, "PAY-1")["PAY-1"]
-	if got.State != StateError {
+	if got.State != StateError || got.ErrorKind != ErrorScript {
 		t.Fatalf("PAY-1 = %+v", got)
 	}
 	now = now.Add(30 * time.Second)
@@ -328,7 +338,8 @@ func TestScriptErrorIsPerIssue(t *testing.T) {
 	drain(t, f)
 
 	got := statusOf(t, f, "PAY-1", "PAY-2")
-	if got["PAY-1"].State != StateOK || got["PAY-2"].State != StateError {
+	if got["PAY-1"].State != StateOK ||
+		got["PAY-2"].State != StateError || got["PAY-2"].ErrorKind != ErrorScript {
 		t.Fatalf("results = %+v", got)
 	}
 }
@@ -343,8 +354,43 @@ func TestEnqueueDeduplicates(t *testing.T) {
 	if n := f.Enqueue(1, []string{"PAY-1"}); n != 1 {
 		t.Fatalf("second enqueue covered %d keys", n)
 	}
-	if f.Pending(1) != 1 {
-		t.Fatalf("pending = %d, want the repeats collapsed", f.Pending(1))
+	if got := queueLen(f); got != 1 {
+		t.Fatalf("queued = %d, want the repeats collapsed", got)
+	}
+}
+
+func TestPendingCountsQueuedAndActiveKeysByRoadmap(t *testing.T) {
+	f := New(&stubTracker{}, script(dueDateScript), 0)
+	f.Enqueue(1, []string{"A-1", "A-2"})
+	f.Enqueue(2, []string{"B-1"})
+
+	if got := f.Pending(1); got != 2 {
+		t.Fatalf("roadmap 1 pending = %d, want 2", got)
+	}
+	if got := f.Pending(2); got != 1 {
+		t.Fatalf("roadmap 2 pending = %d, want 1", got)
+	}
+
+	roadmapID, batch := f.take()
+	if roadmapID != 1 || len(batch) != 2 {
+		t.Fatalf("active batch = roadmap %d, %v", roadmapID, batch)
+	}
+	if got := f.Pending(1); got != 2 {
+		t.Fatalf("active roadmap pending = %d, want 2", got)
+	}
+	if got := f.Enqueue(1, []string{"A-1"}); got != 1 {
+		t.Fatalf("active key covered = %d, want 1", got)
+	}
+	if got := f.Pending(1); got != 2 {
+		t.Fatalf("re-enqueued active key changed pending to %d", got)
+	}
+
+	f.finish(roadmapID, batch)
+	if got := f.Pending(1); got != 0 {
+		t.Fatalf("finished roadmap pending = %d, want 0", got)
+	}
+	if got := f.Pending(2); got != 1 {
+		t.Fatalf("other roadmap pending = %d, want 1", got)
 	}
 }
 
@@ -360,8 +406,8 @@ func TestEnqueueIsBounded(t *testing.T) {
 	if n := f.Enqueue(1, keys); n != maxQueued {
 		t.Fatalf("accepted %d, want the queue bound of %d", n, maxQueued)
 	}
-	if f.Pending(1) != maxQueued {
-		t.Fatalf("pending = %d", f.Pending(1))
+	if got := queueLen(f); got != maxQueued {
+		t.Fatalf("queued = %d", got)
 	}
 }
 
@@ -409,28 +455,35 @@ func TestConcurrentEnqueueLosesNothing(t *testing.T) {
 	}
 	wg.Wait()
 
+	keys := make([]string, 200)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("PAY-%d", i+1)
+	}
 	deadline := time.After(10 * time.Second)
 	for {
-		status, err := f.Status(context.Background(), 1, []string{"PAY-200"})
+		status, err := f.Status(context.Background(), 1, keys)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if status.Pending == 0 && status.Results[0].State != StateUnchecked {
+		complete := true
+		for _, result := range status.Results {
+			if result.State == StateUnchecked {
+				complete = false
+				break
+			}
+		}
+		if complete {
 			break
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("keys stranded: pending=%d", status.Pending)
+			t.Fatal("keys stranded")
 		case <-time.After(2 * time.Millisecond):
 		}
 	}
 	cancel()
 	<-done
 
-	keys := make([]string, 200)
-	for i := range keys {
-		keys[i] = fmt.Sprintf("PAY-%d", i+1)
-	}
 	for key, got := range statusOf(t, f, keys...) {
 		if got.State != StateOK {
 			t.Fatalf("%s never got an answer: %+v", key, got)
@@ -535,7 +588,7 @@ func TestOperatorFailuresAreNotExposed(t *testing.T) {
 	drain(t, f)
 
 	got := statusOf(t, f, "PAY-1")["PAY-1"]
-	if got.State != StateError {
+	if got.State != StateError || got.ErrorKind != ErrorTracker {
 		t.Fatalf("PAY-1 = %+v", got)
 	}
 	if strings.Contains(got.Error, "nginx") || strings.Contains(got.Error, "10.0.0.7") {

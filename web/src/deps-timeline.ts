@@ -34,7 +34,7 @@ export function timelineDependenciesActive(): boolean {
 }
 
 export function toggleTimelineDependencies(): void {
-  if (state.viewMode !== "timeline") return;
+  if (state.navigation.view !== "timeline") return;
   active = !active;
   state.notifySelection();
 }

@@ -73,7 +73,7 @@ export function openFind(): void {
   // affordance to hide: without this it would clear #find-pop's `hidden` while
   // the wrap is display:none, leaving the popup already open on the next chart
   // view (a click would have closed it, a keystroke does not).
-  if (state.viewMode === "recon") return;
+  if (state.navigation.view === "recon") return;
   const ui = shell();
   $pop().classList.remove("hidden");
   // Registering is also what closes everything else — including popovers

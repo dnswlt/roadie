@@ -468,24 +468,33 @@ test("bulk parent folding toggles every parent and deselects hidden children", (
 
 // "v" from the reconciliation view returns to the chart view last shown. The
 // case that catches a stale lastChartMode is the one boot produces: app.ts
-// restores a persisted WBS by assigning viewMode directly, so nothing but
+// restores a persisted WBS by assigning navigation.view directly, so nothing but
 // setViewMode can have recorded which chart view is behind Recon.
 test("v returns to the chart view boot restored, not the default", () => {
-  state.viewMode = "wbs"; // exactly what boot does for a persisted WBS
+  state.navigation.view = "wbs"; // exactly what boot does for a persisted WBS
   state.setViewMode("recon");
   state.toggleChartView();
-  assert.equal(state.viewMode, "wbs");
+  assert.equal(state.navigation.view, "wbs");
 });
 
 test("v alternates the chart views, and never lands on recon", () => {
   state.setViewMode("timeline");
   state.toggleChartView();
-  assert.equal(state.viewMode, "wbs");
+  assert.equal(state.navigation.view, "wbs");
   state.toggleChartView();
-  assert.equal(state.viewMode, "timeline");
+  assert.equal(state.navigation.view, "timeline");
 
   // Entered from the timeline, "v" comes back to it.
   state.setViewMode("recon");
   state.toggleChartView();
-  assert.equal(state.viewMode, "timeline");
+  assert.equal(state.navigation.view, "timeline");
+});
+
+test("leaving Recon preserves its selected tab", () => {
+  state.navigation.tabs.recon = "schedule";
+  state.setViewMode("recon");
+  state.setViewMode("wbs");
+  state.setViewMode("recon");
+
+  assert.equal(state.navigation.tabs.recon, "schedule");
 });

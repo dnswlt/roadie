@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { diffTrackerIssues, roadieItemsWithoutJiraReference } from "./recon-diff";
+import {
+  diffTrackerIssues,
+  projectRoadieJiraLinks,
+} from "./recon-diff";
 import type { Item, ItemFull, LaneFull, RoadmapFull, TrackerIssue } from "./types";
 
 // The configured deployment, context path included: only links under it count.
@@ -151,7 +154,7 @@ test("unreferenced Roadie items are flat, individually checked, and keep roadmap
     milestones: [],
   });
 
-  assert.deepEqual(roadieItemsWithoutJiraReference(rm, JIRA), [
+  assert.deepEqual(projectRoadieJiraLinks(rm, JIRA).unreferencedItems, [
     {
       itemId: 2,
       title: "Unlinked child",
@@ -184,12 +187,15 @@ test("unreferenced Roadie items only count links under the configured deployment
     item(4, "This deployment", "https://jira.example.test/jira/browse/PAY-4"),
   );
   assert.deepEqual(
-    roadieItemsWithoutJiraReference(rm, JIRA).map((row) => row.title),
+    projectRoadieJiraLinks(rm, JIRA).unreferencedItems.map((row) => row.title),
     ["Other host", "Other installation", "No context path"],
   );
   // A mixed-case configured host still matches the lowercased origin a parsed
   // link yields.
-  assert.deepEqual(roadieItemsWithoutJiraReference(rm, "https://Jira.Example.Test/jira").length, 3);
+  assert.equal(
+    projectRoadieJiraLinks(rm, "https://Jira.Example.Test/jira").unreferencedItems.length,
+    3,
+  );
 });
 
 test("unreferenced Roadie items reject malformed Jira-shaped links and ignore milestones", () => {
@@ -198,8 +204,55 @@ test("unreferenced Roadie items reject malformed Jira-shaped links and ignore mi
     item(2, "Not browse", "https://jira.example.test/jira/issues/PAY-2"),
   );
   assert.deepEqual(
-    roadieItemsWithoutJiraReference(rm, JIRA).map((row) => row.title),
+    projectRoadieJiraLinks(rm, JIRA).unreferencedItems.map((row) => row.title),
     ["Zero key", "Not browse"],
   );
-  assert.deepEqual(roadieItemsWithoutJiraReference(null, JIRA), []);
+  assert.deepEqual(projectRoadieJiraLinks(null, JIRA), {
+    unreferencedItems: [],
+    scheduleItems: [],
+  });
+});
+
+test("schedule check input keeps item order and issue pairs", () => {
+  const rm = roadmap(
+    item(
+      1,
+      "Shared delivery",
+      [
+        "https://jira.example.test/jira/browse/pay-1",
+        "https://jira.example.test/jira/browse/PAY-1?tab=work",
+        "https://jira.example.test/jira/browse/PAY-2",
+      ].join(" "),
+      [child(2, "Child", "https://jira.example.test/jira/browse/PAY-1")],
+    ),
+    item(3, "Other Jira", "https://other.test/jira/browse/PAY-3"),
+  );
+
+  assert.deepEqual(projectRoadieJiraLinks(rm, JIRA).scheduleItems, [
+    {
+      itemId: 1,
+      title: "Shared delivery",
+      laneName: "Delivery",
+      laneColor: "green",
+      parentTitle: null,
+      startDate: "2026-01-01",
+      endDate: "2026-01-02",
+      issueKeys: ["PAY-1", "PAY-2"],
+    },
+    {
+      itemId: 2,
+      title: "Child",
+      laneName: "Delivery",
+      laneColor: "green",
+      parentTitle: "Shared delivery",
+      startDate: "2026-01-01",
+      endDate: "2026-01-02",
+      issueKeys: ["PAY-1"],
+    },
+  ]);
+});
+
+test("schedule check input ignores milestones and missing roadmaps", () => {
+  assert.deepEqual(projectRoadieJiraLinks(roadmap(), JIRA).scheduleItems, []);
+  assert.deepEqual(projectRoadieJiraLinks(null, JIRA).scheduleItems, []);
 });

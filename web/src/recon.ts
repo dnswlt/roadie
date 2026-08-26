@@ -3,10 +3,10 @@
 // explicitly fetched page at a time — "Load more" is the only way to another
 // page, so a single action can never download a whole Jira deployment.
 //
-// Everything here is view-local module state, deliberately outside AppState:
-// tracker results are not roadmap content (not snapshotted, not exported, not
-// rendered by any chart view). The state survives view switches — leaving and
-// returning shows the same loaded results — but not a reload.
+// Tracker results live in view-local module state, deliberately outside
+// AppState: they are not roadmap content (not snapshotted, not exported, not
+// rendered by any chart view). They survive view switches but not a reload.
+// The selected tab is navigation state and lives in AppState.
 //
 // Rendering follows render.ts/wbs.ts: full rebuild from state on every call.
 // The editable fields get the panel's courtesy: their text lives in module
@@ -23,15 +23,36 @@ import { appendLinkToDescription } from "./links";
 import { openPopover, type PopoverHandle } from "./popover";
 import {
   diffTrackerIssues,
-  roadieItemsWithoutJiraReference,
+  projectRoadieJiraLinks,
   type ReconciledIssue,
+  type ScheduleCheckItem,
   type UnreferencedRoadieItem,
 } from "./recon-diff";
 import { createSearchList } from "./search-list";
-import { resolveExtractedRange } from "./schedule-check";
-import { state, type ItemLocation } from "./state";
+import {
+  isScheduleCheckMismatch,
+  projectScheduleCheck,
+  reportScheduleCheck,
+  resolveExtractedRange,
+  scheduleCheckKeys,
+  type ScheduleCheckMismatch,
+  type ScheduleCheckProblem,
+  type ScheduleCheckProblemKind,
+  type ScheduleCheckProjection,
+  type ScheduleCheckReport,
+  type ScheduleCheckRow,
+} from "./schedule-check";
+import { periodRangeText } from "./schedule";
+import { state, type ItemLocation, type ReconTab } from "./state";
+import { dayOf, formatDay } from "./timescale";
 import { toast } from "./toast";
-import type { TrackerExtractorTest, TrackerIssue, TrackerQuery } from "./types";
+import { syncUrl } from "./url";
+import type {
+  TrackerExtractorTest,
+  TrackerIssue,
+  TrackerQuery,
+  TrackerScheduleStatus,
+} from "./types";
 
 let query = "";
 // The query the loaded results and cursor belong to — Load more must send
@@ -53,10 +74,6 @@ let topLevelOnly = false;
 // target from ever following an item-id collision into another roadmap.
 let linkTarget: { roadmapId: number; itemId: number } | null = null;
 let linkingIssueKey: string | null = null;
-// The two reconciliation questions are peers, but only Jira issues have query
-// controls. Keeping this local matches the rest of Recon's ephemeral UI state
-// and makes the Roadie list independent of whichever JQL was last run.
-let section: "issues" | "roadie" | "schedule" = "issues";
 // Stamps each fetch so a slow response cannot apply over a newer run's
 // results: bumped at every start, checked before applying.
 let seq = 0;
@@ -94,17 +111,17 @@ let mount: HTMLElement | null = null;
 // notify fired by a background response could land mid-drag on the chart,
 // which is exactly what events.ts gates refreshes to avoid.
 function rerender(): void {
-  if (mount && state.viewMode === "recon") renderRecon(mount);
+  if (mount && state.navigation.view === "recon") renderRecon(mount);
 }
 
-// Reset the cross-tab operation without touching AppState: linking is local
-// Recon UI state. Returning to the Roadie list makes every exit land where the
-// operation started.
+// Reset the cross-tab operation. Returning to the Roadie list makes every exit
+// land where the operation started.
 function resetLinkMode(): boolean {
   if (linkTarget === null) return false;
   linkTarget = null;
   linkingIssueKey = null;
-  section = "roadie";
+  state.navigation.tabs.recon = "roadie";
+  syncUrl(state);
   return true;
 }
 
@@ -113,7 +130,7 @@ export function cancelReconLinkMode(): boolean {
   // A mode that is temporarily off-screen is not an Escape target. This lets
   // somebody inspect WBS/timeline and return without losing the operation,
   // while Escape in those views retains its ordinary editing meaning.
-  if (state.viewMode !== "recon") return false;
+  if (state.navigation.view !== "recon") return false;
   if (!resetLinkMode()) return false;
   rerender();
   return true;
@@ -322,24 +339,58 @@ export function renderRecon(container: HTMLElement): void {
   // and finds itself by lookup.
   issuePicker?.close();
   mount = container;
-  if (section === "issues") ensureFavourites();
-  if (section === "schedule") ensureScript();
+  const activeTab = state.navigation.tabs.recon;
+  if (activeTab === "issues") ensureFavourites();
+  if (activeTab === "schedule") ensureScript();
   const scrollTop = container.scrollTop;
   const caret = captureCaret(container);
 
   const root = div("recon");
-  const unreferenced = roadieItemsWithoutJiraReference(state.current, state.me.trackerUrl);
+  const roadieProjection = projectRoadieJiraLinks(state.current, state.me.trackerUrl);
+  const unreferenced = roadieProjection.unreferencedItems;
+  const checkItems = roadieProjection.scheduleItems;
+  if (
+    activeTab === "schedule" &&
+    scriptFor === state.current?.id &&
+    scriptSaved !== null
+  ) {
+    ensureScheduleStatus(checkItems);
+  }
+  const currentStatus = sameScheduleStatusIdentity(
+    scheduleStatusFor,
+    scheduleStatusIdentity(checkItems),
+  )
+    ? scheduleStatus
+    : null;
+  const hasScheduleAnswers = currentStatus?.results.some(
+    (result) => result.state !== "unchecked",
+  ) === true;
+  let scheduleProjection = hasScheduleAnswers
+    ? projectScheduleCheck(
+      checkItems,
+      currentStatus?.results ?? [],
+      state.current?.periods ?? [],
+    )
+    : null;
+  const scheduleCount = scheduleProjection?.summary.outsideItems;
   // Resolved once per render: the lookup also drops a target that has since
   // vanished, which every issue row would otherwise repeat.
   const target = currentLinkTarget();
-  root.append(buildHeader(unreferenced.length));
-  if (section === "issues") {
+  root.append(buildHeader(unreferenced.length, scheduleCount));
+  if (activeTab === "issues") {
     const banner = buildLinkModeBanner(target);
     if (banner) root.append(banner);
     root.append(buildQueryForm(), ...buildResults(target));
-  } else if (section === "roadie") {
+  } else if (activeTab === "roadie") {
     root.append(...buildRoadieResults(unreferenced));
-  } else root.append(...buildScheduleCheck());
+  } else {
+    scheduleProjection ??= projectScheduleCheck(
+      checkItems,
+      currentStatus?.results ?? [],
+      state.current?.periods ?? [],
+    );
+    root.append(...buildScheduleCheck(checkItems, scheduleProjection, currentStatus?.pending ?? 0));
+  }
   container.replaceChildren(root);
 
   container.scrollTop = scrollTop;
@@ -378,7 +429,8 @@ function restoreCaret(container: HTMLElement, caret: Caret | null): void {
   el.setSelectionRange(caret.start, caret.end);
 }
 
-function buildHeader(unreferencedCount: number): HTMLElement {
+function buildHeader(unreferencedCount: number, scheduleCount?: number): HTMLElement {
+  const activeTab = state.navigation.tabs.recon;
   const head = div("recon-head");
   const h = document.createElement("h2");
   h.textContent = "Jira Reconciliation";
@@ -387,16 +439,30 @@ function buildHeader(unreferencedCount: number): HTMLElement {
   const tabs = document.createElement("nav");
   tabs.className = "recon-tabs";
   tabs.setAttribute("aria-label", "Reconciliation lists");
-  const choices: { id: typeof section; label: string; count?: number }[] = [
-    { id: "issues", label: "Jira issues" },
-    { id: "roadie", label: "Roadie items", count: unreferencedCount },
-    { id: "schedule", label: "Schedule check" },
+  const choices: { id: ReconTab; label: string; description: string; count?: number }[] = [
+    {
+      id: "issues",
+      label: "Jira issues",
+      description: "Search Jira for issues that should appear on this roadmap, then link the missing ones.",
+    },
+    {
+      id: "roadie",
+      label: "Roadie items",
+      description: "Review Roadie items without a Jira link, and link them to an issue.",
+      count: unreferencedCount,
+    },
+    {
+      id: "schedule",
+      label: "Schedule check",
+      description: "Compare the dates of linked Jira issues with the Roadie items that reference them. Issues are highlighted when their start or end falls outside the associated item's dates.",
+      count: scheduleCount,
+    },
   ];
   for (const choice of choices) {
     const tab = document.createElement("button");
     tab.type = "button";
-    tab.className = choice.id === section ? "recon-tab active" : "recon-tab";
-    tab.setAttribute("aria-pressed", String(choice.id === section));
+    tab.className = choice.id === activeTab ? "recon-tab active" : "recon-tab";
+    tab.setAttribute("aria-pressed", String(choice.id === activeTab));
     tab.textContent = choice.label;
     if (choice.count !== undefined) {
       const count = document.createElement("span");
@@ -408,15 +474,20 @@ function buildHeader(unreferencedCount: number): HTMLElement {
     // does: the banner comes back with the Jira list. Only Cancel and Escape
     // end the operation.
     tab.addEventListener("click", () => {
-      if (choice.id === section) return;
+      if (choice.id === activeTab) return;
       closePicker();
       issuePicker?.close();
-      section = choice.id;
+      state.navigation.tabs.recon = choice.id;
+      syncUrl(state);
       rerender();
     });
     tabs.append(tab);
   }
   head.append(tabs);
+  const intro = document.createElement("p");
+  intro.className = "recon-section-intro";
+  intro.textContent = choices.find((choice) => choice.id === activeTab)!.description;
+  head.append(intro);
   return head;
 }
 
@@ -619,7 +690,7 @@ function roadieItemRow(item: UnreferencedRoadieItem): HTMLElement {
     // A stale "Unmatched" filter would hide exactly those candidates while
     // the user is trying to choose, so linking always starts from all results.
     unmatchedOnly = false;
-    section = "issues";
+    state.navigation.tabs.recon = "issues";
     // Besides opening the edit rail, this keeps the target highlighted when
     // the user returns to WBS/timeline after linking.
     state.jumpTo("item", item.itemId);
@@ -663,6 +734,10 @@ function openReconHelp(): void {
     heading("Roadie items"),
     para(
       "Items whose description holds no link to this Jira, parents and children alike, independent of the query. Top-level only hides the children.",
+    ),
+    heading("Schedule check"),
+    para(
+      "Shows the cached schedule extracted for linked issues. Fetch issues schedules another Jira fetch; the circular-arrow button reads the available results again.",
     ),
     heading("Linking"),
     para(
@@ -984,6 +1059,7 @@ let scriptSaved: string | null = null;
 let scriptFor: number | null = null;
 let scriptLoading = false;
 let saving = false;
+let extractorDetailsOpen = false;
 // A save error renders inline under the source rather than as a toast: it
 // names a line in the text directly above it.
 let scriptError: string | null = null;
@@ -999,6 +1075,22 @@ let testError: string | null = null;
 // Stamps each test like `seq` does a search: a slow answer must not land over
 // a newer one's.
 let testSeq = 0;
+
+// Results are cached by the backend, but held here only for the current
+// roadmap/script/key set. Loading them and scheduling their refresh are
+// deliberately separate operations.
+let scheduleStatus: TrackerScheduleStatus | null = null;
+interface ScheduleStatusIdentity {
+  roadmapId: number;
+  script: string;
+  keys: string[];
+}
+
+let scheduleStatusFor: ScheduleStatusIdentity | null = null;
+let scheduleStatusLoading = false;
+let schedulingJiraReload = false;
+let scheduleCheckError: string | null = null;
+let scheduleStatusSeq = 0;
 
 // The skeleton "Create a script" starts from. It compiles, returns None for
 // everything, and maps no field — deliberately: a guessed field mapping is
@@ -1019,8 +1111,8 @@ def get_issue_time_range(issue):
     # issue is Jira's own JSON: issue["key"], issue["fields"][...], nested as
     # Jira returns it. summary, issuetype and status are always fetched.
     #
-    # Return {"start": ..., "end": ..., "label": ...} — every key optional,
-    # dates as YYYY-MM-DD, label saying where they came from ("Sprint 24").
+    # Return optional start/end dates (YYYY-MM-DD), startPeriod/endPeriod
+    # schedule labels, and a label saying where the range came from.
     # Return None to skip the issue: it is then never compared.
     return None
 `;
@@ -1072,8 +1164,121 @@ function resetScript(): void {
   scriptFor = null;
   scriptError = null;
   scriptLoadError = null;
+  extractorDetailsOpen = false;
   testResult = null;
   testError = null;
+  resetScheduleStatus();
+}
+
+function resetScheduleStatus(): void {
+  scheduleStatus = null;
+  scheduleStatusFor = null;
+  scheduleStatusLoading = false;
+  schedulingJiraReload = false;
+  scheduleCheckError = null;
+  scheduleStatusSeq++;
+}
+
+function scheduleStatusIdentity(items: readonly ScheduleCheckItem[]): ScheduleStatusIdentity | null {
+  const rm = state.current;
+  if (!rm || scriptSaved === null) return null;
+  return { roadmapId: rm.id, script: scriptSaved, keys: scheduleCheckKeys(items) };
+}
+
+function sameScheduleStatusIdentity(
+  a: ScheduleStatusIdentity | null,
+  b: ScheduleStatusIdentity | null,
+): boolean {
+  return a === b || (
+    a !== null && b !== null &&
+    a.roadmapId === b.roadmapId &&
+    a.script === b.script &&
+    a.keys.length === b.keys.length &&
+    a.keys.every((key, i) => key === b.keys[i])
+  );
+}
+
+// Opening the tab reads the current cache once. Fetching issues and rereading the
+// result list are separate explicit actions; neither starts polling.
+function ensureScheduleStatus(items: readonly ScheduleCheckItem[]): void {
+  const identity = scheduleStatusIdentity(items);
+  if (
+    identity === null ||
+    sameScheduleStatusIdentity(scheduleStatusFor, identity) ||
+    scheduleStatusLoading
+  ) return;
+
+  readScheduleStatus(identity, false);
+}
+
+function readScheduleStatus(identity: ScheduleStatusIdentity, retainResults: boolean): void {
+  const { keys } = identity;
+  if (keys.length === 0) {
+    scheduleStatus = { results: [], pending: 0 };
+    scheduleStatusFor = identity;
+    scheduleCheckError = null;
+    return;
+  }
+  const mySeq = ++scheduleStatusSeq;
+  if (!retainResults) scheduleStatus = null;
+  scheduleStatusFor = identity;
+  scheduleStatusLoading = true;
+  scheduleCheckError = null;
+  void api.getScheduleCheckStatus(identity.roadmapId, keys).then(
+    (status) => {
+      if (mySeq !== scheduleStatusSeq) return;
+      scheduleStatus = status;
+      scheduleStatusLoading = false;
+      rerender();
+    },
+    (e: unknown) => {
+      if (mySeq !== scheduleStatusSeq) return;
+      scheduleStatusLoading = false;
+      scheduleCheckError = e instanceof Error ? e.message : String(e);
+      rerender();
+    },
+  );
+}
+
+async function enqueueJiraReload(items: readonly ScheduleCheckItem[]): Promise<void> {
+  const rm = state.current;
+  const identity = scheduleStatusIdentity(items);
+  const keys = identity?.keys ?? [];
+  if (!rm || identity === null || keys.length === 0 || schedulingJiraReload || scriptDirty()) return;
+
+  schedulingJiraReload = true;
+  scheduleCheckError = null;
+  rerender();
+  try {
+    const { queued, pending } = await api.enqueueScheduleCheck(rm.id, keys);
+    if (
+      state.current?.id !== rm.id ||
+      !sameScheduleStatusIdentity(scheduleStatusIdentity(items), identity)
+    ) return;
+    const results = sameScheduleStatusIdentity(scheduleStatusFor, identity)
+      ? scheduleStatus?.results ?? []
+      : [];
+    scheduleStatus = { results, pending };
+    scheduleStatusFor = identity;
+    toast(queued === keys.length
+      ? "Jira fetch scheduled. Refresh the result list in a moment."
+      : `Jira fetch scheduled for ${queued} of ${keys.length} issues; the queue is full.`);
+  } catch (e) {
+    if (state.current?.id !== rm.id) return;
+    scheduleCheckError = e instanceof Error ? e.message : String(e);
+  } finally {
+    if (state.current?.id === rm.id) {
+      schedulingJiraReload = false;
+      rerender();
+    }
+  }
+}
+
+function reloadScheduleResults(items: readonly ScheduleCheckItem[]): void {
+  const identity = scheduleStatusIdentity(items);
+  if (identity === null || scheduleStatusLoading) return;
+  readScheduleStatus(identity, sameScheduleStatusIdentity(scheduleStatusFor, identity));
+  rerender();
 }
 
 function scriptDirty(): boolean {
@@ -1090,6 +1295,7 @@ async function saveScript(): Promise<void> {
     const ext = await api.putTrackerExtractor(rm.id, script);
     if (state.current?.id !== rm.id) return;
     scriptSaved = ext.source;
+    resetScheduleStatus();
     toast("Extractor script saved");
   } catch (e) {
     if (state.current?.id !== rm.id) return;
@@ -1112,6 +1318,7 @@ async function deleteScript(): Promise<void> {
     scriptSaved = null;
     script = "";
     scriptError = null;
+    resetScheduleStatus();
   } catch (e) {
     toast(e instanceof Error ? e.message : String(e), true);
   }
@@ -1144,7 +1351,11 @@ async function runTest(): Promise<void> {
   rerender();
 }
 
-function buildScheduleCheck(): HTMLElement[] {
+function buildScheduleCheck(
+  items: readonly ScheduleCheckItem[],
+  projection: ScheduleCheckProjection,
+  pending: number,
+): HTMLElement[] {
   const rm = state.current;
   if (!rm) return [];
   if (scriptLoadError !== null) return [buildScriptLoadError()];
@@ -1156,7 +1367,282 @@ function buildScheduleCheck(): HTMLElement[] {
   // Nothing saved and nothing typed: explain the tab and offer a starting
   // point, rather than presenting an empty box that means nothing.
   if (scriptSaved === null && script === "") return [buildScriptIntro()];
-  return [buildScriptEditor(), buildTestPanel()];
+  const editor = buildExtractorDetails();
+  if (scriptSaved === null) return [editor];
+  return [buildScheduleResults(items, projection, pending), editor];
+}
+
+function buildScheduleResults(
+  items: readonly ScheduleCheckItem[],
+  projection: ScheduleCheckProjection,
+  pending: number,
+): HTMLElement {
+  const wrap = div("recon-schedule");
+  const head = div("recon-schedule-head");
+  const h = document.createElement("h3");
+  h.textContent = "Results";
+  const hasAnswers = projection.summary.checked + projection.summary.skipped +
+    projection.summary.errors + projection.summary.notFound > 0;
+  const actions = div("recon-schedule-actions");
+  const check = document.createElement("button");
+  check.type = "button";
+  check.className = "btn btn-primary";
+  check.textContent = schedulingJiraReload ? "Scheduling…" : "Fetch issues";
+  check.disabled =
+    schedulingJiraReload || scheduleStatusLoading || items.length === 0 || scriptDirty();
+  check.title = scriptDirty()
+    ? "Save the extractor before fetching issues"
+    : "Schedules a reload of linked Jira issues";
+  check.addEventListener("click", () => void enqueueJiraReload(items));
+
+  const reload = document.createElement("button");
+  reload.type = "button";
+  reload.className = "icon-btn";
+  reload.title = "Refreshes the result list";
+  reload.setAttribute("aria-label", "Refresh result list");
+  reload.disabled = scheduleStatusLoading || schedulingJiraReload;
+  reload.append(icons.rotateCcw(16));
+  reload.addEventListener("click", () => reloadScheduleResults(items));
+
+  if (pending > 0) {
+    const progress = div("recon-count");
+    progress.textContent = `${pending} issue${pending === 1 ? "" : "s"} refreshing`;
+    actions.append(progress);
+  }
+  actions.append(check, reload);
+  head.append(h, actions);
+  wrap.append(head);
+
+  if (scheduleCheckError !== null) {
+    const error = div("recon-error");
+    error.textContent = scheduleCheckError;
+    wrap.append(error);
+  }
+  if (items.length === 0) {
+    const hint = div("recon-hint recon-schedule-hint");
+    hint.textContent = "No Roadie items link to Jira issues.";
+    wrap.append(hint);
+    return wrap;
+  }
+  if (!hasAnswers) {
+    const hint = div("recon-hint recon-schedule-hint");
+    const keys = scheduleCheckKeys(items).length;
+    hint.textContent = `${keys} linked Jira issue${keys === 1 ? "" : "s"} across ${items.length} Roadie item${items.length === 1 ? "" : "s"}.`;
+    wrap.append(hint);
+    return wrap;
+  }
+
+  const discrepancies = projection.rows.filter(isScheduleMismatchRow);
+  if (projection.summary.checked > 0 && discrepancies.length === 0) {
+    const hint = div("recon-hint recon-filter-empty");
+    hint.textContent = "No schedule discrepancies.";
+    wrap.append(hint);
+  } else {
+    const list = div("recon-schedule-list");
+    for (const row of discrepancies) list.append(scheduleItemRow(row));
+    wrap.append(list);
+  }
+  const report = reportScheduleCheck(projection);
+  const foot = div("recon-foot");
+  if (projection.summary.checked > 0) {
+    const count = div("recon-count");
+    count.textContent = scheduleMatchSummary(report);
+    foot.append(count);
+  }
+  const remainder = scheduleRemainderSummary(report);
+  if (remainder) {
+    const secondary = div("recon-count");
+    secondary.textContent = remainder;
+    foot.append(secondary);
+  }
+  if (foot.childElementCount > 0) wrap.append(foot);
+  wrap.append(...buildScheduleProblems(report));
+  return wrap;
+}
+
+function scheduleMatchSummary(report: ScheduleCheckReport): string {
+  const issues = report.matchingIssues === 1 ? "issue" : "issues";
+  const items = report.matchingItems === 1 ? "item" : "items";
+  return `${report.matchingIssues} ${issues} in ${report.matchingItems} ${items} match the schedule.`;
+}
+
+function scheduleRemainderSummary(report: ScheduleCheckReport): string {
+  const parts: string[] = [];
+  if (report.skippedIssues > 0) {
+    const issues = report.skippedIssues === 1 ? "issue" : "issues";
+    parts.push(`${report.skippedIssues} ${issues} skipped`);
+  }
+  if (report.uncheckedIssues > 0) parts.push(`${report.uncheckedIssues} not checked`);
+  return parts.join(" · ");
+}
+
+const maxScheduleProblems = 10;
+
+function buildScheduleProblems(report: ScheduleCheckReport): HTMLElement[] {
+  const groups: { kind: ScheduleCheckProblemKind; heading: string }[] = [
+    { kind: "script", heading: "Script execution errors" },
+    { kind: "schedule", heading: "Schedule errors" },
+    { kind: "tracker", heading: "Tracker errors" },
+    { kind: "notFound", heading: "Issues not found" },
+  ];
+  const sections: HTMLElement[] = [];
+  for (const group of groups) {
+    const problems = report.problems[group.kind];
+    if (problems.length === 0) continue;
+    const section = div("recon-schedule-problems");
+    const heading = document.createElement("h4");
+    heading.textContent = `${group.heading} (${problems.length})`;
+    const list = div("recon-schedule-problem-list");
+    for (const problem of problems.slice(0, maxScheduleProblems)) {
+      list.append(scheduleProblemRow(problem));
+    }
+    section.append(heading, list);
+    const omitted = problems.length - maxScheduleProblems;
+    if (omitted > 0) {
+      const more = div("recon-count recon-schedule-problem-more");
+      more.textContent = `${omitted} more not shown`;
+      section.append(more);
+    }
+    sections.push(section);
+  }
+  return sections;
+}
+
+function scheduleProblemRow(problem: ScheduleCheckProblem): HTMLElement {
+  const row = div("recon-schedule-problem");
+  const key = problem.issue ? document.createElement("a") : document.createElement("span");
+  key.className = "recon-issue-key";
+  key.textContent = problem.key;
+  if (key instanceof HTMLAnchorElement && problem.issue) {
+    key.href = problem.issue.url;
+    key.target = "_blank";
+    key.rel = "noreferrer";
+  }
+  const title = document.createElement("span");
+  title.className = "recon-schedule-problem-title";
+  title.textContent = problem.issue?.title ?? "";
+  row.append(key, title);
+  if (problem.message) {
+    const message = div("recon-schedule-problem-message");
+    message.textContent = problem.message;
+    row.append(message);
+  }
+  return row;
+}
+
+type ScheduleMismatchRow = ScheduleCheckRow & { outside: true };
+
+function isScheduleMismatchRow(row: ScheduleCheckRow): row is ScheduleMismatchRow {
+  return row.outside;
+}
+
+function scheduleItemRow(row: ScheduleMismatchRow): HTMLElement {
+  const wrap = div("recon-schedule-item");
+  if (row.parentTitle !== null) wrap.classList.add("child");
+  wrap.classList.add("outside");
+  wrap.style.setProperty("--c", laneColorValue(row.laneColor));
+
+  const head = div("recon-schedule-item-head");
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "recon-schedule-item-open";
+  open.title = `Show ${row.title || "(untitled)"}`;
+  const dot = document.createElement("span");
+  dot.className = "color-dot";
+  dot.setAttribute("aria-hidden", "true");
+  const name = div("recon-schedule-item-name");
+  const title = document.createElement("span");
+  title.textContent = row.title || "(untitled)";
+  const context = document.createElement("span");
+  context.textContent = row.parentTitle === null
+    ? row.laneName
+    : `${row.laneName} › ${row.parentTitle || "(untitled)"}`;
+  name.append(title, context);
+  const range = div("recon-schedule-item-range");
+  range.textContent = periodRangeText(
+    state.current?.periods ?? [],
+    row.startDate,
+    row.endDate,
+    formatIsoDate,
+  );
+  open.append(dot, name, range);
+  open.addEventListener("click", () => state.jumpTo("item", row.itemId));
+  head.append(open);
+  wrap.append(head);
+  for (const issue of row.issues) {
+    if (isScheduleCheckMismatch(issue)) wrap.append(scheduleIssueRow(issue));
+  }
+  return wrap;
+}
+
+function scheduleIssueRow(issue: ScheduleCheckMismatch): HTMLElement {
+  const row = div("recon-schedule-issue");
+  const key = issue.issue ? document.createElement("a") : document.createElement("span");
+  key.className = "recon-issue-key";
+  key.textContent = issue.key;
+  if (key instanceof HTMLAnchorElement && issue.issue) {
+    key.href = issue.issue.url;
+    key.target = "_blank";
+    key.rel = "noreferrer";
+    key.title = "Open in Jira";
+  }
+  const title = document.createElement("span");
+  title.className = "recon-schedule-issue-title";
+  title.textContent = issue.issue?.title ?? "";
+  const value = scheduleIssueRange(issue);
+  const source = document.createElement("span");
+  source.className = "recon-schedule-issue-source";
+  const sourceText = issue.label ?? "";
+  // Avoid repeating identical adjacent label and status text.
+  source.textContent = sourceText === issue.issue?.status ? "" : sourceText;
+  const jiraStatus = document.createElement("span");
+  jiraStatus.className = "recon-issue-status recon-schedule-jira-status";
+  jiraStatus.textContent = issue.issue?.status ?? "";
+  row.append(key);
+  for (const part of [title, jiraStatus, source, value]) {
+    if (part.textContent !== "") row.append(part);
+  }
+  const warning = document.createElement("span");
+  warning.className = "recon-schedule-warning";
+  warning.title = "Outside Roadie item range";
+  warning.setAttribute("aria-label", warning.title);
+  warning.append(icons.clock(15));
+  row.append(warning);
+  return row;
+}
+
+function scheduleIssueRange(issue: ScheduleCheckMismatch): HTMLElement {
+  const range = document.createElement("span");
+  range.className = "recon-schedule-issue-range";
+  // Each edge keeps the explicit date or period vocabulary chosen by the extractor.
+  const boundary = (date: string, period: string | undefined, outside: boolean): HTMLElement => {
+    const value = document.createElement("span");
+    if (outside) value.className = "outside";
+    value.textContent = period ?? formatIsoDate(date);
+    return value;
+  };
+  if (issue.start && issue.end) {
+    if (issue.startPeriod && issue.startPeriod === issue.endPeriod) {
+      range.append(boundary(
+        issue.start,
+        issue.startPeriod,
+        issue.startOutside === true || issue.endOutside === true,
+      ));
+    } else {
+      range.append(
+        boundary(issue.start, issue.startPeriod, issue.startOutside === true),
+        document.createTextNode(" – "),
+        boundary(issue.end, issue.endPeriod, issue.endOutside === true),
+      );
+    }
+  } else if (issue.start) {
+    range.append("Starts ", boundary(issue.start, issue.startPeriod, issue.startOutside === true));
+  } else if (issue.end) {
+    range.append("Ends ", boundary(issue.end, issue.endPeriod, issue.endOutside === true));
+  } else {
+    range.textContent = "—";
+  }
+  return range;
 }
 
 function buildScriptLoadError(): HTMLElement {
@@ -1189,16 +1675,30 @@ function buildScriptIntro(): HTMLElement {
   create.textContent = "Create a script";
   create.addEventListener("click", () => {
     script = scriptSkeleton;
+    extractorDetailsOpen = true;
     rerender();
   });
   wrap.append(lead, why, create);
   return wrap;
 }
 
+function buildExtractorDetails(): HTMLDetailsElement {
+  const details = document.createElement("details");
+  details.className = "recon-extractor-details";
+  details.open = extractorDetailsOpen;
+  const summary = document.createElement("summary");
+  summary.textContent = "Extractor script and test";
+  const body = div("recon-extractor-details-body");
+  body.append(buildScriptEditor(), buildTestPanel());
+  details.append(summary, body);
+  details.addEventListener("toggle", () => {
+    extractorDetailsOpen = details.open;
+  });
+  return details;
+}
+
 function buildScriptEditor(): HTMLElement {
   const wrap = div("recon-script-wrap");
-  const h = document.createElement("h3");
-  h.textContent = "Extractor script";
   const area = document.createElement("textarea");
   area.className = "recon-script";
   area.spellcheck = false;
@@ -1243,7 +1743,7 @@ function buildScriptEditor(): HTMLElement {
   sync();
   saveBtn.addEventListener("click", () => void saveScript());
   bar.append(status, delBtn, saveBtn);
-  wrap.append(h, area, bar);
+  wrap.append(area, bar);
 
   if (scriptError !== null) {
     const err = div("recon-error");
@@ -1402,11 +1902,13 @@ function subheading(text: string): HTMLElement {
   return el;
 }
 
-// A range with either end unknown reads as an open one rather than as a
-// half-empty pair: "until 12 Apr" is what a fix version's release date means.
+function formatIsoDate(iso: string): string {
+  return formatDay(dayOf(iso));
+}
+
 function formatRange(start?: string, end?: string): string {
-  if (start && end) return `${start} → ${end}`;
-  if (end) return `until ${end}`;
-  if (start) return `from ${start}`;
+  if (start && end) return `${formatIsoDate(start)} – ${formatIsoDate(end)}`;
+  if (end) return `Ends ${formatIsoDate(end)}`;
+  if (start) return `Starts ${formatIsoDate(start)}`;
   return "—";
 }

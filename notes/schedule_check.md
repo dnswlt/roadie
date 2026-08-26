@@ -60,14 +60,16 @@ extend. Keys are all optional:
 | Key | Meaning |
 | --- | --- |
 | `start`, `end` | the range, either end omitted or `None` when unknown |
-| `start_period`, `end_period` | an exact roadmap schedule-period label; its start or inclusive end supplies that boundary |
+| `startPeriod`, `endPeriod` | an exact roadmap schedule-period label; its start or inclusive end supplies that boundary |
 | `label` | where the dates came from, e.g. `"Sprint 24"`, `"Fix Version 26.3"` |
 
-`start_period` resolves to that period's start; `end_period` resolves to its
+`startPeriod` resolves to that period's start; `endPeriod` resolves to its
 inclusive end. A boundary has one source: returning both `start` and
-`start_period`, or both `end` and `end_period`, is an extraction error. Direct
+`startPeriod`, or both `end` and `endPeriod`, is an extraction error. Direct
 dates and period references may otherwise be mixed. Labels match the roadmap's
 schedule exactly and case-sensitively, as schedule labels do everywhere else.
+After period resolution, a known start must not be later than a known end; that
+is a schedule error for the issue, not a failure of the batch.
 
 The frontend resolves period references against the roadmap's current schedule,
 beside the item-range comparison that already needs both. No schedule or no
@@ -128,19 +130,20 @@ referenced keys and the item each came from, and compares the returned ranges
 itself. The backend fetches those issues with `JIRA_FIELDS ∪ display fields`,
 runs the extractor, and returns literal boundaries and period references.
 
-**Exactly one goroutine performs schedule-check fetches**, process-wide. Clients
-feed it keys and poll for results, so the two are separate routes: `POST` to
-enqueue, `POST .../status` to read. **Polling has no influence on the fetcher** —
-it cannot start a fetch, hurry one, or reorder the queue — which is what makes
-Refresh free and stops a client from piling requests onto Jira by asking often.
+**Exactly one goroutine performs schedule-check fetches**, process-wide. The two
+routes have separate jobs: `POST` enqueues a refresh and `POST .../status` reads
+the cache. The client reads the available results once when the view loads.
+Fetch issues only schedules work; the circular-arrow action explicitly reads
+the available results again. The client does not poll.
 
 The worker serializes tracker traffic; there is no token bucket. The queue is
 bounded, and enqueue reports how many distinct keys it covers. A short count
 means the backlog is full, and the rest stay unchecked until asked for again.
+Enqueue and status responses also report the roadmap's pending key count,
+including the active batch, so the client can show ongoing work without polling.
 
-`unchecked` is therefore a statement about Roadie and not about the issue: not
-fetched yet or still queued. It is what a poll returns while work is
-outstanding, and it needs no explaining away.
+`unchecked` is therefore a statement about Roadie and not about the issue: no
+cached result is available for that key.
 
 A batch is one roadmap's keys, so one script and one field set cover it. The
 script is read when the fetcher reaches the keys rather than when they were
@@ -182,10 +185,10 @@ Cloud caps `maxResults` at 100. Since the fetcher is never in a hurry, headroom
 above 100 buys nothing and costs portability.
 
 **Freshness is a refresh debounce, not a result TTL.** Results are cached
-process-wide with the time each was checked. Polling returns every cached
+process-wide with the time each was checked. Status reads return every cached
 result, however old; an old answer remains useful while a refresh is pending.
 The fetcher skips results checked less than a minute ago, so a person leaning on
-Refresh — or two people checking the same roadmap — does not spend the
+Fetch issues — or two people checking the same roadmap — does not spend the
 deployment's rate limit twice. Missing results and results at least a minute old
 reach Jira.
 
@@ -243,12 +246,13 @@ or `e > item.end`, comparing only known ends.
 
 Third tab, with a count once run. Two parts:
 
-- **Results** — one row per checked item: its range, each linked issue with the
-  extracted range and label. Every checked issue shows its range, not just the
-  failures: that is how a script gets debugged. A filter chip narrows to
-  mismatches, worded like the existing ones ("6 outside range among 41
-  checked, 12 skipped"). Skipped issues stay in the count line: a script that
-  quietly swallows everything must not read as a clean roadmap.
+- **Results** — only item/issue pairs whose extracted range overhangs the item.
+  Successful comparisons collapse to a count of distinct issues and affected
+  items. Skipped and unchecked issues are counts, not result rows.
+- **Problems** — below the discrepancies, deduplicated by Jira key and split by
+  failure kind: script execution, tracker access, schedule resolution and not
+  found. Messages are not grouped because their text may contain issue-specific
+  data. Each kind shows its first 10 issues and says how many more were omitted.
 - **Editor** — source, Save reporting compile errors inline, and Test running
   the *unsaved* source against a named key, showing the result, `print()`
   output, and **the raw JSON of the requested fields**. Without that last part
