@@ -16,6 +16,8 @@ import type {
   RoadmapFull,
   SchedulePeriod,
   Snapshot,
+  TrackerExtractor,
+  TrackerExtractorTest,
   TrackerPage,
   TrackerQuery,
   TrashedRoadmap,
@@ -46,6 +48,18 @@ export function toLogin(): void {
   location.assign(`/auth/login?next=${encodeURIComponent(next)}`);
 }
 
+// ApiError carries the status alongside the server's message, so a caller can
+// tell one particular 404 — "nothing saved here yet", a state to render — from
+// a failure. Everything else keeps treating it as the Error it extends.
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "X-Client-Id": clientId };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -66,7 +80,7 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
     } catch {
       // keep statusText
     }
-    throw new Error(msg);
+    throw new ApiError(res.status, msg);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -130,6 +144,41 @@ export const api = {
     req<TrackerQuery>("PATCH", `/api/tracker-queries/${id}`, patch),
   deleteTrackerQuery: (id: number) =>
     req<void>("DELETE", `/api/tracker-queries/${id}`),
+
+  // The schedule-check extractor script: one per roadmap, so the roadmap id is
+  // its whole address and there is no create/update distinction to make.
+  //
+  // A roadmap with no script answers 404, which is a state the Recon tab
+  // explains rather than an error — hence null instead of a throw. PUT
+  // compiles the source server-side and rejects one that will not run, so its
+  // failure message names a line in the editor.
+  getTrackerExtractor: async (roadmapId: number) => {
+    try {
+      return await req<TrackerExtractor>(
+        "GET",
+        `/api/roadmaps/${roadmapId}/tracker-extractor`,
+      );
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  },
+  putTrackerExtractor: (roadmapId: number, source: string) =>
+    req<TrackerExtractor>("PUT", `/api/roadmaps/${roadmapId}/tracker-extractor`, {
+      source,
+    }),
+  deleteTrackerExtractor: (roadmapId: number) =>
+    req<void>("DELETE", `/api/roadmaps/${roadmapId}/tracker-extractor`),
+  // Test runs the editor's *unsaved* source against one issue: that is how a
+  // script is arrived at, so it must work before Save would accept it. The
+  // answer carries the tracker's raw JSON, which is the only way to find out
+  // what a custom field is called in this deployment.
+  testTrackerExtractor: (roadmapId: number, source: string, key: string) =>
+    req<TrackerExtractorTest>(
+      "POST",
+      `/api/roadmaps/${roadmapId}/tracker-extractor/test`,
+      { source, key },
+    ),
 
   listContributors: (roadmapId: number) =>
     req<Contributor[]>("GET", `/api/roadmaps/${roadmapId}/contributors`),

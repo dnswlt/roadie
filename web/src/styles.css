@@ -11,6 +11,7 @@
   --focus: #94a3b8;
   --brand: #4f46e5;
   --brand-hover: #4338ca;
+  --success: #1a7f37;
   --danger: #c92c2c;
   --danger-soft: #fdeaea;
   /* Notice tone for stale remote-change feedback. A muted amber/gold, distinct
@@ -3830,6 +3831,183 @@ button.deps-node:hover {
 .recon-count {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* ---------- Schedule check: the extractor editor (recon.ts) ---------- */
+
+.recon-script-intro p {
+  margin: 0 0 10px;
+  max-width: 62ch;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.recon-script-wrap h3,
+.recon-test h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recon-test {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* The script is code and is read in blocks, so it gets a real editing surface
+   rather than the one-line treatment .recon-input gives JQL. Resizable
+   vertically only: widening it past the reading column would push the actions
+   row off the side. */
+.recon-script {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  tab-size: 4;
+}
+
+.recon-script:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.recon-script-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Pushes the buttons right and states what the text in the box currently is —
+   the one thing an editor must never leave ambiguous. */
+.recon-script-status {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recon-script-delete:not(:disabled):hover {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 40%, var(--border-strong));
+}
+
+.recon-test-hint {
+  margin-bottom: 10px;
+  max-width: 62ch;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.recon-test-form {
+  display: flex;
+  gap: 8px;
+}
+
+.recon-test-key {
+  max-width: 260px;
+}
+
+.recon-test-result {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.recon-test-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.recon-test-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recon-test-state {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: var(--grid);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.recon-test-state.ok {
+  color: var(--success);
+  background: color-mix(in oklab, var(--success) 12%, var(--surface));
+}
+
+.recon-test-state.notFound {
+  color: var(--notice);
+  background: color-mix(in oklab, var(--notice) 14%, var(--surface));
+}
+
+.recon-test-state.error {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.recon-test-row {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.recon-test-label {
+  flex: none;
+  width: 72px;
+  color: var(--muted);
+}
+
+.recon-test-value {
+  min-width: 0;
+  color: var(--ink);
+}
+
+.recon-test-error {
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
+.recon-test-subhead {
+  margin: 12px 0 5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.recon-test-output,
+.recon-test-raw {
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ---------- Version diff view (diff-view.ts) ---------- */

@@ -143,6 +143,8 @@ func (f privateFixture) calls() []apiCall {
 		{"PUT /api/roadmaps/{id}/tracker-extractor", "PUT", rm("/tracker-extractor"),
 			`{"source":"def get_issue_time_range(issue):\n    return None\n"}`},
 		{"DELETE /api/roadmaps/{id}/tracker-extractor", "DELETE", rm("/tracker-extractor"), ""},
+		{"POST /api/roadmaps/{id}/tracker-extractor/test", "POST", rm("/tracker-extractor/test"),
+			`{"source":"def get_issue_time_range(issue):\n    return None\n","key":"PAY-1"}`},
 		{"POST /api/roadmaps/{id}/schedule-check", "POST", rm("/schedule-check"), `{"keys":["PAY-1"]}`},
 		{"POST /api/roadmaps/{id}/schedule-check/status", "POST", rm("/schedule-check/status"), `{"keys":["PAY-1"]}`},
 	}

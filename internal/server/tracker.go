@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dnswlt/roadie/internal/recon"
 	"github.com/dnswlt/roadie/internal/store"
 	"github.com/dnswlt/roadie/internal/tracker"
 	"github.com/dnswlt/roadie/internal/tracker/extractor"
@@ -192,6 +193,116 @@ func (s *Server) putTrackerExtractor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, e)
 }
 
+// trackerExtractorTestRequest carries the *editor's* source, not the stored
+// one: Test is how a script is arrived at, so it has to run before Save would
+// accept it.
+type trackerExtractorTestRequest struct {
+	Source string `json:"source"`
+	Key    string `json:"key"`
+}
+
+// trackerExtractorTestResponse is one issue put through one script. State uses
+// the check's own vocabulary, so the editor and the results list describe an
+// outcome the same way.
+type trackerExtractorTestResponse struct {
+	State string         `json:"state"`
+	Issue *tracker.Issue `json:"issue,omitempty"`
+	// Fields is what the script declared, which is not what was fetched: the
+	// adapter adds the display fields. Shown so a script that names nothing
+	// still explains why Raw holds only summary, issuetype and status.
+	Fields []string `json:"fields"`
+	// Raw is exactly the argument the script received — the tracker's own JSON,
+	// named as the tracker names it. This route is the only one that serializes
+	// it, and it does so because discovering that Begin Date is
+	// customfield_10430 in *this* deployment is impossible without it.
+	Raw    map[string]any `json:"raw,omitempty"`
+	Start  string         `json:"start,omitempty"`
+	End    string         `json:"end,omitempty"`
+	Label  string         `json:"label,omitempty"`
+	Error  string         `json:"error,omitempty"`
+	Output []string       `json:"output,omitempty"`
+}
+
+// testTrackerExtractor runs the unsaved source against one named key.
+//
+// It fetches directly rather than through internal/recon's goroutine, and that
+// is not a hole in "one goroutine talks to the tracker": that rule is about the
+// check, whose queue and cache are both keyed by a *saved* script. This is one
+// issue on one deliberate click, the same posture as the interactive search —
+// and routing it through the fetcher would make the editor wait behind whatever
+// roadmap is being checked, to answer about a script the queue cannot key.
+//
+// A script that does not compile is a 400, exactly as saving one is. Everything
+// past that point is a result to render, not a failed request: a raising script,
+// a key nobody can see, a range that comes back empty are all things the author
+// is here to look at.
+func (s *Server) testTrackerExtractor(w http.ResponseWriter, r *http.Request) {
+	if _, err := pathID(r); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	if s.tracker == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "issue tracker is not configured"})
+		return
+	}
+	var req trackerExtractorTestRequest
+	if err := readJSON(w, r, &req); err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	key := uppercaseIssueKey(req.Key)
+	if key == "" {
+		writeClientErr(w, fmt.Errorf("name an issue to test against"))
+		return
+	}
+	script, err := extractor.Compile(req.Source)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+
+	resp := trackerExtractorTestResponse{Fields: script.Fields(), Output: script.Output()}
+	if resp.Fields == nil {
+		resp.Fields = []string{}
+	}
+	issues, err := s.tracker.FetchIssues(r.Context(), []string{key}, script.Fields())
+	if err != nil {
+		// Same rule as the search route: a request the tracker rejected and
+		// explained is the user's to fix — a field id that does not exist here
+		// is precisely that — and anything else stays a 502 with its detail in
+		// the log.
+		var qErr *tracker.QueryError
+		if errors.As(err, &qErr) {
+			writeClientErr(w, qErr)
+			return
+		}
+		log.Printf("tracker extractor test: %v", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "issue tracker query failed"})
+		return
+	}
+	if len(issues) == 0 {
+		resp.State = recon.StateNotFound
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	issue := issues[0]
+	resp.Issue, resp.Raw = &issue.Issue, issue.Raw
+	res, err := script.TimeRange(issue.Raw)
+	// Whatever the call printed comes back either way; a failing script's
+	// prints are the ones most worth reading.
+	resp.Output = append(resp.Output, res.Output...)
+	switch {
+	case err != nil:
+		resp.State, resp.Error = recon.StateError, err.Error()
+	case res.Skip:
+		resp.State = recon.StateSkipped
+	default:
+		resp.State, resp.Start, resp.End, resp.Label = recon.StateOK, res.Start, res.End, res.Label
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) deleteTrackerExtractor(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
@@ -252,12 +363,12 @@ func (s *Server) readScheduleCheck(w http.ResponseWriter, r *http.Request) (int6
 	return id, req, true
 }
 
-// distinctKeys normalizes Jira keys at the schedule-check HTTP boundary.
+// distinctKeys uppercases and deduplicates Jira keys at the HTTP boundary.
 func distinctKeys(keys []string) []string {
 	seen := make(map[string]bool, len(keys))
 	out := make([]string, 0, len(keys))
 	for _, key := range keys {
-		key = strings.ToUpper(strings.TrimSpace(key))
+		key = uppercaseIssueKey(key)
 		if key == "" || seen[key] {
 			continue
 		}
@@ -265,4 +376,8 @@ func distinctKeys(keys []string) []string {
 		out = append(out, key)
 	}
 	return out
+}
+
+func uppercaseIssueKey(key string) string {
+	return strings.ToUpper(key)
 }

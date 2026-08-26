@@ -119,6 +119,9 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/tracker-extractor", s.guard(byRoadmapID, s.getTrackerExtractor))
 	s.mux.HandleFunc("PUT /api/roadmaps/{id}/tracker-extractor", s.guard(byRoadmapID, s.putTrackerExtractor))
 	s.mux.HandleFunc("DELETE /api/roadmaps/{id}/tracker-extractor", s.guard(byRoadmapID, s.deleteTrackerExtractor))
+	// Test runs the editor's unsaved source against one issue, so it takes a
+	// script in the body and stores nothing.
+	s.mux.HandleFunc("POST /api/roadmaps/{id}/tracker-extractor/test", s.guard(byRoadmapID, s.testTrackerExtractor))
 	// Enqueue and poll are separate on purpose: a poll must never be able to
 	// cause a tracker request. See tracker.go.
 	s.mux.HandleFunc("POST /api/roadmaps/{id}/schedule-check", s.guard(byRoadmapID, s.enqueueScheduleCheck))

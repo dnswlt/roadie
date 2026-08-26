@@ -177,6 +177,39 @@ export interface TrackerQuery {
   query: string;
 }
 
+// A roadmap's schedule-extractor script (notes/schedule_check.md): the
+// Starlark that says which Jira fields carry an issue's schedule. Operational
+// recon data like TrackerQuery — never in RoadmapFull, snapshots or exports —
+// and at most one per roadmap, so the roadmap is its whole identity.
+export interface TrackerExtractor {
+  roadmapId: number;
+  source: string;
+  updatedAt: string; // ISO 8601 timestamp
+}
+
+// The states one checked issue can be in, as internal/recon names them.
+export type TrackerScheduleState = "ok" | "skipped" | "notFound" | "error";
+
+// One issue put through one script, the answer to the editor's Test.
+//
+// `raw` is the tracker's own JSON, nested and named as Jira names it — the
+// script's argument verbatim, and the only provider-shaped payload the
+// frontend ever receives. It is rendered by the Test panel and goes no
+// further: never into AppState, an item, or anything that is persisted.
+export interface TrackerExtractorTest {
+  state: TrackerScheduleState;
+  issue?: TrackerIssue;
+  // What the script declared in JIRA_FIELDS. Empty explains a `raw` holding
+  // nothing but the display fields.
+  fields: string[];
+  raw?: unknown;
+  start?: string;
+  end?: string;
+  label?: string;
+  error?: string;
+  output?: string[];
+}
+
 // Snapshot metadata (no payload) for the version-history list. `name` is set
 // only for manual/named snapshots; auto snapshots have a null name.
 export interface Snapshot {

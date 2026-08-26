@@ -68,7 +68,8 @@ snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.t
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`) ·
 Jira Recon view (`recon.ts`, server `tracker.go`) · schedule check
 (`internal/recon` owns the one tracker-fetching goroutine and its cache;
-scripts in `internal/tracker/extractor`) ·
+scripts in `internal/tracker/extractor`; the script editor is Recon's third
+tab) ·
 version diff (`diff.ts` + `diff-text.ts` + `diff-view.ts`, toggled from the
 snapshot banner).
 

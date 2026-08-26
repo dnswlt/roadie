@@ -770,7 +770,7 @@ func TestFetchIssuesDropsUnusableKeys(t *testing.T) {
 	}}
 	c := newFixtureClient(t, f)
 	found, err := c.FetchIssues(context.Background(),
-		[]string{"PAY-1", `PAY-1") OR project = "SECRET`, "not a key", "", "PAY-0", "-7"}, nil)
+		[]string{"PAY-1", " PAY-1 ", `PAY-1") OR project = "SECRET`, "not a key", "", "PAY-0", "-7"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

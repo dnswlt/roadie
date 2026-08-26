@@ -218,9 +218,15 @@ func TestTrackerExtractorRoutes(t *testing.T) {
 }
 
 // reconTracker answers one issue, so the routes can be exercised end to end.
-type reconTracker struct{ stubTracker }
+// It records the fields it was asked for: what a script declares has to reach
+// the adapter, or a custom field would come back missing for the wrong reason.
+type reconTracker struct {
+	stubTracker
+	fields []string
+}
 
-func (t *reconTracker) FetchIssues(_ context.Context, keys, _ []string) ([]tracker.FetchedIssue, error) {
+func (t *reconTracker) FetchIssues(_ context.Context, keys, extraFields []string) ([]tracker.FetchedIssue, error) {
+	t.fields = extraFields
 	var out []tracker.FetchedIssue
 	for _, key := range keys {
 		if key == "PAY-1" {
@@ -231,6 +237,91 @@ func (t *reconTracker) FetchIssues(_ context.Context, keys, _ []string) ([]track
 		}
 	}
 	return out, nil
+}
+
+// Test is the editor's own path: it runs the source in the body, never the
+// stored one, and answers with a result to render rather than an error status.
+func TestTrackerExtractorTestRoute(t *testing.T) {
+	rm := seedRoadmap(t, "test-"+t.Name())
+	stub := &reconTracker{}
+	srv := New(testStore, fstest.MapFS{}, WithTracker(stub))
+	path := "/api/roadmaps/" + itoa(rm) + "/tracker-extractor/test"
+	const src = "JIRA_FIELDS = [\"duedate\"]\n\n" +
+		"def get_issue_time_range(issue):\n" +
+		"    print(\"seen\", issue[\"key\"])\n" +
+		"    return {\"end\": issue[\"fields\"][\"duedate\"], \"label\": \"Due date\"}\n"
+
+	w := doWithServer(t, srv, http.MethodPost, path, trackerExtractorTestRequest{Source: src, Key: "pay-1"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	got := decode[trackerExtractorTestResponse](t, w)
+	if got.State != recon.StateOK || got.End != "2026-04-12" || got.Label != "Due date" {
+		t.Fatalf("result = %+v", got)
+	}
+	if len(stub.fields) != 1 || stub.fields[0] != "duedate" {
+		t.Fatalf("fields asked of the tracker = %v", stub.fields)
+	}
+	// The raw issue is what makes a custom field's id discoverable, so it has
+	// to be the script's argument verbatim — and print() has to come back with
+	// it, since the editor is the only place a script's output is readable.
+	if fields, _ := got.Raw["fields"].(map[string]any); fields["duedate"] != "2026-04-12" {
+		t.Fatalf("raw = %+v", got.Raw)
+	}
+	if got.Issue == nil || got.Issue.Key != "PAY-1" {
+		t.Fatalf("issue = %+v", got.Issue)
+	}
+	if len(got.Output) != 1 || got.Output[0] != "seen PAY-1" {
+		t.Fatalf("output = %v", got.Output)
+	}
+	// Nothing was stored: Test precedes Save, and may run a script Save would
+	// reject.
+	if w := doWithServer(t, srv, http.MethodGet, "/api/roadmaps/"+itoa(rm)+"/tracker-extractor", nil); w.Code != http.StatusNotFound {
+		t.Fatalf("get after test = %d, body %s", w.Code, w.Body)
+	}
+
+	// A key the tracker does not return is a state, not a failure.
+	w = doWithServer(t, srv, http.MethodPost, path, trackerExtractorTestRequest{Source: src, Key: "PAY-404"})
+	if w.Code != http.StatusOK || decode[trackerExtractorTestResponse](t, w).State != recon.StateNotFound {
+		t.Fatalf("unknown key = %d, body %s", w.Code, w.Body)
+	}
+	w = doWithServer(t, srv, http.MethodPost, path, trackerExtractorTestRequest{Source: src, Key: " PAY-1 "})
+	if w.Code != http.StatusOK || decode[trackerExtractorTestResponse](t, w).State != recon.StateNotFound {
+		t.Fatalf("padded key = %d, body %s", w.Code, w.Body)
+	}
+
+	// A raising script is one too: the message names the line to fix.
+	raising := "def get_issue_time_range(issue):\n    return issue[\"fields\"][\"nope\"]\n"
+	w = doWithServer(t, srv, http.MethodPost, path, trackerExtractorTestRequest{Source: raising, Key: "PAY-1"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("raising script = %d, body %s", w.Code, w.Body)
+	}
+	if got := decode[trackerExtractorTestResponse](t, w); got.State != recon.StateError || !strings.Contains(got.Error, "extractor.star:2") {
+		t.Fatalf("raising script = %+v", got)
+	}
+
+	// A script that does not compile is a 400 here exactly as it is on save,
+	// and so is a test with no issue named.
+	for name, req := range map[string]trackerExtractorTestRequest{
+		"does not compile": {Source: "def get_issue_time_range(issue)\n", Key: "PAY-1"},
+		"no entry point":   {Source: "JIRA_FIELDS = []\n", Key: "PAY-1"},
+		"no key":           {Source: src, Key: ""},
+	} {
+		if w := doWithServer(t, srv, http.MethodPost, path, req); w.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, body %s", name, w.Code, w.Body)
+		}
+	}
+}
+
+// Without a tracker there is nothing to test a script against, and the answer
+// says so rather than falling through to the SPA.
+func TestTrackerExtractorTestWithoutTracker(t *testing.T) {
+	rm := seedRoadmap(t, "test-"+t.Name())
+	w := do(t, http.MethodPost, "/api/roadmaps/"+itoa(rm)+"/tracker-extractor/test",
+		trackerExtractorTestRequest{Source: "def get_issue_time_range(issue):\n    return None\n", Key: "PAY-1"})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
 }
 
 // The two routes are a thin layer over internal/recon: enqueue takes keys and
@@ -257,7 +348,7 @@ func TestScheduleCheckRoutes(t *testing.T) {
 	base := "/api/roadmaps/" + itoa(rm.ID) + "/schedule-check"
 
 	// Poll before anything is enqueued: everything unchecked, nothing queued.
-	w := doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"pay-1", " PAY-1 "}})
+	w := doWithServer(t, srv, http.MethodPost, base+"/status", scheduleCheckRequest{Keys: []string{"pay-1", "PAY-1"}})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body)
 	}

@@ -252,8 +252,9 @@ favourites' shape — `guard`, not `snap`:
 - `POST /api/roadmaps/{id}/schedule-check` — enqueue keys, returns at once
 - `POST /api/roadmaps/{id}/schedule-check/status` — read cached results
 
-Both routes trim keys, normalize them to uppercase and drop duplicates. Result
-keys are therefore uppercase too.
+Issue-key inputs are normalized to uppercase; the two schedule-check routes
+also drop duplicates. The frontend trims user input; the backend does not repair
+other invalid input.
 
 Roadmap-scoped, unlike `POST /api/tracker/search`, because the script belongs to
 a roadmap.
@@ -278,5 +279,5 @@ deliberate change in posture.
 1. Table, extractor CRUD with save validation, Starlark runner.
 2. By-key fetch (extra fields, batching, salvage), the fetcher goroutine with
    its cache and backoff, and the enqueue/status routes.
-3. Recon tab: run, render ranges, filter to mismatches.
-4. Editor with Test and raw-field inspection.
+3. Recon tab: Editor with Test and raw-field inspection.
+4. Recon tab: run, render ranges, filter to mismatches.

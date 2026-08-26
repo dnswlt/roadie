@@ -9,10 +9,10 @@
 // returning shows the same loaded results — but not a reload.
 //
 // Rendering follows render.ts/wbs.ts: full rebuild from state on every call.
-// The one editable field, the query input, gets the panel's courtesy: its text
-// lives in `query` (synced on input) and its caret/focus are restored across a
-// rebuild, so an SSE refresh landing mid-typing cannot eat a half-written
-// query.
+// The editable fields get the panel's courtesy: their text lives in module
+// state (synced on input, never rendering per keystroke) and their caret/focus
+// are restored across a rebuild, so a response landing mid-typing cannot eat a
+// half-written query or script. See textBoxes.
 
 import { actions } from "./actions";
 import { api } from "./api";
@@ -30,7 +30,7 @@ import {
 import { createSearchList } from "./search-list";
 import { state, type ItemLocation } from "./state";
 import { toast } from "./toast";
-import type { TrackerIssue, TrackerQuery } from "./types";
+import type { TrackerExtractorTest, TrackerIssue, TrackerQuery } from "./types";
 
 let query = "";
 // The query the loaded results and cursor belong to — Load more must send
@@ -55,7 +55,7 @@ let linkingIssueKey: string | null = null;
 // The two reconciliation questions are peers, but only Jira issues have query
 // controls. Keeping this local matches the rest of Recon's ephemeral UI state
 // and makes the Roadie list independent of whichever JQL was last run.
-let section: "issues" | "roadie" = "issues";
+let section: "issues" | "roadie" | "schedule" = "issues";
 // Stamps each fetch so a slow response cannot apply over a newer run's
 // results: bumped at every start, checked before applying.
 let seq = 0;
@@ -322,12 +322,9 @@ export function renderRecon(container: HTMLElement): void {
   issuePicker?.close();
   mount = container;
   if (section === "issues") ensureFavourites();
+  if (section === "schedule") ensureScript();
   const scrollTop = container.scrollTop;
-  const prev = container.querySelector<HTMLInputElement>(".recon-input");
-  const caret =
-    prev && prev === document.activeElement
-      ? { start: prev.selectionStart ?? prev.value.length, end: prev.selectionEnd ?? prev.value.length }
-      : null;
+  const caret = captureCaret(container);
 
   const root = div("recon");
   const unreferenced = roadieItemsWithoutJiraReference(state.current, state.me.trackerUrl);
@@ -339,17 +336,45 @@ export function renderRecon(container: HTMLElement): void {
     const banner = buildLinkModeBanner(target);
     if (banner) root.append(banner);
     root.append(buildQueryForm(), ...buildResults(target));
-  } else root.append(...buildRoadieResults(unreferenced));
+  } else if (section === "roadie") {
+    root.append(...buildRoadieResults(unreferenced));
+  } else root.append(...buildScheduleCheck());
   container.replaceChildren(root);
 
   container.scrollTop = scrollTop;
-  if (caret) {
-    const input = container.querySelector<HTMLInputElement>(".recon-input");
-    if (input) {
-      input.focus();
-      input.setSelectionRange(caret.start, caret.end);
+  restoreCaret(container, caret);
+}
+
+// The text boxes this view rebuilds under the user: the JQL query, the
+// extractor source, the key to test against. Whichever one holds focus has its
+// caret put back after a render, so a response landing mid-typing cannot eat
+// half a line. Addressed by selector rather than by node, because the node
+// that had focus no longer exists by the time it is restored.
+const textBoxes = [".recon-input", ".recon-script", ".recon-test-key"];
+
+type TextBox = HTMLInputElement | HTMLTextAreaElement;
+type Caret = { selector: string; start: number; end: number };
+
+function captureCaret(container: HTMLElement): Caret | null {
+  for (const selector of textBoxes) {
+    const el = container.querySelector<TextBox>(selector);
+    if (el && el === document.activeElement) {
+      return {
+        selector,
+        start: el.selectionStart ?? el.value.length,
+        end: el.selectionEnd ?? el.value.length,
+      };
     }
   }
+  return null;
+}
+
+function restoreCaret(container: HTMLElement, caret: Caret | null): void {
+  if (!caret) return;
+  const el = container.querySelector<TextBox>(caret.selector);
+  if (!el) return;
+  el.focus();
+  el.setSelectionRange(caret.start, caret.end);
 }
 
 function buildHeader(unreferencedCount: number): HTMLElement {
@@ -364,6 +389,7 @@ function buildHeader(unreferencedCount: number): HTMLElement {
   const choices: { id: typeof section; label: string; count?: number }[] = [
     { id: "issues", label: "Jira issues" },
     { id: "roadie", label: "Roadie items", count: unreferencedCount },
+    { id: "schedule", label: "Schedule check" },
   ];
   for (const choice of choices) {
     const tab = document.createElement("button");
@@ -936,4 +962,433 @@ function issueRow({ issue, matches }: ReconciledIssue, target: ItemLocation | nu
     row.append(linked);
   }
   return row;
+}
+
+// ---------- Schedule check: the extractor script (notes/schedule_check.md) ----------
+//
+// Jira has no one place where an issue's schedule lives, so a roadmap carries a
+// small Starlark script saying which fields to read and how to turn them into a
+// date range. This is the editor half of the tab: write it, save it (the server
+// refuses one that will not run), and Test it against a single issue.
+//
+// Test is what makes the script writable at all. A custom field is
+// `customfield_10430` and never "Begin Date", and no API here maps one to the
+// other — the raw JSON of a real issue is where that id is found.
+
+// The editor's text and the roadmap it belongs to. `scriptSaved` is what the
+// server holds, null when the roadmap has no script, which is what separates
+// "nothing here yet" from "edited but not saved".
+let script = "";
+let scriptSaved: string | null = null;
+let scriptFor: number | null = null;
+let scriptLoading = false;
+let saving = false;
+// A save error renders inline under the source rather than as a toast: it
+// names a line in the text directly above it.
+let scriptError: string | null = null;
+// The load failed. Kept apart from "no script saved" because the two look
+// identical and act very differently: offering a blank editor after a failed
+// GET invites saving over a script that is still there.
+let scriptLoadError: string | null = null;
+
+let testKey = "";
+let testing = false;
+let testResult: TrackerExtractorTest | null = null;
+let testError: string | null = null;
+// Stamps each test like `seq` does a search: a slow answer must not land over
+// a newer one's.
+let testSeq = 0;
+
+// The skeleton "Create a script" starts from. It compiles, returns None for
+// everything, and maps no field — deliberately: a guessed field mapping is
+// silently wrong for every deployment it does not fit, which is why there is
+// no default extractor.
+const scriptSkeleton = `# Which Jira fields carry an issue's schedule, and how to read a date range
+# out of them. Roadie compares that range against the dates of the roadmap
+# item whose description links to the issue.
+#
+# JIRA_FIELDS holds Jira field *ids*, passed to Jira untouched. System fields
+# read well ("fixVersions", "duedate"); a custom field is "customfield_10430",
+# never its display name. Test an issue below and read its raw JSON to find
+# the id you need.
+JIRA_FIELDS = []
+
+
+def get_issue_time_range(issue):
+    # issue is Jira's own JSON: issue["key"], issue["fields"][...], nested as
+    # Jira returns it. summary, issuetype and status are always fetched.
+    #
+    # Return {"start": ..., "end": ..., "label": ...} — every key optional,
+    # dates as YYYY-MM-DD, label saying where they came from ("Sprint 24").
+    # Return None to skip the issue: it is then never compared.
+    return None
+`;
+
+// ensureScript loads the roadmap's script once per roadmap, like
+// ensureFavourites: the roadmap is re-checked when the response lands, since
+// the user may have switched away while it was in flight.
+function ensureScript(): void {
+  const rm = state.current;
+  if (!rm) {
+    resetScript();
+    return;
+  }
+  if (scriptFor === rm.id) return;
+  // The loaded text belongs to a different roadmap. Drop it before anything
+  // can render or save it, which would write one roadmap's script onto
+  // another's.
+  resetScript();
+  if (scriptLoading) return;
+  scriptLoading = true;
+  void api.getTrackerExtractor(rm.id).then(
+    (ext) => {
+      scriptLoading = false;
+      if (state.current?.id === rm.id) {
+        scriptSaved = ext?.source ?? null;
+        script = scriptSaved ?? "";
+        scriptFor = rm.id;
+      }
+      // Repaint either way: after a switch mid-flight this re-enters
+      // ensureScript, which starts the fetch for the roadmap now open.
+      rerender();
+    },
+    (e: unknown) => {
+      scriptLoading = false;
+      if (state.current?.id === rm.id) {
+        // Recorded as loaded-with-an-error rather than retried per render:
+        // without this a failing backend would refetch on every repaint.
+        scriptFor = rm.id;
+        scriptLoadError = e instanceof Error ? e.message : String(e);
+      }
+      rerender();
+    },
+  );
+}
+
+function resetScript(): void {
+  script = "";
+  scriptSaved = null;
+  scriptFor = null;
+  scriptError = null;
+  scriptLoadError = null;
+  testResult = null;
+  testError = null;
+}
+
+function scriptDirty(): boolean {
+  return script !== (scriptSaved ?? "");
+}
+
+async function saveScript(): Promise<void> {
+  const rm = state.current;
+  if (!rm || saving || script.trim() === "") return;
+  saving = true;
+  scriptError = null;
+  rerender();
+  try {
+    const ext = await api.putTrackerExtractor(rm.id, script);
+    if (state.current?.id !== rm.id) return;
+    scriptSaved = ext.source;
+    toast("Extractor script saved");
+  } catch (e) {
+    if (state.current?.id !== rm.id) return;
+    // The server compiles before storing, so this is usually the script's own
+    // error with the line it happened on — inline, under the source.
+    scriptError = e instanceof Error ? e.message : String(e);
+  } finally {
+    saving = false;
+    rerender();
+  }
+}
+
+async function deleteScript(): Promise<void> {
+  const rm = state.current;
+  if (!rm || scriptSaved === null) return;
+  if (!(await confirmDialog("Delete this roadmap's extractor script?"))) return;
+  try {
+    await api.deleteTrackerExtractor(rm.id);
+    if (state.current?.id !== rm.id) return;
+    scriptSaved = null;
+    script = "";
+    scriptError = null;
+  } catch (e) {
+    toast(e instanceof Error ? e.message : String(e), true);
+  }
+  rerender();
+}
+
+// runTest sends the editor's text, not the saved script: Test is how a script
+// is arrived at, so it has to run before Save would accept it.
+async function runTest(): Promise<void> {
+  const rm = state.current;
+  const key = testKey.trim();
+  if (!rm || testing || key === "") return;
+  const mySeq = ++testSeq;
+  testing = true;
+  testError = null;
+  testResult = null;
+  rerender();
+  try {
+    const res = await api.testTrackerExtractor(rm.id, script, key);
+    if (testSeq !== mySeq) return;
+    testResult = res;
+  } catch (e) {
+    if (testSeq !== mySeq) return;
+    // Reported under the Test box and not under the source, even for a script
+    // that does not compile — which this refuses exactly as Save does. Two
+    // copies of one message read as two problems.
+    testError = e instanceof Error ? e.message : String(e);
+  }
+  testing = false;
+  rerender();
+}
+
+function buildScheduleCheck(): HTMLElement[] {
+  const rm = state.current;
+  if (!rm) return [];
+  if (scriptLoadError !== null) return [buildScriptLoadError()];
+  if (scriptFor !== rm.id) {
+    const hint = div("recon-hint");
+    hint.textContent = "Loading the extractor script…";
+    return [hint];
+  }
+  // Nothing saved and nothing typed: explain the tab and offer a starting
+  // point, rather than presenting an empty box that means nothing.
+  if (scriptSaved === null && script === "") return [buildScriptIntro()];
+  return [buildScriptEditor(), buildTestPanel()];
+}
+
+function buildScriptLoadError(): HTMLElement {
+  const wrap = div("recon-hint");
+  const msg = div("recon-error");
+  msg.textContent = `Could not load this roadmap's extractor script: ${scriptLoadError}`;
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "btn";
+  retry.textContent = "Try again";
+  retry.addEventListener("click", () => {
+    resetScript();
+    rerender();
+  });
+  wrap.append(msg, retry);
+  return wrap;
+}
+
+function buildScriptIntro(): HTMLElement {
+  const wrap = div("recon-script-intro");
+  const lead = document.createElement("p");
+  lead.textContent =
+    "Jira keeps an issue's schedule wherever a deployment decided to: a fix version, a sprint, a due date, a custom field. A short script for this roadmap says which fields to read and how to turn them into a date range; Roadie then checks every linked issue against the dates of the item that links to it.";
+  const why = document.createElement("p");
+  why.textContent =
+    "There is no default script, because a guessed field mapping is silently wrong for every deployment it does not fit. Start from the skeleton and use Test to find out what this Jira calls its fields.";
+  const create = document.createElement("button");
+  create.type = "button";
+  create.className = "btn btn-primary";
+  create.textContent = "Create a script";
+  create.addEventListener("click", () => {
+    script = scriptSkeleton;
+    rerender();
+  });
+  wrap.append(lead, why, create);
+  return wrap;
+}
+
+function buildScriptEditor(): HTMLElement {
+  const wrap = div("recon-script-wrap");
+  const h = document.createElement("h3");
+  h.textContent = "Extractor script";
+  const area = document.createElement("textarea");
+  area.className = "recon-script";
+  area.spellcheck = false;
+  area.rows = 12;
+  area.value = script;
+  area.setAttribute("aria-label", "Extractor script");
+
+  const bar = div("recon-script-actions");
+  const status = div("recon-script-status");
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "btn btn-primary";
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "btn recon-script-delete";
+  delBtn.textContent = "Delete";
+  delBtn.disabled = scriptSaved === null;
+  delBtn.title = scriptSaved === null ? "Nothing is saved yet" : "Delete the saved script";
+  delBtn.addEventListener("click", () => void deleteScript());
+
+  // Typing changes exactly two things on screen — the Save button and the
+  // status line — so the textarea syncs those itself. Rendering per keystroke
+  // would rebuild the box being typed into.
+  //
+  // Save stays available on text that is already saved. Greying it out there
+  // reads as "you may not save this" and offers nothing that says why, where
+  // the status line beside it already says whether anything changed — and a
+  // re-save is a re-validation, which is a reasonable thing to want.
+  const sync = (): void => {
+    saveBtn.textContent = saving ? "Saving…" : "Save";
+    saveBtn.disabled = saving || script.trim() === "";
+    status.textContent = scriptDirty()
+      ? "Unsaved changes"
+      : scriptSaved === null
+        ? "Not saved yet"
+        : "Saved";
+  };
+  area.addEventListener("input", () => {
+    script = area.value;
+    sync();
+  });
+  sync();
+  saveBtn.addEventListener("click", () => void saveScript());
+  bar.append(status, delBtn, saveBtn);
+  wrap.append(h, area, bar);
+
+  if (scriptError !== null) {
+    const err = div("recon-error");
+    err.textContent = scriptError;
+    wrap.append(err);
+  }
+  return wrap;
+}
+
+function buildTestPanel(): HTMLElement {
+  const wrap = div("recon-test");
+  const h = document.createElement("h3");
+  h.textContent = "Test";
+  const hint = div("recon-test-hint");
+  hint.textContent = "Runs the current source against one Jira issue.";
+
+  const form = document.createElement("form");
+  form.className = "recon-test-form";
+  const input = document.createElement("input");
+  input.className = "recon-input recon-test-key";
+  input.type = "text";
+  input.spellcheck = false;
+  input.placeholder = "Issue key — e.g. PAY-101";
+  input.setAttribute("aria-label", "Issue key to test the script against");
+  input.value = testKey;
+  const runBtn = document.createElement("button");
+  runBtn.type = "submit";
+  runBtn.className = "btn";
+  runBtn.textContent = testing ? "Testing…" : "Test";
+  const syncRun = (): void => {
+    runBtn.disabled = testing || testKey.trim() === "";
+  };
+  input.addEventListener("input", () => {
+    testKey = input.value;
+    syncRun();
+  });
+  syncRun();
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    void runTest();
+  });
+  form.append(input, runBtn);
+  wrap.append(h, hint, form);
+
+  if (testError !== null) {
+    const err = div("recon-error");
+    err.textContent = testError;
+    wrap.append(err);
+  }
+  if (testResult !== null) wrap.append(buildTestResult(testResult));
+  return wrap;
+}
+
+const testStateLabels: Record<TrackerExtractorTest["state"], string> = {
+  ok: "Extracted",
+  skipped: "Skipped",
+  notFound: "Not found",
+  error: "Script error",
+};
+
+function buildTestResult(res: TrackerExtractorTest): HTMLElement {
+  const wrap = div("recon-test-result");
+
+  const head = div("recon-test-head");
+  const badge = document.createElement("span");
+  badge.className = `recon-test-state ${res.state}`;
+  badge.textContent = testStateLabels[res.state];
+  head.append(badge);
+  if (res.issue) {
+    const key = document.createElement("a");
+    key.className = "recon-issue-key";
+    key.href = res.issue.url;
+    key.target = "_blank";
+    key.rel = "noreferrer";
+    key.title = "Open in Jira";
+    key.textContent = res.issue.key;
+    const title = div("recon-test-title");
+    title.textContent = res.issue.title;
+    head.append(key, title);
+  }
+  wrap.append(head);
+
+  const row = (label: string, value: string | Node): HTMLElement => {
+    const el = div("recon-test-row");
+    const name = document.createElement("span");
+    name.className = "recon-test-label";
+    name.textContent = label;
+    const val = document.createElement("span");
+    val.className = "recon-test-value";
+    val.append(value);
+    el.append(name, val);
+    return el;
+  };
+
+  switch (res.state) {
+    case "ok":
+      wrap.append(row("Range", formatRange(res.start, res.end)));
+      wrap.append(row("Label", res.label || "—"));
+      break;
+    case "skipped":
+      wrap.append(row("Result", "No dates returned."));
+      break;
+    case "notFound":
+      wrap.append(row("Result", "Issue not found or not visible."));
+      break;
+    case "error": {
+      const msg = document.createElement("span");
+      msg.className = "recon-test-error";
+      msg.textContent = res.error ?? "The script failed.";
+      wrap.append(row("Error", msg));
+      break;
+    }
+  }
+
+  wrap.append(
+    row("Fields", res.fields.length > 0 ? res.fields.join(", ") : "None"),
+  );
+
+  if (res.output && res.output.length > 0) {
+    const out = document.createElement("pre");
+    out.className = "recon-test-output";
+    out.textContent = res.output.join("\n");
+    wrap.append(subheading("Output"), out);
+  }
+
+  if (res.raw !== undefined) {
+    const raw = document.createElement("pre");
+    raw.className = "recon-test-raw";
+    raw.textContent = JSON.stringify(res.raw, null, 2);
+    wrap.append(subheading("Raw JSON"), raw);
+  }
+  return wrap;
+}
+
+function subheading(text: string): HTMLElement {
+  const el = document.createElement("h4");
+  el.className = "recon-test-subhead";
+  el.textContent = text;
+  return el;
+}
+
+// A range with either end unknown reads as an open one rather than as a
+// half-empty pair: "until 12 Apr" is what a fix version's release date means.
+function formatRange(start?: string, end?: string): string {
+  if (start && end) return `${start} → ${end}`;
+  if (end) return `until ${end}`;
+  if (start) return `from ${start}`;
+  return "—";
 }

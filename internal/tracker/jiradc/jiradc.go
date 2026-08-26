@@ -257,7 +257,7 @@ func (c *Client) FetchIssues(ctx context.Context, keys, extraFields []string) ([
 
 	usable := make([]string, 0, len(keys))
 	for _, key := range keys {
-		if key = strings.TrimSpace(key); jiraKey.MatchString(key) {
+		if jiraKey.MatchString(key) {
 			usable = append(usable, key)
 		}
 	}
