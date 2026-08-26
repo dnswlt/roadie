@@ -223,6 +223,9 @@ type trackerExtractorTestResponse struct {
 	Label       string         `json:"label,omitempty"`
 	Error       string         `json:"error,omitempty"`
 	Output      []string       `json:"output,omitempty"`
+	// OutOfScope says the project scope does not cover this key. The check would
+	// not have fetched it; this route does.
+	OutOfScope bool `json:"outOfScope,omitempty"`
 }
 
 // testTrackerExtractor runs the unsaved source against one named key.
@@ -267,6 +270,9 @@ func (s *Server) testTrackerExtractor(w http.ResponseWriter, r *http.Request) {
 	if resp.Fields == nil {
 		resp.Fields = []string{}
 	}
+	// Flagged, not gated: this panel tests the key regardless.
+	resp.OutOfScope = !script.InScope(key)
+
 	issues, err := s.tracker.FetchIssues(r.Context(), []string{key}, script.Fields())
 	if err != nil {
 		// Same rule as the search route: a request the tracker rejected and

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,7 +22,12 @@ const (
 	TimeRangeFunc = "get_issue_time_range"
 	// FieldsVar names the tracker fields required by the script.
 	FieldsVar = "JIRA_FIELDS"
+	// ProjectsVar names the tracker projects whose issues are worth fetching.
+	ProjectsVar = "JIRA_PROJECTS"
 )
+
+// projectKey is Jira's project-key grammar.
+var projectKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 
 const scriptFile = "extractor.star"
 
@@ -39,13 +46,14 @@ type Result struct {
 
 // Script is a compiled extractor.
 type Script struct {
-	fields []string
-	fn     starlark.Callable
-	output []string
+	fields   []string
+	projects []string
+	fn       starlark.Callable
+	output   []string
 }
 
 // Compile parses the source, executes its top level, and validates its entry
-// point and field list.
+// point, field list and project list.
 func Compile(src string) (*Script, error) {
 	s := &Script{}
 	globals, err := starlark.ExecFileOptions(fileOptions, newThread(&s.output), scriptFile, src, nil)
@@ -64,7 +72,13 @@ func Compile(src string) (*Script, error) {
 	s.fn = callable
 
 	if fields, ok := globals[FieldsVar]; ok {
-		s.fields, err = decodeFields(fields)
+		s.fields, err = decodeStrings(fields, FieldsVar, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if projects, ok := globals[ProjectsVar]; ok {
+		s.projects, err = decodeStrings(projects, ProjectsVar, checkProjectKey)
 		if err != nil {
 			return nil, err
 		}
@@ -74,6 +88,22 @@ func Compile(src string) (*Script, error) {
 
 // Fields returns JIRA_FIELDS in source order.
 func (s *Script) Fields() []string { return s.fields }
+
+// Projects returns JIRA_PROJECTS uppercased, in source order. Empty is every
+// project: the list narrows, it never widens.
+func (s *Script) Projects() []string { return s.projects }
+
+// InScope reports whether an issue key belongs to a project this script reads.
+func (s *Script) InScope(issueKey string) bool {
+	if len(s.projects) == 0 {
+		return true
+	}
+	project, _, ok := strings.Cut(issueKey, "-")
+	if !ok {
+		return false
+	}
+	return slices.Contains(s.projects, strings.ToUpper(project))
+}
 
 // Output is what the top level printed while compiling.
 func (s *Script) Output() []string { return s.output }
@@ -101,23 +131,43 @@ func newThread(sink *[]string) *starlark.Thread {
 	}
 }
 
-func decodeFields(v starlark.Value) ([]string, error) {
+// decodeStrings reads a list-of-strings global, each entry non-empty and, when
+// `check` is set, whatever it returns.
+func decodeStrings(v starlark.Value, name string, check func(string) (string, error)) ([]string, error) {
 	list, ok := v.(*starlark.List)
 	if !ok {
-		return nil, fmt.Errorf("%s is %s, not a list of field ids", FieldsVar, v.Type())
+		return nil, fmt.Errorf("%s is %s, not a list of strings", name, v.Type())
 	}
-	fields := make([]string, 0, list.Len())
+	out := make([]string, 0, list.Len())
 	for i := range list.Len() {
-		s, ok := starlark.AsString(list.Index(i))
+		entry, ok := starlark.AsString(list.Index(i))
 		if !ok {
-			return nil, fmt.Errorf("%s[%d] is %s, not a field id", FieldsVar, i, list.Index(i).Type())
+			return nil, fmt.Errorf("%s[%d] is %s, not a string", name, i, list.Index(i).Type())
 		}
-		if strings.TrimSpace(s) == "" {
-			return nil, fmt.Errorf("%s[%d] is empty", FieldsVar, i)
+		if strings.TrimSpace(entry) == "" {
+			return nil, fmt.Errorf("%s[%d] is empty", name, i)
 		}
-		fields = append(fields, s)
+		if check != nil {
+			entry, err := check(entry)
+			if err != nil {
+				return nil, fmt.Errorf("%s[%d] %w", name, i, err)
+			}
+			out = append(out, entry)
+			continue
+		}
+		out = append(out, entry)
 	}
-	return fields, nil
+	return out, nil
+}
+
+// checkProjectKey rejects whole issue keys, which would scope the check to
+// nothing and quietly skip everything.
+func checkProjectKey(entry string) (string, error) {
+	entry = strings.TrimSpace(entry)
+	if !projectKey.MatchString(entry) {
+		return "", fmt.Errorf("is not a project key: %q", entry)
+	}
+	return strings.ToUpper(entry), nil
 }
 
 func decodeResult(v starlark.Value) (Result, error) {

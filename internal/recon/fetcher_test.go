@@ -621,3 +621,48 @@ func TestScriptErrorsKeepTheirWording(t *testing.T) {
 		t.Fatalf("error = %q, want the script's own compile message", got.Error)
 	}
 }
+
+// An unbrowsable project answers like a nonexistent key, so the request must
+// not be made at all.
+func TestFetcherNeverFetchesOutOfScopeKeys(t *testing.T) {
+	const src = "JIRA_PROJECTS = [\"PAY\"]\n\n" +
+		"def get_issue_time_range(issue):\n" +
+		"    due = issue[\"fields\"].get(\"duedate\")\n" +
+		"    return {\"end\": due} if due else None\n"
+	stub := &stubTracker{issues: map[string]map[string]any{"PAY-1": {"duedate": "2026-04-12"}}}
+	f := New(stub, script(src), 0)
+
+	f.Enqueue(1, []string{"PAY-1", "SECRET-5"})
+	drain(t, f)
+
+	got := statusOf(t, f, "PAY-1", "SECRET-5")
+	if r := got["PAY-1"]; r.State != StateOK || r.End != "2026-04-12" {
+		t.Fatalf("PAY-1 = %+v", r)
+	}
+	if r := got["SECRET-5"]; r.State != StateSkipped {
+		t.Fatalf("SECRET-5 = %+v, want it skipped rather than missing", r)
+	}
+	if len(stub.keys) != 1 || len(stub.keys[0]) != 1 || stub.keys[0][0] != "PAY-1" {
+		t.Fatalf("tracker was asked for %v", stub.keys)
+	}
+}
+
+// A batch of nothing but out-of-scope keys is answered without the tracker.
+func TestFetcherSkipsTheTrackerEntirely(t *testing.T) {
+	const src = "JIRA_PROJECTS = [\"OPS\"]\n\n" +
+		"def get_issue_time_range(issue):\n    return None\n"
+	stub := &stubTracker{issues: map[string]map[string]any{"PAY-1": {"duedate": "2026-04-12"}}}
+	f := New(stub, script(src), 0)
+
+	f.Enqueue(1, []string{"PAY-1", "PAY-2"})
+	drain(t, f)
+
+	if stub.callCount() != 0 {
+		t.Fatalf("tracker calls = %d, want none", stub.callCount())
+	}
+	for key, r := range statusOf(t, f, "PAY-1", "PAY-2") {
+		if r.State != StateSkipped {
+			t.Fatalf("%s = %+v", key, r)
+		}
+	}
+}

@@ -196,6 +196,10 @@ func TestCompileRejects(t *testing.T) {
 		"fields not a list":    "JIRA_FIELDS = \"duedate\"\ndef get_issue_time_range(issue):\n    return None\n",
 		"field not a string":   "JIRA_FIELDS = [1]\ndef get_issue_time_range(issue):\n    return None\n",
 		"field is empty":       "JIRA_FIELDS = [\" \"]\ndef get_issue_time_range(issue):\n    return None\n",
+		"projects not a list":  "JIRA_PROJECTS = \"PAY\"\ndef get_issue_time_range(issue):\n    return None\n",
+		"project not a string": "JIRA_PROJECTS = [1]\ndef get_issue_time_range(issue):\n    return None\n",
+		"project is empty":     "JIRA_PROJECTS = [\" \"]\ndef get_issue_time_range(issue):\n    return None\n",
+		"project is a key":     "JIRA_PROJECTS = [\"PAY-1\"]\ndef get_issue_time_range(issue):\n    return None\n",
 		"load is unavailable":  "load(\"other.star\", \"f\")\ndef get_issue_time_range(issue):\n    return None\n",
 		"while is unavailable": "def get_issue_time_range(issue):\n    while True:\n        pass\n",
 	}
@@ -282,5 +286,43 @@ def get_issue_time_range(issue):
 	}
 	if got := strings.Join(res.Output, "|"); got != "int 3 0.25 None b True" {
 		t.Fatalf("Output = %q", got)
+	}
+}
+
+func TestProjectsScopeIssueKeys(t *testing.T) {
+	s := compile(t, `
+JIRA_PROJECTS = ["PAY", "ops"]
+
+def get_issue_time_range(issue):
+    return None
+`)
+	// Held uppercased, so a lowercased entry still scopes what it meant to.
+	if got := s.Projects(); len(got) != 2 || got[0] != "PAY" || got[1] != "OPS" {
+		t.Fatalf("projects = %v", got)
+	}
+	for key, want := range map[string]bool{
+		"PAY-1":    true,
+		"OPS-2":    true,
+		"SECRET-5": false,
+		"PAYX-1":   false, // a prefix is not a project
+		"PAY":      false, // not an issue key
+	} {
+		if got := s.InScope(key); got != want {
+			t.Fatalf("InScope(%q) = %v, want %v", key, got, want)
+		}
+	}
+}
+
+// The list narrows and never widens, so every roadmap that predates it — and
+// every script that declares nothing — keeps checking every link it finds.
+func TestNoProjectsMeansEveryProject(t *testing.T) {
+	for name, src := range map[string]string{
+		"absent": "def get_issue_time_range(issue):\n    return None\n",
+		"empty":  "JIRA_PROJECTS = []\ndef get_issue_time_range(issue):\n    return None\n",
+	} {
+		s := compile(t, src)
+		if len(s.Projects()) != 0 || !s.InScope("SECRET-5") {
+			t.Fatalf("%s: projects = %v", name, s.Projects())
+		}
 	}
 }

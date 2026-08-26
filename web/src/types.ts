@@ -248,6 +248,9 @@ export interface TrackerExtractorTest {
   label?: string;
   error?: string;
   output?: string[];
+  // JIRA_PROJECTS does not cover this key. The Test panel runs the extractor
+  // anyway; the check would not have fetched the issue.
+  outOfScope?: boolean;
 }
 
 // Snapshot metadata (no payload) for the version-history list. `name` is set

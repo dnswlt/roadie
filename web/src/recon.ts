@@ -1092,28 +1092,20 @@ let schedulingJiraReload = false;
 let scheduleCheckError: string | null = null;
 let scheduleStatusSeq = 0;
 
-// The skeleton "Create a script" starts from. It compiles, returns None for
-// everything, and maps no field — deliberately: a guessed field mapping is
-// silently wrong for every deployment it does not fit, which is why there is
-// no default extractor.
-const scriptSkeleton = `# Which Jira fields carry an issue's schedule, and how to read a date range
-# out of them. Roadie compares that range against the dates of the roadmap
-# item whose description links to the issue.
-#
-# JIRA_FIELDS holds Jira field *ids*, passed to Jira untouched. System fields
-# read well ("fixVersions", "duedate"); a custom field is "customfield_10430",
-# never its display name. Test an issue below and read its raw JSON to find
-# the id you need.
+// The skeleton "Create a script" starts from. It maps no field deliberately: a
+// guessed mapping is silently wrong for every deployment it does not fit.
+const scriptSkeleton = `# Select additional fields to load for each issue.
 JIRA_FIELDS = []
+
+# Only fetch issues from these projects. Empty checks every linked issue.
+JIRA_PROJECTS = []
 
 
 def get_issue_time_range(issue):
-    # issue is Jira's own JSON: issue["key"], issue["fields"][...], nested as
-    # Jira returns it. summary, issuetype and status are always fetched.
-    #
-    # Return optional start/end dates (YYYY-MM-DD), startPeriod/endPeriod
-    # schedule labels, and a label saying where the range came from.
-    # Return None to skip the issue: it is then never compared.
+    # Return
+    # { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
+    # { "startPeriod": "...", "endPeriod": "..." }.
+    # or None to skip the issue.
     return None
 `;
 
@@ -1845,6 +1837,11 @@ function buildTestResult(res: TrackerExtractorTest): HTMLElement {
     el.append(name, val);
     return el;
   };
+
+  // The panel tests it anyway, so it has to disown the result below.
+  if (res.outOfScope) {
+    wrap.append(row("Scope", "Not in JIRA_PROJECTS — the check skips this issue."));
+  }
 
   switch (resultState) {
     case "ok":

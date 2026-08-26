@@ -307,11 +307,25 @@ func TestTrackerExtractorTestRoute(t *testing.T) {
 		t.Fatalf("raising script = %+v", got)
 	}
 
+	// Flagged, but still tested: the raw JSON is what the panel is for.
+	scoped := "JIRA_PROJECTS = [\"OPS\"]\n" + src
+	w = doWithServer(t, srv, http.MethodPost, path, trackerExtractorTestRequest{Source: scoped, Key: "PAY-1"})
+	got = decode[trackerExtractorTestResponse](t, w)
+	if w.Code != http.StatusOK || !got.OutOfScope || got.State != recon.StateOK || got.Raw == nil {
+		t.Fatalf("out-of-scope key = %d, %+v", w.Code, got)
+	}
+	w = doWithServer(t, srv, http.MethodPost, path,
+		trackerExtractorTestRequest{Source: "JIRA_PROJECTS = [\"PAY\"]\n" + src, Key: "PAY-1"})
+	if got = decode[trackerExtractorTestResponse](t, w); got.OutOfScope {
+		t.Fatalf("in-scope key = %+v", got)
+	}
+
 	// A script that does not compile is a 400 here exactly as it is on save,
 	// and so is a test with no issue named.
 	for name, req := range map[string]trackerExtractorTestRequest{
 		"does not compile": {Source: "def get_issue_time_range(issue)\n", Key: "PAY-1"},
 		"no entry point":   {Source: "JIRA_FIELDS = []\n", Key: "PAY-1"},
+		"bad project":      {Source: "JIRA_PROJECTS = [\"PAY-1\"]\n" + src, Key: "PAY-1"},
 		"no key":           {Source: src, Key: ""},
 	} {
 		if w := doWithServer(t, srv, http.MethodPost, path, req); w.Code != http.StatusBadRequest {

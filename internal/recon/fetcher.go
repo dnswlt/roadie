@@ -189,9 +189,27 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 		return
 	}
 
-	issues, err := f.tracker.FetchIssues(ctx, due, script.Fields())
+	// Scoped before fetched: a project the deployment cannot browse answers like
+	// a key that does not exist, i.e. a "not found" nobody can clear.
+	fetch := make([]string, 0, len(due))
+	results := make([]Result, 0, len(due))
+	for _, key := range due {
+		if script.InScope(key) {
+			fetch = append(fetch, key)
+			continue
+		}
+		results = append(results, Result{Key: key, State: StateSkipped})
+	}
+	if len(fetch) == 0 {
+		f.cache.store(fingerprint, results)
+		return
+	}
+
+	issues, err := f.tracker.FetchIssues(ctx, fetch, script.Fields())
 	if err != nil {
-		f.record(fingerprint, due, ErrorTracker, trackerMessage(roadmapID, len(due), err))
+		results = append(results,
+			errorResults(fetch, ErrorTracker, trackerMessage(roadmapID, len(fetch), err))...)
+		f.cache.store(fingerprint, results)
 		return
 	}
 
@@ -202,8 +220,7 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 		byKey[issue.Issue.Key] = issue
 	}
 
-	results := make([]Result, 0, len(due))
-	for _, key := range due {
+	for _, key := range fetch {
 		issue, ok := byKey[key]
 		if !ok {
 			results = append(results, Result{Key: key, State: StateNotFound})
@@ -234,13 +251,17 @@ func (f *Fetcher) record(
 	kind string,
 	message string,
 ) {
+	f.cache.store(fingerprint, errorResults(keys, kind, message))
+}
+
+func errorResults(keys []string, kind string, message string) []Result {
 	results := make([]Result, 0, len(keys))
 	for _, key := range keys {
 		results = append(results, Result{
 			Key: key, State: StateError, ErrorKind: kind, Error: message,
 		})
 	}
-	f.cache.store(fingerprint, results)
+	return results
 }
 
 // trackerMessage exposes query errors and logs deployment failures.
