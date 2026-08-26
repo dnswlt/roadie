@@ -75,10 +75,12 @@ snapshot banner).
 
 ## Rules
 
-**Comments address the next reader, not the last change.** State what the code
-does and the constraint behind it. Name a rejected alternative when that stops
-someone reinstating it, as a standing rule rather than as history. A sentence
-that only parses for someone who saw the previous version is a diary entry.
+**Write comments for the reader of the finished code, not as a record of how the code was developed.**
+
+- Comment non-obvious intent, constraints, invariants, and reasons behind surprising choices.
+- Do not document the conversation, previous implementations, changes you made, or discarded alternatives unless an alternative must remain ruled out for a durable technical reason.
+- Do not narrate what the code plainly does.
+- Keep comments concise, professional, and durable: they should still make sense to someone who never saw the task, issue, or discussion.
 
 **Migrations.** Add a new numbered `internal/store/migrations/00N_*.sql`; never edit
 an applied one. Then fold the same change into `internal/store/schema.sql`, which is
