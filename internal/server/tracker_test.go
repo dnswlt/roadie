@@ -274,6 +274,13 @@ func TestTrackerExtractorTestRoute(t *testing.T) {
 	if len(got.Output) != 1 || got.Output[0] != "seen PAY-1" {
 		t.Fatalf("output = %v", got.Output)
 	}
+	const periodSrc = "def get_issue_time_range(issue):\n" +
+		"    return {\"start_period\": \"PI2026-09\", \"end_period\": \"PI2026-09\"}\n"
+	w = doWithServer(t, srv, http.MethodPost, path, trackerExtractorTestRequest{Source: periodSrc, Key: "PAY-1"})
+	got = decode[trackerExtractorTestResponse](t, w)
+	if w.Code != http.StatusOK || got.State != recon.StateOK || got.Start != "" || got.End != "" || got.StartPeriod != "PI2026-09" || got.EndPeriod != "PI2026-09" {
+		t.Fatalf("period result = %d, %+v", w.Code, got)
+	}
 	// Nothing was stored: Test precedes Save, and may run a script Save would
 	// reject.
 	if w := doWithServer(t, srv, http.MethodGet, "/api/roadmaps/"+itoa(rm)+"/tracker-extractor", nil); w.Code != http.StatusNotFound {

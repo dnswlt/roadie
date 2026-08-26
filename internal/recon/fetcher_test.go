@@ -65,6 +65,9 @@ const dueDateScript = "JIRA_FIELDS = [\"duedate\"]\n\n" +
 	"    due = issue[\"fields\"].get(\"duedate\")\n" +
 	"    return {\"end\": due, \"label\": \"Due date\"} if due else None\n"
 
+const periodScript = "def get_issue_time_range(issue):\n" +
+	"    return {\"start_period\": \"PI2026-09\", \"end_period\": \"PI2026-09\"}\n"
+
 func script(src string) ScriptFunc {
 	return func(context.Context, int64) (string, error) { return src, nil }
 }
@@ -122,6 +125,18 @@ func TestFetcherChecksEnqueuedKeys(t *testing.T) {
 	// The script's fields reached the tracker.
 	if len(stub.fields) != 1 || stub.fields[0] != "duedate" {
 		t.Fatalf("fields = %v", stub.fields)
+	}
+}
+
+func TestFetcherReturnsPeriodReferencesUnresolved(t *testing.T) {
+	stub := &stubTracker{issues: map[string]map[string]any{"PAY-1": {}}}
+	f := New(stub, script(periodScript), 0)
+	f.Enqueue(1, []string{"PAY-1"})
+	drain(t, f)
+
+	got := statusOf(t, f, "PAY-1")["PAY-1"]
+	if got.State != StateOK || got.Start != "" || got.End != "" || got.StartPeriod != "PI2026-09" || got.EndPeriod != "PI2026-09" {
+		t.Fatalf("PAY-1 = %+v", got)
 	}
 }
 

@@ -205,6 +205,8 @@ export interface TrackerExtractorTest {
   raw?: unknown;
   start?: string;
   end?: string;
+  startPeriod?: string;
+  endPeriod?: string;
   label?: string;
   error?: string;
   output?: string[];

@@ -28,11 +28,13 @@ var fileOptions = &syntax.FileOptions{}
 
 // Result is one issue's extraction outcome.
 type Result struct {
-	Start  string   `json:"start,omitempty"`
-	End    string   `json:"end,omitempty"`
-	Label  string   `json:"label,omitempty"`
-	Skip   bool     `json:"skip,omitempty"`
-	Output []string `json:"output,omitempty"`
+	Start       string   `json:"start,omitempty"`
+	End         string   `json:"end,omitempty"`
+	StartPeriod string   `json:"startPeriod,omitempty"`
+	EndPeriod   string   `json:"endPeriod,omitempty"`
+	Label       string   `json:"label,omitempty"`
+	Skip        bool     `json:"skip,omitempty"`
+	Output      []string `json:"output,omitempty"`
 }
 
 // Script is a compiled extractor.
@@ -130,12 +132,12 @@ func decodeResult(v starlark.Value) (Result, error) {
 	for _, item := range dict.Items() {
 		key, ok := starlark.AsString(item[0])
 		if !ok {
-			return Result{}, fmt.Errorf("%s returned a %s key, want one of start, end, label", TimeRangeFunc, item[0].Type())
+			return Result{}, fmt.Errorf("%s returned a %s key, want one of start, end, start_period, end_period, label", TimeRangeFunc, item[0].Type())
 		}
 		switch key {
-		case "start", "end", "label":
+		case "start", "end", "start_period", "end_period", "label":
 		default:
-			return Result{}, fmt.Errorf("%s returned unknown key %q, want one of start, end, label", TimeRangeFunc, key)
+			return Result{}, fmt.Errorf("%s returned unknown key %q, want one of start, end, start_period, end_period, label", TimeRangeFunc, key)
 		}
 		val := item[1]
 		if val == starlark.None {
@@ -148,6 +150,10 @@ func decodeResult(v starlark.Value) (Result, error) {
 		switch key {
 		case "label":
 			res.Label = str
+		case "start_period":
+			res.StartPeriod = str
+		case "end_period":
+			res.EndPeriod = str
 		default:
 			day, err := normalizeDate(str)
 			if err != nil {
@@ -160,7 +166,13 @@ func decodeResult(v starlark.Value) (Result, error) {
 			}
 		}
 	}
-	if res.Start == "" && res.End == "" {
+	if res.Start != "" && res.StartPeriod != "" {
+		return Result{}, fmt.Errorf("%s returned both start and start_period", TimeRangeFunc)
+	}
+	if res.End != "" && res.EndPeriod != "" {
+		return Result{}, fmt.Errorf("%s returned both end and end_period", TimeRangeFunc)
+	}
+	if res.Start == "" && res.End == "" && res.StartPeriod == "" && res.EndPeriod == "" {
 		return Result{Skip: true}, nil
 	}
 	return res, nil

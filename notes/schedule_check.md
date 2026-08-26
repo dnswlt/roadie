@@ -60,16 +60,32 @@ extend. Keys are all optional:
 | Key | Meaning |
 | --- | --- |
 | `start`, `end` | the range, either end omitted or `None` when unknown |
+| `start_period`, `end_period` | an exact roadmap schedule-period label; its start or inclusive end supplies that boundary |
 | `label` | where the dates came from, e.g. `"Sprint 24"`, `"Fix Version 26.3"` |
 
-`None` means **skip this issue** — and so does any dict with no dates in it,
-because those say the same thing: nothing to compare. That one rule covers both
-uses at once, the filter (`return None` for closed issues, for a type that never
-carries dates, for another team's project) and the blank (no fix version set
-yet). A separate `ignore` key would only earn its place if it carried a reason,
-and it doesn't; a script that wants to explain itself can grow a key later.
-Filtering therefore needs no second well-known function either — the decision
-falls out of the same fields the range does, in one pass.
+`start_period` resolves to that period's start; `end_period` resolves to its
+inclusive end. A boundary has one source: returning both `start` and
+`start_period`, or both `end` and `end_period`, is an extraction error. Direct
+dates and period references may otherwise be mixed. Labels match the roadmap's
+schedule exactly and case-sensitively, as schedule labels do everywhere else.
+
+The frontend resolves period references against the roadmap's current schedule,
+beside the item-range comparison that already needs both. No schedule or no
+period under the returned label is an error for that issue. It never fails the
+batch: Jira labels are free-form, so an unrelated or stale label must not
+prevent the other issues from being checked. Editing the roadmap schedule
+immediately reinterprets cached period references without another tracker
+request.
+
+`None` means **skip this issue** — and so does any dict with neither dates nor
+period references in it, because those say the same thing: nothing to compare.
+That one rule covers both uses at once, the filter (`return None` for closed
+issues, for a type that never carries dates, for another team's project) and
+the blank (no fix version or scheduling label set yet). A separate `ignore` key
+would only earn its place if it carried a reason, and it doesn't; a script that
+wants to explain itself can grow a key later. Filtering therefore needs no
+second well-known function either — the decision falls out of the same fields
+the range does, in one pass.
 
 An unrecognized key is an error, not silence — `"lable"` or `"ends"` would
 otherwise cost an afternoon.
@@ -79,8 +95,8 @@ Dates are `YYYY-MM-DD`; an ISO timestamp is truncated **as written**, never
 timezone-converted (that would move a date by a day for unexplainable reasons).
 Anything else is an extraction error naming the value.
 
-`label` is provenance, and only the script can supply it: Roadie sees two dates
-and cannot know which field they were read from. It turns "ends 12 Apr, item
+`label` is provenance for literal dates and optional extra context for period
+references. Only the script knows the Jira source. It turns "ends 12 Apr, item
 ends 31 Mar" into "Sprint 24 ends 12 Apr, item ends 31 Mar" — which names what
 to go fix in Jira, and exposes a script reading the wrong field, where the date
 alone looks perfectly plausible.
@@ -109,8 +125,8 @@ script once, then calls the function per issue.
 
 The frontend keeps link parsing (`links.ts`, `recon-diff.ts`): it collects the
 referenced keys and the item each came from, and compares the returned ranges
-itself. The backend fetches those issues with `JIRA_FIELDS ∪ display fields` and
-runs the extractor.
+itself. The backend fetches those issues with `JIRA_FIELDS ∪ display fields`,
+runs the extractor, and returns literal boundaries and period references.
 
 **Exactly one goroutine performs schedule-check fetches**, process-wide. Clients
 feed it keys and poll for results, so the two are separate routes: `POST` to
@@ -177,7 +193,8 @@ The cache holds **extracted results, never raw issues**. `JIRA_FIELDS` is
 user-supplied and unbounded: a script naming `attachment` or `comment` pulls
 documents rather than dates, so caching before extraction would turn a field
 list into server memory. Cached results remain compact whatever fields the
-script requested.
+script requested. Named period boundaries stay as names in the cache and are
+resolved against the current roadmap schedule in the frontend.
 
 Entries are keyed by a **fingerprint of the script source**, which is what makes
 that affordable. Extraction depends on the script, and editing one yields a

@@ -215,12 +215,14 @@ type trackerExtractorTestResponse struct {
 	// named as the tracker names it. This route is the only one that serializes
 	// it, and it does so because discovering that Begin Date is
 	// customfield_10430 in *this* deployment is impossible without it.
-	Raw    map[string]any `json:"raw,omitempty"`
-	Start  string         `json:"start,omitempty"`
-	End    string         `json:"end,omitempty"`
-	Label  string         `json:"label,omitempty"`
-	Error  string         `json:"error,omitempty"`
-	Output []string       `json:"output,omitempty"`
+	Raw         map[string]any `json:"raw,omitempty"`
+	Start       string         `json:"start,omitempty"`
+	End         string         `json:"end,omitempty"`
+	StartPeriod string         `json:"startPeriod,omitempty"`
+	EndPeriod   string         `json:"endPeriod,omitempty"`
+	Label       string         `json:"label,omitempty"`
+	Error       string         `json:"error,omitempty"`
+	Output      []string       `json:"output,omitempty"`
 }
 
 // testTrackerExtractor runs the unsaved source against one named key.
@@ -298,7 +300,10 @@ func (s *Server) testTrackerExtractor(w http.ResponseWriter, r *http.Request) {
 	case res.Skip:
 		resp.State = recon.StateSkipped
 	default:
-		resp.State, resp.Start, resp.End, resp.Label = recon.StateOK, res.Start, res.End, res.Label
+		resp.State = recon.StateOK
+		resp.Start, resp.End = res.Start, res.End
+		resp.StartPeriod, resp.EndPeriod = res.StartPeriod, res.EndPeriod
+		resp.Label = res.Label
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

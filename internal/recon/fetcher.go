@@ -202,7 +202,10 @@ func (f *Fetcher) run(ctx context.Context, roadmapID int64, batch []string) {
 		case res.Skip:
 			row.State = StateSkipped
 		default:
-			row.State, row.Start, row.End, row.Label = StateOK, res.Start, res.End, res.Label
+			row.State = StateOK
+			row.Start, row.End = res.Start, res.End
+			row.StartPeriod, row.EndPeriod = res.StartPeriod, res.EndPeriod
+			row.Label = res.Label
 		}
 		results = append(results, row)
 	}

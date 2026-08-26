@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	// StateOK means the extractor returned at least one date.
+	// StateOK means the extractor returned at least one date or period boundary.
 	StateOK = "ok"
-	// StateSkipped means the extractor returned no dates for the issue.
+	// StateSkipped means the extractor returned no boundaries for the issue.
 	StateSkipped = "skipped"
 	// StateNotFound means the tracker did not return the issue.
 	StateNotFound = "notFound"
@@ -20,16 +20,20 @@ const (
 	StateUnchecked = "unchecked"
 )
 
-// Result is one issue key's answer. Start, End and Label are set only in
-// StateOK; Error only in StateError.
+// Result is one issue key's answer. Range fields and Label are set only in
+// StateOK; Error only in StateError. A period field supplies its corresponding
+// boundary instead of Start or End; the frontend resolves it against the
+// roadmap schedule it already holds.
 type Result struct {
-	Key   string         `json:"key"`
-	State string         `json:"state"`
-	Issue *tracker.Issue `json:"issue,omitempty"`
-	Start string         `json:"start,omitempty"`
-	End   string         `json:"end,omitempty"`
-	Label string         `json:"label,omitempty"`
-	Error string         `json:"error,omitempty"`
+	Key         string         `json:"key"`
+	State       string         `json:"state"`
+	Issue       *tracker.Issue `json:"issue,omitempty"`
+	Start       string         `json:"start,omitempty"`
+	End         string         `json:"end,omitempty"`
+	StartPeriod string         `json:"startPeriod,omitempty"`
+	EndPeriod   string         `json:"endPeriod,omitempty"`
+	Label       string         `json:"label,omitempty"`
+	Error       string         `json:"error,omitempty"`
 	// CheckedAt is when this result was stored. It is zero for unchecked keys.
 	CheckedAt time.Time `json:"checkedAt,omitzero"`
 }

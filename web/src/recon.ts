@@ -28,6 +28,7 @@ import {
   type UnreferencedRoadieItem,
 } from "./recon-diff";
 import { createSearchList } from "./search-list";
+import { resolveExtractedRange } from "./schedule-check";
 import { state, type ItemLocation } from "./state";
 import { toast } from "./toast";
 import type { TrackerExtractorTest, TrackerIssue, TrackerQuery } from "./types";
@@ -1306,10 +1307,18 @@ const testStateLabels: Record<TrackerExtractorTest["state"], string> = {
 function buildTestResult(res: TrackerExtractorTest): HTMLElement {
   const wrap = div("recon-test-result");
 
+  const resolved =
+    res.state === "ok"
+      ? resolveExtractedRange(res, state.current?.periods ?? [])
+      : undefined;
+  const resultState = resolved?.error ? "error" : res.state;
+
   const head = div("recon-test-head");
   const badge = document.createElement("span");
-  badge.className = `recon-test-state ${res.state}`;
-  badge.textContent = testStateLabels[res.state];
+  badge.className = `recon-test-state ${resultState}`;
+  badge.textContent = resolved?.error
+    ? "Schedule error"
+    : testStateLabels[resultState];
   head.append(badge);
   if (res.issue) {
     const key = document.createElement("a");
@@ -1337,9 +1346,18 @@ function buildTestResult(res: TrackerExtractorTest): HTMLElement {
     return el;
   };
 
-  switch (res.state) {
+  switch (resultState) {
     case "ok":
-      wrap.append(row("Range", formatRange(res.start, res.end)));
+      wrap.append(row("Range", formatRange(resolved?.start, resolved?.end)));
+      if (res.startPeriod || res.endPeriod) {
+        const samePeriod = res.startPeriod === res.endPeriod;
+        const periods = samePeriod
+          ? res.startPeriod || res.endPeriod || "—"
+          : `${res.startPeriod || "—"} to ${res.endPeriod || "—"}`;
+        wrap.append(
+          row(samePeriod ? "Period" : "Periods", periods),
+        );
+      }
       wrap.append(row("Label", res.label || "—"));
       break;
     case "skipped":
@@ -1351,7 +1369,7 @@ function buildTestResult(res: TrackerExtractorTest): HTMLElement {
     case "error": {
       const msg = document.createElement("span");
       msg.className = "recon-test-error";
-      msg.textContent = res.error ?? "The script failed.";
+      msg.textContent = resolved?.error ?? res.error ?? "The script failed.";
       wrap.append(row("Error", msg));
       break;
     }

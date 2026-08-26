@@ -89,6 +89,32 @@ def get_issue_time_range(issue):
 	}
 }
 
+func TestSchedulePeriodReferences(t *testing.T) {
+	s := compile(t, `
+def get_issue_time_range(issue):
+    return {"start_period": "PI2026-09", "end_period": "PI2026-10", "label": "PI labels"}
+`)
+	res, err := s.TimeRange(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Skip || res.StartPeriod != "PI2026-09" || res.EndPeriod != "PI2026-10" || res.Label != "PI labels" {
+		t.Fatalf("result = %+v", res)
+	}
+}
+
+func TestOneBoundaryHasOneSource(t *testing.T) {
+	for name, result := range map[string]string{
+		"start": `{"start": "2026-09-01", "start_period": "PI2026-09"}`,
+		"end":   `{"end": "2026-09-30", "end_period": "PI2026-09"}`,
+	} {
+		s := compile(t, "def get_issue_time_range(issue):\n    return "+result+"\n")
+		if _, err := s.TimeRange(map[string]any{}); err == nil || !strings.Contains(err.Error(), "both "+name) {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+	}
+}
+
 func TestDates(t *testing.T) {
 	s := compile(t, `
 def get_issue_time_range(issue):
@@ -149,9 +175,10 @@ def get_issue_time_range(issue):
 
 func TestBadReturnValues(t *testing.T) {
 	for name, body := range map[string]string{
-		"not a dict":      `return "2026-04-12"`,
-		"date is int":     `return {"end": 20260412}`,
-		"label is a list": `return {"end": "2026-04-12", "label": ["a"]}`,
+		"not a dict":       `return "2026-04-12"`,
+		"date is int":      `return {"end": 20260412}`,
+		"period is a list": `return {"end_period": ["PI2026-09"]}`,
+		"label is a list":  `return {"end": "2026-04-12", "label": ["a"]}`,
 	} {
 		s := compile(t, "def get_issue_time_range(issue):\n    "+body+"\n")
 		if _, err := s.TimeRange(map[string]any{}); err == nil {
