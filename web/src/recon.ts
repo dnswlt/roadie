@@ -993,8 +993,7 @@ function issueRow({ issue, matches }: ReconciledIssue, target: ItemLocation | nu
     const alreadyLinked = matches.some((match) => match.itemId === target.item.id);
     add.className = "btn btn-primary recon-issue-link-target";
     add.disabled = linkingIssueKey !== null || alreadyLinked;
-    add.textContent =
-      linkingIssueKey === issue.key ? "Linking…" : alreadyLinked ? "Linked" : "Link";
+    add.textContent = alreadyLinked ? "Linked" : "Link";
     add.title = alreadyLinked
       ? `${issue.key} is already linked to ${target.item.title || "(untitled)"}`
       : `Link ${issue.key} to ${target.item.title || "(untitled)"}`;
@@ -1379,11 +1378,13 @@ function buildScheduleResults(
   const check = document.createElement("button");
   check.type = "button";
   check.className = "btn btn-primary";
-  check.textContent = schedulingJiraReload ? "Scheduling…" : "Fetch issues";
+  check.textContent = pending > 0 ? `Fetching ${pending}…` : "Fetch issues";
   check.disabled =
     schedulingJiraReload || scheduleStatusLoading || items.length === 0 || scriptDirty();
   check.title = scriptDirty()
     ? "Save the extractor before fetching issues"
+    : pending > 0
+    ? "Refresh the result list to see what has landed"
     : "Schedules a reload of linked Jira issues";
   check.addEventListener("click", () => void enqueueJiraReload(items));
 
@@ -1396,11 +1397,6 @@ function buildScheduleResults(
   reload.append(icons.rotateCcw(16));
   reload.addEventListener("click", () => reloadScheduleResults(items));
 
-  if (pending > 0) {
-    const progress = div("recon-count");
-    progress.textContent = `${pending} issue${pending === 1 ? "" : "s"} refreshing`;
-    actions.append(progress);
-  }
   actions.append(check, reload);
   head.append(h, actions);
   wrap.append(head);
@@ -1703,6 +1699,7 @@ function buildScriptEditor(): HTMLElement {
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
   saveBtn.className = "btn btn-primary";
+  saveBtn.textContent = "Save";
   const delBtn = document.createElement("button");
   delBtn.type = "button";
   delBtn.className = "btn recon-script-delete";
@@ -1711,16 +1708,15 @@ function buildScriptEditor(): HTMLElement {
   delBtn.title = scriptSaved === null ? "Nothing is saved yet" : "Delete the saved script";
   delBtn.addEventListener("click", () => void deleteScript());
 
-  // Typing changes exactly two things on screen — the Save button and the
-  // status line — so the textarea syncs those itself. Rendering per keystroke
-  // would rebuild the box being typed into.
+  // Typing changes exactly two things on screen — whether Save is enabled and
+  // the status line — so the textarea syncs those itself. Rendering per
+  // keystroke would rebuild the box being typed into.
   //
   // Save stays available on text that is already saved. Greying it out there
   // reads as "you may not save this" and offers nothing that says why, where
   // the status line beside it already says whether anything changed — and a
   // re-save is a re-validation, which is a reasonable thing to want.
   const sync = (): void => {
-    saveBtn.textContent = saving ? "Saving…" : "Save";
     saveBtn.disabled = saving || script.trim() === "";
     status.textContent = scriptDirty()
       ? "Unsaved changes"
