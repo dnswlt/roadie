@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 var testIssues = []fixtureIssue{
@@ -20,7 +21,7 @@ func TestSearchFiltersTitleAndPages(t *testing.T) {
 	))
 	req.Host = "jira.test"
 	w := httptest.NewRecorder()
-	newHandler(testIssues).ServeHTTP(w, req)
+	newHandler(testIssues, 0).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
@@ -48,7 +49,7 @@ func TestSearchEmptyQueryMatchesAllIssues(t *testing.T) {
 		`{"jql":"  ","startAt":0,"maxResults":50}`,
 	))
 	w := httptest.NewRecorder()
-	newHandler(testIssues).ServeHTTP(w, req)
+	newHandler(testIssues, 0).ServeHTTP(w, req)
 
 	var got struct {
 		Total  int         `json:"total"`
@@ -67,7 +68,7 @@ func TestSearchRequiresEveryTerm(t *testing.T) {
 		`{"jql":"payment account","startAt":0,"maxResults":50}`,
 	))
 	w := httptest.NewRecorder()
-	newHandler(testIssues).ServeHTTP(w, req)
+	newHandler(testIssues, 0).ServeHTTP(w, req)
 
 	var got struct {
 		Total  int         `json:"total"`
@@ -84,7 +85,7 @@ func TestSearchRequiresEveryTerm(t *testing.T) {
 func TestGetIssue(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/rest/api/2/issue/pay-2", nil)
 	w := httptest.NewRecorder()
-	newHandler(testIssues).ServeHTTP(w, req)
+	newHandler(testIssues, 0).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
@@ -118,7 +119,7 @@ func TestSearchByKey(t *testing.T) {
 		body, _ := json.Marshal(searchRequest{JQL: jql, MaxResults: 10, Fields: fields})
 		req := httptest.NewRequest(http.MethodPost, "/rest/api/2/search", strings.NewReader(string(body)))
 		w := httptest.NewRecorder()
-		newHandler(issues).ServeHTTP(w, req)
+		newHandler(issues, 0).ServeHTTP(w, req)
 		return w
 	}
 
@@ -176,8 +177,29 @@ func TestSearchByKey(t *testing.T) {
 func TestGetMissingIssue(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/rest/api/2/issue/NOPE-1", nil)
 	w := httptest.NewRecorder()
-	newHandler(testIssues).ServeHTTP(w, req)
+	newHandler(testIssues, 0).ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestKeySearchDelayAppliesToKeySearchesOnly(t *testing.T) {
+	const delay = 80 * time.Millisecond
+	elapsed := func(jql string) time.Duration {
+		body, _ := json.Marshal(searchRequest{JQL: jql, MaxResults: 10})
+		req := httptest.NewRequest(http.MethodPost, "/rest/api/2/search", strings.NewReader(string(body)))
+		w := httptest.NewRecorder()
+		start := time.Now()
+		newHandler(testIssues, delay).ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s = %d, body %s", jql, w.Code, w.Body)
+		}
+		return time.Since(start)
+	}
+	if got := elapsed(`key in ("PAY-1")`); got < delay {
+		t.Fatalf("key search took %s, want at least %s", got, delay)
+	}
+	if got := elapsed("payment"); got >= delay {
+		t.Fatalf("summary search took %s, want no delay", got)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type fixtureIssue struct {
@@ -40,11 +41,16 @@ type jiraIssue struct {
 
 type server struct {
 	issues []fixtureIssue
+	// keySearchDelay slows `key in (...)` searches, the form the schedule check
+	// fetches with, so its pending state lasts long enough to look at.
+	keySearchDelay time.Duration
 }
 
 func main() {
 	addr := flag.String("addr", "localhost:4012", "listen address")
 	issuesPath := flag.String("issues", "issues.json", "fixture JSON file")
+	keySearchDelay := flag.Duration("key-search-delay", 0,
+		"delay `key in (...)` searches, as the schedule check issues them")
 	flag.Parse()
 
 	issues, err := loadIssues(*issuesPath)
@@ -53,7 +59,10 @@ func main() {
 	}
 
 	log.Printf("mock Jira Data Center listening at http://%s (%d issues)", *addr, len(issues))
-	if err := http.ListenAndServe(*addr, newHandler(issues)); err != nil {
+	if *keySearchDelay > 0 {
+		log.Printf("key searches delayed by %s", *keySearchDelay)
+	}
+	if err := http.ListenAndServe(*addr, newHandler(issues, *keySearchDelay)); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -82,8 +91,8 @@ func loadIssues(path string) ([]fixtureIssue, error) {
 	return issues, nil
 }
 
-func newHandler(issues []fixtureIssue) http.Handler {
-	s := &server{issues: issues}
+func newHandler(issues []fixtureIssue, keySearchDelay time.Duration) http.Handler {
+	s := &server{issues: issues, keySearchDelay: keySearchDelay}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /rest/api/2/search", s.search)
 	mux.HandleFunc("GET /rest/api/2/issue/{key}", s.getIssue)
@@ -110,6 +119,9 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 
 	matches := matchingIssueIndices(s.issues, req.JQL)
 	if keys, ok := keysFromJQL(req.JQL); ok {
+		if !s.delayKeySearch(r) {
+			return
+		}
 		matches = nil
 		for i, issue := range s.issues {
 			if keys[issue.Key] {
@@ -146,6 +158,22 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		"total":      len(matches),
 		"issues":     page,
 	})
+}
+
+// delayKeySearch waits out the configured delay, reporting false when the
+// client gave up first.
+func (s *server) delayKeySearch(r *http.Request) bool {
+	if s.keySearchDelay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(s.keySearchDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-r.Context().Done():
+		return false
+	}
 }
 
 // matchingIssueIndices implements the mock's summary search.
