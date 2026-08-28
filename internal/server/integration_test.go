@@ -129,17 +129,17 @@ func TestIntegrationMilestoneAPI(t *testing.T) {
 func TestIntegrationMilestoneUsageAPI(t *testing.T) {
 	source, consumerLane, work, providerRM, consumerRM := seedProviderConsumer(t)
 
-	usedBy := func() int {
+	linkage := func() model.MilestoneLinkage {
 		t.Helper()
 		w := do(t, http.MethodGet, "/api/roadmaps/"+itoa(providerRM), nil)
 		if w.Code != http.StatusOK {
 			t.Fatalf("read provider: want 200, got %d", w.Code)
 		}
 		full := decode[model.RoadmapFull](t, w)
-		return full.Lanes[0].Milestones[0].Linkage.UsedBy
+		return *full.Lanes[0].Milestones[0].Linkage
 	}
-	if n := usedBy(); n != 0 {
-		t.Fatalf("usedBy before anything mirrors it: got %d, want 0", n)
+	if got := linkage(); got.UsedBy != 0 || len(got.Consumers) != 0 {
+		t.Fatalf("usage before anything mirrors it: got %+v, want none", got)
 	}
 
 	w := do(t, http.MethodPost, "/api/lanes/"+itoa(consumerLane)+"/milestones", map[string]any{
@@ -148,8 +148,14 @@ func TestIntegrationMilestoneUsageAPI(t *testing.T) {
 		t.Fatalf("create mirror: got %d (%s)", w.Code, w.Body.String())
 	}
 	mirror := decode[model.Milestone](t, w)
-	if n := usedBy(); n != 1 {
-		t.Errorf("usedBy with a mirror held for context: got %d, want 1", n)
+	got := linkage()
+	if got.UsedBy != 1 || len(got.Consumers) != 1 {
+		t.Fatalf("usage with a mirror held for context: got %+v, want one consumer", got)
+	}
+	consumer := got.Consumers[0]
+	if consumer.RoadmapID != consumerRM || consumer.MilestoneID != mirror.ID ||
+		consumer.RoadmapName == "" || consumer.Title != mirror.Title {
+		t.Errorf("consumer reference in API payload: %+v", consumer)
 	}
 
 	w = do(t, http.MethodPost, "/api/roadmaps/"+itoa(consumerRM)+"/dependencies", map[string]any{
@@ -159,7 +165,7 @@ func TestIntegrationMilestoneUsageAPI(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("depend on mirror: got %d (%s)", w.Code, w.Body.String())
 	}
-	if n := usedBy(); n != 1 {
-		t.Errorf("usedBy once that mirror also depends on it: got %d, want 1", n)
+	if got := linkage(); got.UsedBy != 1 || len(got.Consumers) != 1 {
+		t.Errorf("usage once that mirror also depends on it: got %+v, want one consumer", got)
 	}
 }

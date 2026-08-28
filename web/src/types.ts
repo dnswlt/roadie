@@ -88,10 +88,18 @@ export interface MirrorSource {
   title?: string;
 }
 
+export interface MirrorConsumer {
+  roadmapId: number;
+  roadmapName: string;
+  milestoneId: number;
+  title: string;
+}
+
 export interface MilestoneLinkage {
   integration: boolean;
   sourceUid?: string;
   source?: MirrorSource;
+  consumers?: MirrorConsumer[];
   usedBy?: number;
 }
 

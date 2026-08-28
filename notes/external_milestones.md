@@ -219,17 +219,17 @@ owning roadmap and propagates to consumers. Renaming or redescribing the source
 does not replace a mirror's consumer-authored text, although current source
 details may be shown alongside it as provenance.
 
-An integration milestone should expose actual consumers through a derived view
-such as:
+An integration milestone should expose the roadmaps carrying its mirrors
+through a derived view such as:
 
 ```text
 Used by 4 roadmaps
 ```
 
-This count is derived from dependencies, not merely from mirrors: showing a
-milestone for context is not yet relying on it. A separate `Shown on N
-roadmaps` fact could be derived if it proves useful, but it is not the
-project-management relationship.
+The view includes a bare mirror before the consumer attaches local work. The
+mirror is already a contract the provider can break, and counting it keeps the
+impact shown before deletion or unpublishing aligned with the consumer rows the
+provider can inspect.
 
 Deleting the source milestone, removing its integration status, trashing its
 roadmap or making it inaccessible does not delete consumer mirrors or their

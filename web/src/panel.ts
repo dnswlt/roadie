@@ -18,6 +18,7 @@ import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./type
 import { writeParams } from "./url";
 
 const PANEL_TITLE_ID = "panel-item-title";
+const CONSUMER_PREVIEW_LIMIT = 5;
 
 // confirmAndDeleteItems / confirmAndDeleteMilestone are the delete flow behind
 // both the panel's Delete button and the Del keyboard shortcut: confirm, then
@@ -1146,12 +1147,47 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
   return wrap;
 }
 
-function mirrorSourceDependency(milestone: Milestone): HTMLElement | undefined {
+function crossRoadmapMilestoneLink(
+  roadmapId: number,
+  roadmapName: string,
+  milestoneId: number,
+  title: string,
+  icon: SVGSVGElement,
+): HTMLAnchorElement {
+  const link = document.createElement("a");
+  link.className = "dep-go cross-roadmap-link";
+  const url = new URL(window.location.href);
+  writeParams(url.searchParams, {
+    roadmap: { id: roadmapId, name: roadmapName },
+    view: state.navigation.view === "wbs" ? "wbs" : "timeline",
+    tab: null,
+    selection: { kind: "milestone", id: milestoneId },
+  });
+  url.hash = "";
+  link.href = url.href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.title = `Open ${title} in ${roadmapName} in a new tab`;
+  link.append(icon);
+  const text = document.createElement("span");
+  text.className = "cross-roadmap-text";
+  const milestoneTitle = document.createElement("span");
+  milestoneTitle.className = "dep-go-title";
+  milestoneTitle.textContent = title;
+  const roadmap = document.createElement("span");
+  roadmap.className = "cross-roadmap-roadmap";
+  roadmap.textContent = roadmapName;
+  text.append(milestoneTitle, roadmap);
+  link.append(text);
+  return link;
+}
+
+function mirrorSourceGroup(milestone: Milestone): HTMLElement | undefined {
   const linkage = milestone.linkage;
   if (!linkage?.sourceUid) return undefined;
 
   const group = document.createElement("div");
-  group.className = "dep-group mirror-source-group";
+  group.className = "dep-group";
   const head = document.createElement("div");
   head.className = "dep-group-head";
   const label = document.createElement("span");
@@ -1163,32 +1199,15 @@ function mirrorSourceDependency(milestone: Milestone): HTMLElement | undefined {
   row.className = "dep-row";
   const source = linkage.source;
   if (source?.roadmapId && source.milestoneId) {
-    const link = document.createElement("a");
-    link.className = "dep-go mirror-source-link";
-    const url = new URL(window.location.href);
-    writeParams(url.searchParams, {
-      roadmap: { id: source.roadmapId, name: source.roadmapName ?? "" },
-      view: state.navigation.view === "wbs" ? "wbs" : "timeline",
-      tab: null,
-      selection: { kind: "milestone", id: source.milestoneId },
-    });
-    url.hash = "";
-    link.href = url.href;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.title = `Open ${source.title ?? "source milestone"} in ${source.roadmapName ?? "its roadmap"} in a new tab`;
-    link.append(icons.providedInterface(14));
-    const text = document.createElement("span");
-    text.className = "mirror-source-text";
-    const title = document.createElement("span");
-    title.className = "dep-go-title";
-    title.textContent = source.title ?? "Source milestone";
-    const roadmap = document.createElement("span");
-    roadmap.className = "mirror-source-roadmap";
-    roadmap.textContent = source.roadmapName ?? "External roadmap";
-    text.append(title, roadmap);
-    link.append(text);
-    row.append(link);
+    row.append(
+      crossRoadmapMilestoneLink(
+        source.roadmapId,
+        source.roadmapName ?? "External roadmap",
+        source.milestoneId,
+        source.title ?? "Source milestone",
+        icons.providedInterface(14),
+      ),
+    );
   } else {
     row.title =
       "The source milestone was deleted, made private, or is no longer an integration milestone";
@@ -1206,6 +1225,76 @@ function mirrorSourceDependency(milestone: Milestone): HTMLElement | undefined {
     row.append(warning, unavailable);
   }
   group.append(head, row);
+  return group;
+}
+
+function integrationConsumersGroup(milestone: Milestone): HTMLElement | undefined {
+  const consumers = milestone.linkage?.integration
+    ? milestone.linkage.consumers ?? []
+    : [];
+  if (consumers.length === 0) return undefined;
+
+  const group = document.createElement("div");
+  group.className = "dep-group";
+  const head = document.createElement("div");
+  head.className = "dep-group-head";
+  const label = document.createElement("span");
+  label.className = "dep-group-label";
+  label.textContent = "Used by";
+  head.append(label);
+
+  const rows = document.createElement("div");
+  rows.className = "dep-rows";
+  const consumerRows = consumers.map((consumer) => {
+    const row = document.createElement("div");
+    row.className = "dep-row";
+    row.append(
+      crossRoadmapMilestoneLink(
+        consumer.roadmapId,
+        consumer.roadmapName,
+        consumer.milestoneId,
+        consumer.title,
+        icons.requiredInterface(14),
+      ),
+    );
+    return row;
+  });
+
+  if (consumers.length > CONSUMER_PREVIEW_LIMIT) {
+    const toggleRow = document.createElement("div");
+    toggleRow.className = "dep-row";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "dep-go";
+    toggleRow.append(toggle);
+    rows.append(toggleRow);
+
+    let expanded = false;
+    const renderRows = (): void => {
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.replaceChildren(
+        expanded ? icons.chevronDown(14) : icons.chevronRight(14),
+        expanded ? "Show fewer" : `Show all ${consumers.length}`,
+      );
+      const visible = expanded ? consumerRows.length : CONSUMER_PREVIEW_LIMIT;
+      // Keep the toggle mounted so expanding the list does not discard focus.
+      for (const [index, row] of consumerRows.entries()) {
+        if (index < visible) {
+          if (row.parentElement !== rows) rows.insertBefore(row, toggleRow);
+        } else {
+          row.remove();
+        }
+      }
+    };
+    toggle.addEventListener("click", () => {
+      expanded = !expanded;
+      renderRows();
+    });
+    renderRows();
+  } else {
+    rows.append(...consumerRows);
+  }
+  group.append(head, rows);
   return group;
 }
 
@@ -1284,7 +1373,7 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
     metadata,
     dependenciesSection(
       { kind: "milestone", id: milestone.id },
-      mirrorSourceDependency(milestone),
+      mirrorSourceGroup(milestone) ?? integrationConsumersGroup(milestone),
     ),
   );
 

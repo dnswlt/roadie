@@ -342,7 +342,7 @@ func TestIntegrationMilestoneUsage(t *testing.T) {
 	f := newMirrorFixture(t)
 	m := f.mirror(t, "Partner API ready")
 
-	usedBy := func() int {
+	linkage := func() model.MilestoneLinkage {
 		t.Helper()
 		full, err := testStore.GetRoadmapFull(ctx, f.provider.ID)
 		if err != nil {
@@ -354,19 +354,25 @@ func TestIntegrationMilestoneUsage(t *testing.T) {
 		for _, lane := range full.Lanes {
 			for _, ms := range lane.Milestones {
 				if ms.ID == f.source.ID {
-					return ms.Linkage.UsedBy
+					return *ms.Linkage
 				}
 			}
 		}
 		t.Fatal("source milestone missing from its own roadmap")
-		return 0
+		return model.MilestoneLinkage{}
 	}
 
 	// The count is "how many roadmaps carry this", not "how many formally
 	// depend on it": deleting the source breaks a mirror either way, so a
 	// mirror held only to watch the date still counts.
-	if n := usedBy(); n != 1 {
-		t.Errorf("usedBy with a bare mirror: got %d, want 1", n)
+	got := linkage()
+	if got.UsedBy != 1 || len(got.Consumers) != 1 {
+		t.Fatalf("usage with a bare mirror: got %+v, want one consumer", got)
+	}
+	consumer := got.Consumers[0]
+	if consumer.RoadmapID != f.consumer.ID || consumer.RoadmapName != f.consumer.Name ||
+		consumer.MilestoneID != m.ID || consumer.Title != m.Title {
+		t.Errorf("consumer reference: got %+v", consumer)
 	}
 	updated, err := testStore.UpdateMilestone(ctx, f.source.ID, MilestonePatch{
 		Title: model.Opt[string]{Set: true, Value: "API available soon"},
@@ -374,18 +380,25 @@ func TestIntegrationMilestoneUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Linkage == nil || updated.Linkage.UsedBy != 1 {
-		t.Errorf("updated integration milestone usage: got %+v, want usedBy 1", updated.Linkage)
+	if updated.Linkage == nil || updated.Linkage.UsedBy != 1 ||
+		len(updated.Linkage.Consumers) != 1 || updated.Linkage.Consumers[0].MilestoneID != m.ID {
+		t.Errorf("updated integration milestone consumers: got %+v, want mirror %d", updated.Linkage, m.ID)
 	}
 	if _, err := testStore.CreateDependency(ctx, f.consumer.ID, msRef(m.ID), itemRef(f.work.ID)); err != nil {
 		t.Fatal(err)
 	}
-	if n := usedBy(); n != 1 {
-		t.Errorf("usedBy once that mirror also depends on it: got %d, want 1", n)
+	if got := linkage(); got.UsedBy != 1 || len(got.Consumers) != 1 {
+		t.Errorf("usage once that mirror also depends on it: got %+v, want one consumer", got)
 	}
 
 	// A second consuming roadmap is a second count.
-	other := newRoadmapNamed(t, "other-consumer")
+	other, err := testStore.CreateRoadmap(ctx, "test-"+t.Name()+"-other-consumer", Ownership{
+		Owner: "sub-owner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testStore.DeleteRoadmap(context.Background(), other.ID) })
 	lane, err := testStore.CreateLane(ctx, other.ID, "Ops")
 	if err != nil {
 		t.Fatal(err)
@@ -393,8 +406,21 @@ func TestIntegrationMilestoneUsage(t *testing.T) {
 	if _, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{SourceUID: f.source.UID}); err != nil {
 		t.Fatal(err)
 	}
-	if n := usedBy(); n != 2 {
-		t.Errorf("usedBy with two consuming roadmaps: got %d, want 2", n)
+	got = linkage()
+	if got.UsedBy != 2 || len(got.Consumers) != 2 {
+		t.Fatalf("usage with two consuming roadmaps: got %+v, want two consumers", got)
+	}
+	if got.Consumers[0].RoadmapID != f.consumer.ID || got.Consumers[1].RoadmapID != other.ID {
+		t.Errorf("consumers are not ordered by roadmap name: %+v", got.Consumers)
+	}
+
+	// A private consumer remains linked but must not be named to the provider.
+	if _, err := testStore.SetRoadmapVisibility(ctx, other.ID, model.VisibilityPrivate, "sub-owner"); err != nil {
+		t.Fatal(err)
+	}
+	got = linkage()
+	if got.UsedBy != 1 || len(got.Consumers) != 1 || got.Consumers[0].RoadmapID != f.consumer.ID {
+		t.Errorf("usage after a consumer went private: got %+v, want only the public consumer", got)
 	}
 }
 

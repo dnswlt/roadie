@@ -184,9 +184,11 @@ type MilestoneLinkage struct {
 	// points at.
 	// Derived per request and kept out of export files and snapshot blobs.
 	Source *MirrorSource `json:"source,omitempty"`
-	// UsedBy counts the roadmaps that have imported this integration milestone.
-	// Derived per request like Source.
-	UsedBy int `json:"usedBy,omitempty"`
+	// Consumers are the public roadmaps carrying a mirror of this integration
+	// milestone. UsedBy is always their count. Both are derived per request like
+	// Source and kept out of exports and snapshots.
+	Consumers []MirrorConsumer `json:"consumers,omitempty"`
+	UsedBy    int              `json:"usedBy,omitempty"`
 }
 
 // IsMirror reports whether the milestone is a consumer-owned reference to
@@ -203,6 +205,15 @@ type MirrorSource struct {
 	RoadmapName string `json:"roadmapName,omitempty"`
 	MilestoneID int64  `json:"milestoneId,omitempty"`
 	Title       string `json:"title,omitempty"`
+}
+
+// MirrorConsumer identifies one consumer-owned mirror of an integration
+// milestone, together with the roadmap that gives that mirror its context.
+type MirrorConsumer struct {
+	RoadmapID   int64  `json:"roadmapId"`
+	RoadmapName string `json:"roadmapName"`
+	MilestoneID int64  `json:"milestoneId"`
+	Title       string `json:"title"`
 }
 
 // IntegrationMilestone is one published milestone a would-be consumer may

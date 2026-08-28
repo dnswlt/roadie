@@ -47,6 +47,11 @@ func applyResolvedSource(m *model.Milestone, src sourceRef) {
 	m.Date, m.Tentative = src.Date, src.Tentative
 }
 
+func applyConsumers(m *model.Milestone, consumers []model.MirrorConsumer) {
+	m.Linkage.Consumers = consumers
+	m.Linkage.UsedBy = len(consumers)
+}
+
 // resolveMilestone fills the derived linkage fields on a mutation response.
 // An unavailable mirror source is a valid broken link, just as it is when a
 // whole roadmap is resolved, so absence leaves the stored fallback untouched.
@@ -61,11 +66,11 @@ func resolveMilestone(ctx context.Context, q querier, m *model.Milestone) error 
 			applyResolvedSource(m, src)
 		}
 	case m.IsIntegration():
-		usage, err := mirrorUsage(ctx, q, []string{m.UID})
+		consumers, err := mirrorConsumers(ctx, q, []string{m.UID})
 		if err != nil {
 			return err
 		}
-		m.Linkage.UsedBy = usage[m.UID]
+		applyConsumers(m, consumers[m.UID])
 	}
 	return nil
 }
@@ -179,7 +184,7 @@ func refreshMirrorCache(ctx context.Context, tx pgx.Tx, roadmapID int64, src mod
 }
 
 // ResolveMirrors fills in the derived halves of a roadmap's milestones in place:
-// each mirror's provider side, and each integration milestone's usage count.
+// each mirror's provider side, and each integration milestone's consumers.
 //
 // Request-scoped reads only. Export, duplication and snapshot capture skip it,
 // so they persist stored state and nothing derived — as with Roadmap.Owned.
@@ -199,7 +204,7 @@ func (s *Store) ResolveMirrors(ctx context.Context, full *model.RoadmapFull) err
 	if err != nil {
 		return err
 	}
-	usage, err := mirrorUsage(ctx, s.pool, publishedUIDs)
+	consumers, err := mirrorConsumers(ctx, s.pool, publishedUIDs)
 	if err != nil {
 		return err
 	}
@@ -217,7 +222,7 @@ func (s *Store) ResolveMirrors(ctx context.Context, full *model.RoadmapFull) err
 				}
 				applyResolvedSource(ms, src)
 			case ms.IsIntegration():
-				ms.Linkage.UsedBy = usage[ms.UID]
+				applyConsumers(ms, consumers[ms.UID])
 			}
 		}
 	}
@@ -251,33 +256,34 @@ func resolveSources(ctx context.Context, q querier, uids []string) (map[string]s
 	return out, rows.Err()
 }
 
-// mirrorUsage counts, per published milestone UID, the live public roadmaps
-// holding a mirror of it — carried, not depended on: deleting the source breaks
-// a mirror either way.
-func mirrorUsage(ctx context.Context, q querier, uids []string) (map[string]int, error) {
-	out := map[string]int{}
+// mirrorConsumers lists, per published milestone UID, the mirrors held by live
+// public roadmaps. A bare mirror counts: deleting the source breaks it whether
+// or not the consumer has attached a dependency yet.
+func mirrorConsumers(ctx context.Context, q querier, uids []string) (map[string][]model.MirrorConsumer, error) {
+	out := map[string][]model.MirrorConsumer{}
 	if len(uids) == 0 {
 		return out, nil
 	}
 	rows, err := q.Query(ctx,
-		`SELECT mir.source_milestone_uid, count(DISTINCT l.roadmap_id)
+		`SELECT mir.source_milestone_uid, r.id, r.name, mir.id, mir.title
 		 FROM milestones mir
 		 JOIN lanes l ON l.id = mir.lane_id
 		 JOIN roadmaps r ON r.id = l.roadmap_id
 		 WHERE mir.source_milestone_uid = ANY($1::uuid[])
 		   AND r.deleted_at IS NULL AND r.visibility = 'public'
-		 GROUP BY mir.source_milestone_uid`, uids)
+		 ORDER BY mir.source_milestone_uid, lower(r.name), r.name, mir.id`, uids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var uid string
-		var n int
-		if err := rows.Scan(&uid, &n); err != nil {
+		var consumer model.MirrorConsumer
+		if err := rows.Scan(&uid, &consumer.RoadmapID, &consumer.RoadmapName,
+			&consumer.MilestoneID, &consumer.Title); err != nil {
 			return nil, err
 		}
-		out[uid] = n
+		out[uid] = append(out[uid], consumer)
 	}
 	return out, rows.Err()
 }

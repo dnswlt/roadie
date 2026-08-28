@@ -2912,18 +2912,18 @@ dialog.mirror-dialog {
   white-space: nowrap;
 }
 
-.mirror-source-link {
+.cross-roadmap-link {
   text-decoration: none;
 }
 
-.mirror-source-text {
+.cross-roadmap-text {
   min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
 }
 
-.mirror-source-roadmap {
+.cross-roadmap-roadmap {
   overflow: hidden;
   color: var(--muted);
   font-size: 11px;
