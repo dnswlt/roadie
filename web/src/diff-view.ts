@@ -229,11 +229,15 @@ const MILESTONE_FIELD_CHIPS: Record<MilestoneField, string> = {
   description: "description",
   date: "date",
   tentative: "tentative",
+  integration: "integration milestone",
   lane: "moved",
   deps: "dependencies",
 };
 
-const MILESTONE_BOOLEAN_FIELDS: ReadonlySet<MilestoneField> = new Set(["tentative"]);
+const MILESTONE_BOOLEAN_FIELDS: ReadonlySet<MilestoneField> = new Set([
+  "tentative",
+  "integration",
+]);
 
 function chipText(f: ItemField, a: Item): string {
   const name = FIELD_CHIPS[f];
@@ -246,6 +250,7 @@ function chipText(f: ItemField, a: Item): string {
 function milestoneChipText(f: MilestoneField, a: Milestone): string {
   const name = MILESTONE_FIELD_CHIPS[f];
   if (f === "tentative") return `${a.tentative ? "+" : "−"} ${name}`;
+  if (f === "integration") return `${a.linkage?.integration ? "+" : "−"} ${name}`;
   return name;
 }
 

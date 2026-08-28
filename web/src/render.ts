@@ -335,7 +335,7 @@ function renderMilestone(m: Milestone, row: number): HTMLElement {
   const title = document.createElement("span");
   title.className = "milestone-title";
   title.textContent = m.title;
-  label.append(depMark(milestoneDeps(m)), title);
+  label.append(integrationMark(m), depMark(milestoneDeps(m)), title);
   label.style.maxWidth = `${MS_LABEL_MAX}px`;
   el.append(div("milestone-diamond"), label);
   return el;
@@ -545,16 +545,11 @@ function measureTitleWidth(text: string): number {
 // or margins automatically feed milestone row packing. The conflict ring sits
 // within its 5px trailing margin, so it does not extend the label's right edge.
 const depMarkWidths = new Map<boolean, number>();
+let integrationMarkWidth: number | undefined;
 
-function measureDepMarkWidth(deps: DepSummary | undefined): number {
-  if (!deps) return 0;
-  const conflict = deps.conflicts > 0;
-  const cached = depMarkWidths.get(conflict);
-  if (cached !== undefined) return cached;
-
+function measureMilestoneMark(mark: HTMLElement): number {
   const probe = div("milestone-label");
   probe.style.visibility = "hidden";
-  const mark = depMark(deps) as HTMLElement;
   probe.append(mark);
   document.body.append(probe);
   const style = getComputedStyle(mark);
@@ -563,15 +558,37 @@ function measureDepMarkWidth(deps: DepSummary | undefined): number {
     (Number.parseFloat(style.marginRight) || 0);
   const width = mark.getBoundingClientRect().width + margin;
   probe.remove();
+  return width;
+}
+
+function measureDepMarkWidth(deps: DepSummary | undefined): number {
+  if (!deps) return 0;
+  const conflict = deps.conflicts > 0;
+  const cached = depMarkWidths.get(conflict);
+  if (cached !== undefined) return cached;
+
+  const width = measureMilestoneMark(depMark(deps) as HTMLElement);
   depMarkWidths.set(conflict, width);
   return width;
 }
 
-// The width a milestone's band label wants, including its dependency mark,
+function measureIntegrationMarkWidth(milestone: Milestone): number {
+  if (!milestone.linkage?.integration) return 0;
+  if (integrationMarkWidth !== undefined) return integrationMarkWidth;
+
+  integrationMarkWidth = measureMilestoneMark(integrationMark(milestone) as HTMLElement);
+  return integrationMarkWidth;
+}
+
+// The width a milestone's band label wants, including its semantic marks,
 // which decides how many rows the band needs (packMilestoneRows, layout.ts).
 function milestoneLabelWidth(milestone: Milestone): number {
   const deps = milestoneDeps(milestone);
-  return measureDepMarkWidth(deps) + measureIn("milestone-label", milestone.title);
+  return (
+    measureIntegrationMarkWidth(milestone) +
+    measureDepMarkWidth(deps) +
+    measureIn("milestone-label", milestone.title)
+  );
 }
 
 // A small P1..P4 badge shown at the right end of a bar. Non-interactive
@@ -628,6 +645,17 @@ export function depMark(summary: DepSummary | undefined): Node {
   const el = document.createElement("span");
   el.className = summary.conflicts > 0 ? "bar-dep dep-conflict" : "bar-dep";
   el.append(icons.diagramMerge(13));
+  return el;
+}
+
+// A published integration milestone is the provided side of the cross-roadmap
+// contract, hence UML's provided-interface lollipop. Mirror rows will carry
+// the complementary required-interface socket instead.
+export function integrationMark(milestone: Milestone): Node {
+  if (!milestone.linkage?.integration) return document.createTextNode("");
+  const el = document.createElement("span");
+  el.className = "integration-mark";
+  el.append(icons.providedInterface(16));
   return el;
 }
 

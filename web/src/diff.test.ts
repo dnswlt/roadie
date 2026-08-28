@@ -315,6 +315,15 @@ test("a milestone tentative flip is a visible modified field", () => {
   assert.deepEqual(diffCounts(d), { added: 0, removed: 0, modified: 1 });
 });
 
+test("publishing an integration milestone is a visible modified field", () => {
+  const before = roadmap([lane(1, { milestones: [milestone(50, 1)] })]);
+  const after = roadmap([
+    lane(1, { milestones: [milestone(50, 1, { linkage: { integration: true } })] }),
+  ]);
+  const d = diffRoadmaps(before, after);
+  assert.deepEqual(d.lanes[0]!.milestones[0]!.fields, ["integration"]);
+});
+
 test("periods diff by value, so a relabel reads as removed plus added", () => {
   const before = roadmap([], { periods: [period("S1", "2026-01-01", "2026-01-14")] });
   const after = roadmap([], { periods: [period("Sprint 1", "2026-01-01", "2026-01-14")] });

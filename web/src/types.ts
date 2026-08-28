@@ -81,6 +81,20 @@ export interface ItemFull extends Item {
   children: Item[];
 }
 
+export interface MirrorSource {
+  roadmapId?: number;
+  roadmapName?: string;
+  milestoneId?: number;
+  title?: string;
+}
+
+export interface MilestoneLinkage {
+  integration: boolean;
+  sourceUid?: string;
+  source?: MirrorSource;
+  usedBy?: number;
+}
+
 export interface Milestone {
   id: number;
   // Globally unique and immutable from creation: the name anything outside this
@@ -92,6 +106,7 @@ export interface Milestone {
   description: string;
   date: string; // YYYY-MM-DD
   tentative: boolean; // timing is not a precise commitment; hollow diamond in timeline/WBS
+  linkage?: MilestoneLinkage;
 }
 
 export interface LaneFull extends Lane {
@@ -301,6 +316,7 @@ export interface MilestonePatch {
   description?: string;
   date?: string;
   tentative?: boolean;
+  integration?: boolean;
 }
 
 // Me mirrors the server's /api/me response. mode tells the UI whether this

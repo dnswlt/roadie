@@ -839,9 +839,9 @@ function deleteButton(label: string, onClick: () => void): HTMLButtonElement {
   return btn;
 }
 
-// All three planning signals use the same two-state button. Multi-selection
-// adds one display-only state: mixed. Its click still has a binary meaning —
-// mixed or false becomes true for all; only uniformly true becomes false.
+// Planning signals use the same two-state button. Multi-selection adds one
+// display-only state: mixed. Its click still has a binary meaning — mixed or
+// false becomes true for all; only uniformly true becomes false.
 function metadataSignalButton(
   className: string,
   title: string,
@@ -873,8 +873,8 @@ function metadataSignalButton(
 }
 
 // metadataField is the shared panel scaffold for planning-signal buttons and,
-// for items, the trailing priority picker. A milestone uses the same structure
-// with only its tentative signal, so the alignment and spacing stay identical.
+// for items, the trailing priority picker. Milestones use the same structure,
+// so their signals keep the same alignment and spacing.
 function metadataField(
   signals: HTMLButtonElement[],
   chips?: HTMLElement,
@@ -929,6 +929,26 @@ function milestoneTentativeButton(milestone: Milestone): HTMLButtonElement {
     milestone.tentative,
     (tentative) => void actions.updateMilestone(milestone.id, { tentative }),
   );
+}
+
+function milestoneIntegrationButton(milestone: Milestone): HTMLButtonElement {
+  const published = milestone.linkage?.integration ?? false;
+  const button = metadataSignalButton(
+    "integration-btn",
+    "Integration milestone: other roadmaps may depend on it",
+    icons.providedInterface(16),
+    published,
+    (integration) => void actions.updateMilestone(milestone.id, { integration }),
+  );
+  // Publishing creates a cross-roadmap contract, whose two ends must remain
+  // visible to each other. A private provider may still unpublish one left
+  // behind by a visibility change.
+  if (!published && state.current?.visibility !== "public") {
+    button.disabled = true;
+    button.title = "Make this roadmap public before publishing an integration milestone";
+    button.setAttribute("aria-label", button.title);
+  }
+  return button;
 }
 
 function riskButton(item: Item): HTMLButtonElement {
@@ -1079,7 +1099,12 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   attrs.className = "panel-attrs";
   attrs.append(dates.dateRow);
   if (dates.periodRow) attrs.append(dates.periodRow);
-  const metadata = metadataField([milestoneTentativeButton(milestone)]);
+  const signals = [milestoneTentativeButton(milestone)];
+  // A mirror consumes another roadmap's contract and cannot publish itself.
+  if (!milestone.linkage?.sourceUid) {
+    signals.unshift(milestoneIntegrationButton(milestone));
+  }
+  const metadata = metadataField(signals);
   attrs.append(metadata, dependenciesSection({ kind: "milestone", id: milestone.id }));
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);

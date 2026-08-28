@@ -1243,11 +1243,11 @@ kbd {
   pointer-events: none;
 }
 
-/* The dependency mark (depMark in render.ts). Colour is inherited rather than
-   set, so one rule serves white-on-lane inside a bar and ink on a WBS row; the
-   opacity keeps it quieter than the title it trails, since taking part in the
-   graph is not by itself worth interrupting anyone. */
-.bar-dep {
+/* Semantic marks use exactly the ink of their surroundings in every view.
+   Their opacity keeps them quieter than the title: having dependencies or
+   publishing an integration milestone is context, not an alert. */
+.bar-dep,
+.integration-mark {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1342,8 +1342,17 @@ kbd {
 
 .flag-btn,
 .tent-btn,
-.risk-btn {
+.risk-btn,
+.integration-btn {
   border-color: var(--border);
+}
+
+/* Publishing belongs to the milestone's lane rather than to the global
+   warning vocabulary, so its active state uses the lane tint. */
+.icon-btn.integration-btn.active {
+  color: var(--ink);
+  border-color: transparent;
+  background: color-mix(in oklab, var(--c) 28%, transparent);
 }
 
 /* Flag and at-risk go amber rather than the lane color (--c) like

@@ -214,6 +214,14 @@ export const icons = {
   search: (size = 16) =>
     svg(`<circle cx="11" cy="11" r="7"/><path d="m20 20-4.35-4.35"/>`, size),
   milestone: (size = 16) => svg(`<path d="M12 3 21 12 12 21 3 12z"/>`, size),
+  // UML's provided-interface lollipop: this milestone is a promise another
+  // roadmap may consume. Mirrors use the complementary socket shape.
+  providedInterface: (size = 16) =>
+    svg(
+      `<circle cx="7.5" cy="12" r="6.5" stroke-width="2.5"/>` +
+        `<path d="M14 12H23" stroke-width="2.5"/>`,
+      size,
+    ),
   // The dependency glyph: three nodes converging, two on the left feeding one
   // on the right. The fan-*in* direction is deliberate — fanned the other way
   // this is the universal share glyph, a meaning nobody would unlearn.

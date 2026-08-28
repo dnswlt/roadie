@@ -625,6 +625,15 @@ export const actions = {
           milestone.description = patch.description;
         if (patch.tentative !== undefined)
           milestone.tentative = patch.tentative;
+        if (patch.integration !== undefined) {
+          if (patch.integration) {
+            milestone.linkage = { ...milestone.linkage, integration: true };
+          } else if (milestone.linkage?.sourceUid) {
+            milestone.linkage = { ...milestone.linkage, integration: false };
+          } else {
+            milestone.linkage = undefined;
+          }
+        }
         if (patch.date !== undefined) {
           milestone.date = patch.date;
           loc.lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
