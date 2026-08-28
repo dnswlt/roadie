@@ -2,6 +2,7 @@ import type {
   Contributor,
   Dependency,
   DependencyRef,
+  IntegrationMilestone,
   Item,
   ItemPatch,
   Lane,
@@ -11,6 +12,7 @@ import type {
   MilestonePatch,
   NewItem,
   NewMilestone,
+  NewMirror,
   NewSchedulePeriod,
   Roadmap,
   RoadmapFull,
@@ -220,8 +222,13 @@ export const api = {
     req<Item>("PATCH", `/api/items/${id}`, patch),
   deleteItem: (id: number) => req<void>("DELETE", `/api/items/${id}`),
 
-  createMilestone: (laneId: number, milestone: NewMilestone) =>
+  createMilestone: (laneId: number, milestone: NewMilestone | NewMirror) =>
     req<Milestone>("POST", `/api/lanes/${laneId}/milestones`, milestone),
+  searchIntegrationMilestones: (roadmapId: number, query: string) =>
+    req<IntegrationMilestone[]>(
+      "GET",
+      `/api/roadmaps/${roadmapId}/integration-milestones?q=${encodeURIComponent(query)}`,
+    ),
   updateMilestone: (id: number, patch: MilestonePatch) =>
     req<Milestone>("PATCH", `/api/milestones/${id}`, patch),
   deleteMilestone: (id: number) => req<void>("DELETE", `/api/milestones/${id}`),

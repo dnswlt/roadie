@@ -73,7 +73,12 @@ export function depsGraphButton(ref: DependencyRef): HTMLButtonElement {
 }
 
 // dependenciesSection builds the panel block for one item or milestone.
-export function dependenciesSection(ref: DependencyRef): HTMLElement {
+// `trailing` lets a cross-roadmap milestone place its source provenance under
+// the same heading without teaching the local edge editor about mirrors.
+export function dependenciesSection(
+  ref: DependencyRef,
+  trailing?: HTMLElement,
+): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "panel-field deps-section";
   const label = document.createElement("span");
@@ -84,7 +89,11 @@ export function dependenciesSection(ref: DependencyRef): HTMLElement {
   wrap.append(label, groups);
 
   const render = (): void => {
-    groups.replaceChildren(depGroup(ref, "dependsOn", render), depGroup(ref, "neededBy", render));
+    groups.replaceChildren(
+      depGroup(ref, "dependsOn", render),
+      depGroup(ref, "neededBy", render),
+      ...(trailing ? [trailing] : []),
+    );
   };
   render();
   return wrap;

@@ -23,6 +23,7 @@ import { renderRecon } from "./recon";
 import { projectWbsSelection, renderWbs } from "./wbs";
 import { initWbsDnd } from "./wbs-dnd";
 import { laneMarkdown, roadmapMarkdown } from "./markdown";
+import { mirrorMilestoneDialog } from "./mirror-dialog";
 import { focusPanelTitle, renderPanel } from "./panel";
 import { openPopover, type PopoverHandle } from "./popover";
 import { parseSchedule, serializeSchedule } from "./schedule";
@@ -502,7 +503,7 @@ function wireTopbar(): void {
     const goPrivate = state.current.visibility === "public";
     const ok = await confirmDialog(
       goPrivate
-        ? `Make "${state.current.name}" private? Only you will be able to see it.`
+        ? `Make "${state.current.name}" private? Only you will be able to see it. Integration milestone links to or from this roadmap may stop working while it is private.`
         : `Make "${state.current.name}" public? Everyone will be able to see and edit it.`,
       goPrivate ? "Make private" : "Make public",
       "neutral",
@@ -831,6 +832,24 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     void actions.addMilestone(laneId).then(() => focusPanelTitle());
   });
 
+  const linkMs = document.createElement("button");
+  linkMs.className = "menu-item";
+  linkMs.append(icons.requiredInterface(16), text("Link ext. milestone"));
+  if (state.current?.visibility !== "public") {
+    linkMs.disabled = true;
+    linkMs.title = "Make this roadmap public before linking an external milestone";
+  }
+  linkMs.addEventListener("click", () => {
+    closeLaneMenu();
+    const roadmapId = state.current?.id;
+    if (!roadmapId) return;
+    void (async () => {
+      const source = await mirrorMilestoneDialog(roadmapId);
+      if (!source) return;
+      if (await actions.addMirror(laneId, source.uid)) focusPanelTitle();
+    })();
+  });
+
   const color = document.createElement("button");
   color.className = "menu-item";
   const dot = document.createElement("span");
@@ -865,7 +884,7 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     })();
   });
 
-  menu.append(addMs, color, copyMd, rename, del);
+  menu.append(addMs, linkMs, color, copyMd, rename, del);
   document.body.append(menu);
   // Right-aligned under the button, which keeps it clear of the right edge.
   placePopover(menu, anchor, "right");

@@ -205,10 +205,8 @@ type MirrorSource struct {
 	Title       string `json:"title,omitempty"`
 }
 
-// IntegrationMilestone is one published milestone as a would-be consumer sees
-// it when choosing what to mirror: enough to pick it, plus whether the asking
-// roadmap already mirrors it, since a roadmap may hold at most one mirror per
-// source.
+// IntegrationMilestone is one published milestone a would-be consumer may
+// choose to mirror.
 type IntegrationMilestone struct {
 	UID         string `json:"uid"`
 	Title       string `json:"title"`
@@ -217,7 +215,6 @@ type IntegrationMilestone struct {
 	Tentative   bool   `json:"tentative"`
 	RoadmapID   int64  `json:"roadmapId"`
 	RoadmapName string `json:"roadmapName"`
-	Mirrored    bool   `json:"mirrored"`
 }
 
 type LaneFull struct {

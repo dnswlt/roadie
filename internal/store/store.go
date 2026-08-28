@@ -1621,6 +1621,7 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 
 	title, date, tentative := n.Title, n.Date.Time, n.Tentative
 	var sourceUID *string
+	var resolvedSource *sourceRef
 	if n.SourceUID != "" {
 		src, err := resolveSource(ctx, tx, n.SourceUID)
 		if err != nil {
@@ -1643,6 +1644,7 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		// to, and tentative is read from the source on every resolved read.
 		date, tentative = src.Date.Time, false
 		sourceUID = &n.SourceUID
+		resolvedSource = &src
 	}
 	m, err := scanMilestone(tx.QueryRow(ctx,
 		`INSERT INTO milestones (lane_id, title, description, date, tentative, integration_milestone, source_milestone_uid)
@@ -1650,6 +1652,9 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		laneID, title, n.Description, date, tentative, n.Integration, sourceUID))
 	if err != nil {
 		return model.Milestone{}, err
+	}
+	if resolvedSource != nil {
+		applyResolvedSource(&m, *resolvedSource)
 	}
 	return m, tx.Commit(ctx)
 }
@@ -1724,6 +1729,9 @@ func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch)
 		return model.Milestone{}, err
 	}
 	if err := refreshMirrorCache(ctx, tx, roadmapID, m); err != nil {
+		return model.Milestone{}, err
+	}
+	if err := resolveMilestone(ctx, tx, &m); err != nil {
 		return model.Milestone{}, err
 	}
 	return m, tx.Commit(ctx)

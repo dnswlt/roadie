@@ -614,6 +614,26 @@ export const actions = {
     }
   },
 
+  // A mirror is a server-assigned milestone whose date comes from its source.
+  // Wait for creation, then treat it like every other newly created milestone.
+  async addMirror(laneId: number, sourceUid: string): Promise<boolean> {
+    if (state.preview) return false;
+    try {
+      const milestone = await api.createMilestone(laneId, { sourceUid });
+      const lane = state.findLane(milestone.laneId);
+      if (lane) {
+        lane.milestones.push(milestone);
+        lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
+      }
+      state.selectMilestone(milestone.id);
+      state.notify();
+      return true;
+    } catch (e) {
+      toast(errMsg(e), true);
+      return false;
+    }
+  },
+
   async updateMilestone(id: number, patch: MilestonePatch): Promise<void> {
     await optimistic(
       () => {

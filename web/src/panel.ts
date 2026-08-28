@@ -3,6 +3,7 @@
 // (add child, delete) commit immediately through actions.ts.
 
 import { actions } from "./actions";
+import { api } from "./api";
 import { copyText } from "./clipboard";
 import { laneColorValue } from "./colors";
 import { editRangeDate, parseDateInput, type DateEdge } from "./dates";
@@ -14,6 +15,7 @@ import { itemMarkdown } from "./markdown";
 import { periodAtEdge, periodDates, periodsByStart } from "./schedule";
 import { state, type MilestoneLocation } from "./state";
 import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./types";
+import { writeParams } from "./url";
 
 const PANEL_TITLE_ID = "panel-item-title";
 
@@ -44,9 +46,53 @@ function confirmAndDeleteItem(item: Item): Promise<void> {
 }
 
 async function confirmAndDeleteMilestone(milestone: Milestone): Promise<void> {
-  if (await confirmDialog(`Delete milestone "${milestone.title}"?`)) {
+  const usedBy = milestone.linkage?.integration
+    ? await freshIntegrationUsage(milestone)
+    : 0;
+  const usage = integrationUsageCopy(usedBy);
+  const content = usage
+    ? {
+        title: usage.title,
+        message: `Delete milestone "${milestone.title}"? ${usage.consequence}`,
+      }
+    : `Delete milestone "${milestone.title}"?`;
+  if (await confirmDialog(content)) {
     void actions.deleteMilestone(milestone.id);
   }
+}
+
+function integrationUsageCopy(usedBy: number): { title: string; consequence: string } | null {
+  if (usedBy === 0) return null;
+  if (usedBy === 1) {
+    return {
+      title: "One other roadmap depends on this milestone",
+      consequence: "Its linked milestone and dependencies will remain, but updates will stop.",
+    };
+  }
+  return {
+    title: `${usedBy} other roadmaps depend on this milestone`,
+    consequence: "Their linked milestones and dependencies will remain, but updates will stop.",
+  };
+}
+
+// Cross-roadmap usage is derived on reads, and consumer mutations do not ring
+// the provider roadmap's SSE doorbell. Refresh it at the destructive decision
+// point rather than trusting the count from when this roadmap was opened.
+async function freshIntegrationUsage(milestone: Milestone): Promise<number> {
+  const fallback = milestone.linkage?.usedBy ?? 0;
+  const roadmapId = state.current?.id;
+  if (!roadmapId) return fallback;
+  try {
+    const full = await api.getRoadmap(roadmapId);
+    for (const lane of full.lanes) {
+      const current = lane.milestones.find((candidate) => candidate.id === milestone.id);
+      if (current) return current.linkage?.usedBy ?? 0;
+    }
+  } catch {
+    // Confirmation remains available offline or through a transient read
+    // failure; the loaded count is still more useful than hiding the impact.
+  }
+  return fallback;
 }
 
 // deleteSelection deletes everything selected: one milestone, one item, or a
@@ -475,6 +521,7 @@ type ItemDates = Pick<Item, "startDate" | "endDate">;
 interface DateField {
   wrap: HTMLElement;
   show: (value: string) => void;
+  disable: (title: string) => void;
 }
 
 // A native date input conflates editing a segment with committing the date:
@@ -569,7 +616,19 @@ function dateField(
 
   editor.append(input, open, picker);
   wrap.append(caption, editor, error);
-  return { wrap, show };
+  return {
+    wrap,
+    show,
+    disable(title: string): void {
+      input.disabled = true;
+      input.title = title;
+      open.disabled = true;
+      open.title = title;
+      open.setAttribute("aria-label", title);
+      picker.disabled = true;
+      wrap.title = title;
+    },
+  };
 }
 
 // itemDateEditor owns every control that edits one date range: the two date
@@ -649,12 +708,19 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
     }
   };
   const date = dateField("Date", "Choose date", "end", commit);
+  const sourceOwned = milestone.linkage?.sourceUid !== undefined;
+  const sourceOwnedTitle = "This date is planned by the source roadmap";
+  if (sourceOwned) date.disable(sourceOwnedTitle);
 
   let periodRowElement: HTMLElement | null = null;
   if (periods.length > 0) {
     // A milestone due in a period lands on its last day: it is a deadline, not
     // work spanning that period.
     duePeriod = periodSelect("Due in period", periods, (p) => commit(p.endDate));
+    if (sourceOwned) {
+      duePeriod.disabled = true;
+      duePeriod.title = sourceOwnedTitle;
+    }
     periodRowElement = periodRow(duePeriod);
   }
   show(value);
@@ -933,13 +999,15 @@ function milestoneTentativeButton(milestone: Milestone): HTMLButtonElement {
 
 function milestoneIntegrationButton(milestone: Milestone): HTMLButtonElement {
   const published = milestone.linkage?.integration ?? false;
-  const button = metadataSignalButton(
-    "integration-btn",
-    "Integration milestone: other roadmaps may depend on it",
-    icons.providedInterface(16),
-    published,
-    (integration) => void actions.updateMilestone(milestone.id, { integration }),
-  );
+  const title = "Integration milestone: other roadmaps may depend on it";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "icon-btn integration-btn";
+  button.classList.toggle("active", published);
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  button.setAttribute("aria-pressed", String(published));
+  button.append(icons.providedInterface(16));
   // Publishing creates a cross-roadmap contract, whose two ends must remain
   // visible to each other. A private provider may still unpublish one left
   // behind by a visibility change.
@@ -947,7 +1015,45 @@ function milestoneIntegrationButton(milestone: Milestone): HTMLButtonElement {
     button.disabled = true;
     button.title = "Make this roadmap public before publishing an integration milestone";
     button.setAttribute("aria-label", button.title);
+    return button;
   }
+
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    void (async () => {
+      const next = !published;
+      let confirmed: boolean;
+      if (next) {
+        confirmed = await confirmDialog(
+          `Make "${milestone.title}" an integration milestone? Other roadmaps will be able to link to it and plan against it. Treat this as a contract they may rely on.`,
+          "Make integration milestone",
+          "primary",
+        );
+      } else {
+        const usedBy = await freshIntegrationUsage(milestone);
+        const usage = integrationUsageCopy(usedBy);
+        const content = usage
+          ? {
+              title: usage.title,
+              message: `Remove integration status from "${milestone.title}"? ${usage.consequence}`,
+            }
+          : `Remove integration status from "${milestone.title}"? Other roadmaps will no longer be able to link it.`;
+        confirmed = await confirmDialog(
+          content,
+          "Remove integration status",
+          "danger",
+        );
+      }
+      if (!confirmed) {
+        button.disabled = false;
+        return;
+      }
+      button.classList.toggle("active", next);
+      button.setAttribute("aria-pressed", String(next));
+      button.blur();
+      await actions.updateMilestone(milestone.id, { integration: next });
+    })();
+  });
   return button;
 }
 
@@ -1040,6 +1146,69 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
   return wrap;
 }
 
+function mirrorSourceDependency(milestone: Milestone): HTMLElement | undefined {
+  const linkage = milestone.linkage;
+  if (!linkage?.sourceUid) return undefined;
+
+  const group = document.createElement("div");
+  group.className = "dep-group mirror-source-group";
+  const head = document.createElement("div");
+  head.className = "dep-group-head";
+  const label = document.createElement("span");
+  label.className = "dep-group-label";
+  label.textContent = "Source milestone";
+  head.append(label);
+
+  const row = document.createElement("div");
+  row.className = "dep-row";
+  const source = linkage.source;
+  if (source?.roadmapId && source.milestoneId) {
+    const link = document.createElement("a");
+    link.className = "dep-go mirror-source-link";
+    const url = new URL(window.location.href);
+    writeParams(url.searchParams, {
+      roadmap: { id: source.roadmapId, name: source.roadmapName ?? "" },
+      view: state.navigation.view === "wbs" ? "wbs" : "timeline",
+      tab: null,
+      selection: { kind: "milestone", id: source.milestoneId },
+    });
+    url.hash = "";
+    link.href = url.href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.title = `Open ${source.title ?? "source milestone"} in ${source.roadmapName ?? "its roadmap"} in a new tab`;
+    link.append(icons.providedInterface(14));
+    const text = document.createElement("span");
+    text.className = "mirror-source-text";
+    const title = document.createElement("span");
+    title.className = "dep-go-title";
+    title.textContent = source.title ?? "Source milestone";
+    const roadmap = document.createElement("span");
+    roadmap.className = "mirror-source-roadmap";
+    roadmap.textContent = source.roadmapName ?? "External roadmap";
+    text.append(title, roadmap);
+    link.append(text);
+    row.append(link);
+  } else {
+    row.title =
+      "The source milestone was deleted, made private, or is no longer an integration milestone";
+    const warning = document.createElement("span");
+    warning.className = "warning-chip";
+    warning.append(icons.requiredInterface(14));
+    const unavailable = document.createElement("button");
+    unavailable.type = "button";
+    unavailable.disabled = true;
+    unavailable.className = "dep-go mirror-source-unavailable";
+    const title = document.createElement("span");
+    title.className = "dep-go-title";
+    title.textContent = "Source unavailable";
+    unavailable.append(title);
+    row.append(warning, unavailable);
+  }
+  group.append(head, row);
+  return group;
+}
+
 function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   const { milestone, lane } = loc;
   const key = `ms:${milestone.id}`;
@@ -1099,13 +1268,25 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   attrs.className = "panel-attrs";
   attrs.append(dates.dateRow);
   if (dates.periodRow) attrs.append(dates.periodRow);
-  const signals = [milestoneTentativeButton(milestone)];
+  const tentative = milestoneTentativeButton(milestone);
+  if (milestone.linkage?.sourceUid) {
+    tentative.disabled = true;
+    tentative.title = "Tentative timing is set by the source roadmap";
+    tentative.setAttribute("aria-label", tentative.title);
+  }
+  const signals = [tentative];
   // A mirror consumes another roadmap's contract and cannot publish itself.
   if (!milestone.linkage?.sourceUid) {
     signals.unshift(milestoneIntegrationButton(milestone));
   }
   const metadata = metadataField(signals);
-  attrs.append(metadata, dependenciesSection({ kind: "milestone", id: milestone.id }));
+  attrs.append(
+    metadata,
+    dependenciesSection(
+      { kind: "milestone", id: milestone.id },
+      mirrorSourceDependency(milestone),
+    ),
+  );
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }

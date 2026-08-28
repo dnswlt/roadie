@@ -1591,7 +1591,7 @@ function scheduleIssueRow(issue: ScheduleCheckMismatch): HTMLElement {
     if (part.textContent !== "") row.append(part);
   }
   const warning = document.createElement("span");
-  warning.className = "recon-schedule-warning";
+  warning.className = "recon-schedule-warning warning-chip";
   warning.title = "Outside Roadie item range";
   warning.setAttribute("aria-label", warning.title);
   warning.append(icons.clock(15));

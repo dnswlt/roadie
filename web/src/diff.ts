@@ -177,6 +177,8 @@ export function milestoneChanges(b: Milestone, a: Milestone): MilestoneField[] {
   if (b.description !== a.description) out.push("description");
   if (b.date !== a.date) out.push("date");
   if (b.tentative !== a.tentative) out.push("tentative");
+  // Source resolution is request-scoped presentation state, not snapshot
+  // content. Only the persisted publishing role participates in the diff.
   if ((b.linkage?.integration ?? false) !== (a.linkage?.integration ?? false))
     out.push("integration");
   if (b.laneId !== a.laneId) out.push("lane");

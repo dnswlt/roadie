@@ -222,6 +222,16 @@ export const icons = {
         `<path d="M14 12H23" stroke-width="2.5"/>`,
       size,
     ),
+  // UML's required-interface socket: a local mirror points outward to the
+  // provided integration milestone that owns its schedule. Both interface
+  // stems are 9 units, and the standard half-circle keeps the socket distinct
+  // from both a letterform and any semantic mark that follows it.
+  requiredInterface: (size = 16) =>
+    svg(
+      `<path d="M4 12h9" stroke-width="2.5"/>` +
+        `<path d="M20 5a7 7 0 0 0 0 14" stroke-width="2.5"/>`,
+      size,
+    ),
   // The dependency glyph: three nodes converging, two on the left feeding one
   // on the right. The fan-*in* direction is deliberate — fanned the other way
   // this is the universal share glyph, a meaning nobody would unlearn.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/dnswlt/roadie/internal/model"
@@ -31,7 +32,7 @@ func newMirrorFixture(t *testing.T) mirrorFixture {
 	f.providerLane = lane
 	f.source, err = testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
 		Title: "API available", Description: "v1 of the public API",
-		Date: date("2026-05-01"), Integration: true})
+		Date: date("2026-05-01"), Tentative: true, Integration: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,16 +103,23 @@ func TestMirrorCreation(t *testing.T) {
 	if !m.IsMirror() || m.Linkage.SourceUID != f.source.UID {
 		t.Fatalf("mirror source: got %+v, want a mirror of %q", m.Linkage, f.source.UID)
 	}
+	if m.Linkage.Source == nil || m.Linkage.Source.MilestoneID != f.source.ID ||
+		m.Linkage.Source.RoadmapID != f.provider.ID {
+		t.Fatalf("created mirror source is not resolved: %+v", m.Linkage.Source)
+	}
 	if m.UID == f.source.UID {
 		t.Errorf("mirror reused the source UID; it is a row of its own")
 	}
 	if m.Title != "Partner API ready" {
 		t.Errorf("consumer title overwritten: %q", m.Title)
 	}
-	// The provider owns the date, so the mirror caches it rather than inventing
-	// one, and stores tentative as false whatever the source says.
+	// The provider owns the schedule. Creation returns its resolved values while
+	// the mirror row keeps the date as its fallback cache.
 	if !m.Date.Equal(f.source.Date.Time) {
 		t.Errorf("cached date: got %v, want %v", m.Date, f.source.Date)
+	}
+	if !m.Tentative {
+		t.Errorf("create response did not project the source's tentative state")
 	}
 	if m.IsIntegration() {
 		t.Errorf("a mirror must not be an integration milestone")
@@ -197,6 +205,10 @@ func TestMirrorIsPlannedByItsSource(t *testing.T) {
 	}
 	if renamed.Title != "Vendor API" || renamed.Description != "what we integrate against" {
 		t.Errorf("consumer-owned fields not applied: %+v", renamed)
+	}
+	if renamed.Linkage.Source == nil || renamed.Linkage.Source.MilestoneID != f.source.ID ||
+		!renamed.Date.Equal(f.source.Date.Time) || !renamed.Tentative {
+		t.Errorf("updated mirror is not resolved: %+v", renamed)
 	}
 }
 
@@ -356,6 +368,15 @@ func TestIntegrationMilestoneUsage(t *testing.T) {
 	if n := usedBy(); n != 1 {
 		t.Errorf("usedBy with a bare mirror: got %d, want 1", n)
 	}
+	updated, err := testStore.UpdateMilestone(ctx, f.source.ID, MilestonePatch{
+		Title: model.Opt[string]{Set: true, Value: "API available soon"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Linkage == nil || updated.Linkage.UsedBy != 1 {
+		t.Errorf("updated integration milestone usage: got %+v, want usedBy 1", updated.Linkage)
+	}
 	if _, err := testStore.CreateDependency(ctx, f.consumer.ID, msRef(m.ID), itemRef(f.work.ID)); err != nil {
 		t.Fatal(err)
 	}
@@ -377,11 +398,13 @@ func TestIntegrationMilestoneUsage(t *testing.T) {
 	}
 }
 
-func TestIntegrationMilestoneListing(t *testing.T) {
+func TestIntegrationMilestoneSearch(t *testing.T) {
 	ctx := context.Background()
 	f := newMirrorFixture(t)
 
-	list, err := testStore.ListIntegrationMilestones(ctx, f.consumer.ID)
+	// Terms are ANDed across title, roadmap and description. "provider" comes
+	// from the roadmap name and "public" from the milestone description.
+	list, err := testStore.SearchIntegrationMilestones(ctx, f.consumer.ID, "PROVIDER public")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,27 +420,51 @@ func TestIntegrationMilestoneListing(t *testing.T) {
 	if got == nil {
 		t.Fatalf("published milestone missing from the picker")
 	}
-	if got.Mirrored || got.RoadmapID != f.provider.ID {
+	if got.RoadmapID != f.provider.ID {
 		t.Errorf("picker entry: %+v", got)
 	}
 
 	f.mirror(t, "Partner API ready")
-	list, err = testStore.ListIntegrationMilestones(ctx, f.consumer.ID)
+	list, err = testStore.SearchIntegrationMilestones(ctx, f.consumer.ID, "API")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got = found(); got == nil || !got.Mirrored {
-		t.Errorf("already-mirrored source: %+v", got)
+	if got = found(); got != nil {
+		t.Errorf("already-mirrored source was offered again: %+v", got)
 	}
 
 	// A roadmap never offers its own milestones: mirroring one locally is not a
 	// cross-roadmap sync point.
-	list, err = testStore.ListIntegrationMilestones(ctx, f.provider.ID)
+	list, err = testStore.SearchIntegrationMilestones(ctx, f.provider.ID, "API")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found() != nil {
 		t.Errorf("provider offered its own milestone")
+	}
+}
+
+func TestIntegrationMilestoneSearchIsBounded(t *testing.T) {
+	ctx := context.Background()
+	f := newMirrorFixture(t)
+	needle := fmt.Sprintf("limitneedle-%d", f.provider.ID)
+	for i := 0; i <= integrationMilestoneSearchLimit; i++ {
+		if _, err := testStore.CreateMilestone(ctx, f.providerLane.ID, NewMilestone{
+			Title: fmt.Sprintf("%s %02d", needle, i), Date: date("2026-06-01"), Integration: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	list, err := testStore.SearchIntegrationMilestones(ctx, f.consumer.ID, needle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != integrationMilestoneSearchLimit {
+		t.Fatalf("search returned %d milestones, want the %d-result bound", len(list), integrationMilestoneSearchLimit)
+	}
+	if list[len(list)-1].Title != fmt.Sprintf("%s 49", needle) {
+		t.Errorf("bounded search order ends at %q", list[len(list)-1].Title)
 	}
 }
 
@@ -470,7 +517,7 @@ func TestCrossRoadmapLinksNeedTwoPublicRoadmaps(t *testing.T) {
 		NewMilestone{SourceUID: f.source.UID}); !isValidation(err) {
 		t.Errorf("mirror into a private roadmap: got %v, want validation error", err)
 	}
-	list, err := testStore.ListIntegrationMilestones(ctx, consumer.ID)
+	list, err := testStore.SearchIntegrationMilestones(ctx, consumer.ID, "approval")
 	if err != nil {
 		t.Fatal(err)
 	}

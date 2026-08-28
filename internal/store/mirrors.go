@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,6 +36,38 @@ type sourceRef struct {
 	model.MirrorSource
 	Date      model.Date
 	Tentative bool
+}
+
+// applyResolvedSource projects the provider-owned part of a mirror onto a
+// response. The mirror row remains the durable cache; none of these derived
+// values are written back here.
+func applyResolvedSource(m *model.Milestone, src sourceRef) {
+	source := src.MirrorSource
+	m.Linkage.Source = &source
+	m.Date, m.Tentative = src.Date, src.Tentative
+}
+
+// resolveMilestone fills the derived linkage fields on a mutation response.
+// An unavailable mirror source is a valid broken link, just as it is when a
+// whole roadmap is resolved, so absence leaves the stored fallback untouched.
+func resolveMilestone(ctx context.Context, q querier, m *model.Milestone) error {
+	switch {
+	case m.IsMirror():
+		sources, err := resolveSources(ctx, q, []string{m.Linkage.SourceUID})
+		if err != nil {
+			return err
+		}
+		if src, ok := sources[m.Linkage.SourceUID]; ok {
+			applyResolvedSource(m, src)
+		}
+	case m.IsIntegration():
+		usage, err := mirrorUsage(ctx, q, []string{m.UID})
+		if err != nil {
+			return err
+		}
+		m.Linkage.UsedBy = usage[m.UID]
+	}
+	return nil
 }
 
 // sourceCols are the provider-side columns every resolution reads, over
@@ -182,11 +215,7 @@ func (s *Store) ResolveMirrors(ctx context.Context, full *model.RoadmapFull) err
 				if !ok {
 					continue
 				}
-				source := src.MirrorSource
-				ms.Linkage.Source = &source
-				// The provider owns these two, so a resolved read reports its
-				// current values rather than the mirror's cache.
-				ms.Date, ms.Tentative = src.Date, src.Tentative
+				applyResolvedSource(ms, src)
 			case ms.IsIntegration():
 				ms.Linkage.UsedBy = usage[ms.UID]
 			}
@@ -253,21 +282,32 @@ func mirrorUsage(ctx context.Context, q querier, uids []string) (map[string]int,
 	return out, rows.Err()
 }
 
-// ListIntegrationMilestones returns what roadmapID could mirror, ordered by
-// roadmap name then date. Sources it already mirrors are flagged rather than
-// dropped, so the picker can say why one cannot be chosen twice. A private
-// roadmap gets an empty list: it may not consume either.
-func (s *Store) ListIntegrationMilestones(ctx context.Context, roadmapID int64) ([]model.IntegrationMilestone, error) {
+const integrationMilestoneSearchLimit = 50
+
+// SearchIntegrationMilestones returns at most 50 sources matching every
+// whitespace-separated query term across milestone title, roadmap name and
+// description. It returns only sources roadmapID may still mirror, so existing
+// mirrors neither occupy result slots nor need client-side filtering.
+func (s *Store) SearchIntegrationMilestones(ctx context.Context, roadmapID int64, query string) ([]model.IntegrationMilestone, error) {
 	public, err := roadmapIsPublic(ctx, s.pool, roadmapID)
 	if err != nil || !public {
 		return []model.IntegrationMilestone{}, err
 	}
+	terms := strings.Fields(strings.ToLower(query))
+	if len(terms) == 0 {
+		return []model.IntegrationMilestone{}, nil
+	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT ms.uid, ms.title, ms.description, ms.date, ms.tentative, roadmaps.id, roadmaps.name,
-		        EXISTS (SELECT 1 FROM milestones mir JOIN lanes ml ON ml.id = mir.lane_id
-		                WHERE ml.roadmap_id = $1 AND mir.source_milestone_uid = ms.uid)
+		`SELECT ms.uid, ms.title, ms.description, ms.date, ms.tentative, roadmaps.id, roadmaps.name
 		 `+sourceFrom+` AND roadmaps.id <> $1
-		 ORDER BY roadmaps.name, ms.date, ms.title`, roadmapID)
+		   AND NOT EXISTS (
+		       SELECT 1 FROM milestones mir JOIN lanes ml ON ml.id = mir.lane_id
+		       WHERE ml.roadmap_id = $1 AND mir.source_milestone_uid = ms.uid)
+		   AND NOT EXISTS (
+		       SELECT 1 FROM unnest($2::text[]) AS q(term)
+		       WHERE strpos(lower(concat_ws(E'\n', ms.title, roadmaps.name, ms.description)), q.term) = 0)
+		 ORDER BY roadmaps.name, ms.date, ms.title
+		 LIMIT $3`, roadmapID, terms, integrationMilestoneSearchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +317,7 @@ func (s *Store) ListIntegrationMilestones(ctx context.Context, roadmapID int64) 
 		var im model.IntegrationMilestone
 		var date time.Time
 		if err := rows.Scan(&im.UID, &im.Title, &im.Description, &date, &im.Tentative,
-			&im.RoadmapID, &im.RoadmapName, &im.Mirrored); err != nil {
+			&im.RoadmapID, &im.RoadmapName); err != nil {
 			return nil, err
 		}
 		im.Date = model.NewDate(date)

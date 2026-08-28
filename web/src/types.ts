@@ -95,6 +95,17 @@ export interface MilestoneLinkage {
   usedBy?: number;
 }
 
+// One source offered to a roadmap by the integration-milestone search endpoint.
+export interface IntegrationMilestone {
+  uid: string;
+  title: string;
+  description: string;
+  date: string;
+  tentative: boolean;
+  roadmapId: number;
+  roadmapName: string;
+}
+
 export interface Milestone {
   id: number;
   // Globally unique and immutable from creation: the name anything outside this
@@ -309,6 +320,12 @@ export interface NewMilestone {
   description: string;
   date: string;
   tentative?: boolean;
+}
+
+export interface NewMirror {
+  sourceUid: string;
+  title?: string;
+  description?: string;
 }
 
 export interface MilestonePatch {

@@ -238,16 +238,26 @@ const CONFIRM_TONE = {
   neutral: "btn",
 } as const;
 
-// confirmDialog asks a yes/no question.
+type ConfirmContent = string | { title: string; message: string };
+
+// confirmDialog asks a yes/no question. Most confirmations need only a short
+// sentence; consequential ones may promote their most important fact to a
+// heading instead of burying it in the prose.
 export function confirmDialog(
-  message: string,
+  content: ConfirmContent,
   okLabel = "Delete",
   tone: keyof typeof CONFIRM_TONE = "danger",
 ): Promise<boolean> {
   const dlg = dialogEl();
   dlg.replaceChildren();
+  dlg.classList.add("confirm-dialog");
+  if (typeof content !== "string") {
+    const h = document.createElement("h3");
+    h.textContent = content.title;
+    dlg.append(h);
+  }
   const p = document.createElement("p");
-  p.textContent = message;
+  p.textContent = typeof content === "string" ? content : content.message;
   const row = document.createElement("div");
   row.className = "dialog-actions";
   const cancel = document.createElement("button");
@@ -266,7 +276,14 @@ export function confirmDialog(
       result = true;
       dlg.close();
     });
-    dlg.addEventListener("close", () => resolve(result), { once: true });
+    dlg.addEventListener(
+      "close",
+      () => {
+        dlg.classList.remove("confirm-dialog");
+        resolve(result);
+      },
+      { once: true },
+    );
     dlg.showModal();
   });
 }

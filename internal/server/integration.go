@@ -7,16 +7,16 @@ import "net/http"
 // milestones collection with a source UID in the body, and their dependencies
 // through the ordinary dependencies collection.
 
-// listIntegrationMilestones answers "what could this roadmap mirror". The path
-// names the *consuming* roadmap — what guard authorizes, and what the
-// already-mirrored flag is computed against.
+// listIntegrationMilestones searches what this roadmap could mirror. The path
+// names the *consuming* roadmap — what guard authorizes and whose existing
+// mirrors are excluded from the result.
 func (s *Server) listIntegrationMilestones(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {
 		writeClientErr(w, err)
 		return
 	}
-	ms, err := s.store.ListIntegrationMilestones(r.Context(), id)
+	ms, err := s.store.SearchIntegrationMilestones(r.Context(), id, r.URL.Query().Get("q"))
 	if err != nil {
 		s.writeErr(w, err)
 		return

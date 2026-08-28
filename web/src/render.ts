@@ -335,7 +335,7 @@ function renderMilestone(m: Milestone, row: number): HTMLElement {
   const title = document.createElement("span");
   title.className = "milestone-title";
   title.textContent = m.title;
-  label.append(integrationMark(m), depMark(milestoneDeps(m)), title);
+  label.append(linkageMark(m), depMark(milestoneDeps(m)), title);
   label.style.maxWidth = `${MS_LABEL_MAX}px`;
   el.append(div("milestone-diamond"), label);
   return el;
@@ -545,7 +545,7 @@ function measureTitleWidth(text: string): number {
 // or margins automatically feed milestone row packing. The conflict ring sits
 // within its 5px trailing margin, so it does not extend the label's right edge.
 const depMarkWidths = new Map<boolean, number>();
-let integrationMarkWidth: number | undefined;
+const linkageMarkWidths = new Map<boolean, number>();
 
 function measureMilestoneMark(mark: HTMLElement): number {
   const probe = div("milestone-label");
@@ -572,12 +572,15 @@ function measureDepMarkWidth(deps: DepSummary | undefined): number {
   return width;
 }
 
-function measureIntegrationMarkWidth(milestone: Milestone): number {
-  if (!milestone.linkage?.integration) return 0;
-  if (integrationMarkWidth !== undefined) return integrationMarkWidth;
+function measureLinkageMarkWidth(milestone: Milestone): number {
+  if (!milestone.linkage?.integration && !milestone.linkage?.sourceUid) return 0;
+  const broken = mirrorSourceUnavailable(milestone);
+  const cached = linkageMarkWidths.get(broken);
+  if (cached !== undefined) return cached;
 
-  integrationMarkWidth = measureMilestoneMark(integrationMark(milestone) as HTMLElement);
-  return integrationMarkWidth;
+  const width = measureMilestoneMark(linkageMark(milestone) as HTMLElement);
+  linkageMarkWidths.set(broken, width);
+  return width;
 }
 
 // The width a milestone's band label wants, including its semantic marks,
@@ -585,7 +588,7 @@ function measureIntegrationMarkWidth(milestone: Milestone): number {
 function milestoneLabelWidth(milestone: Milestone): number {
   const deps = milestoneDeps(milestone);
   return (
-    measureIntegrationMarkWidth(milestone) +
+    measureLinkageMarkWidth(milestone) +
     measureDepMarkWidth(deps) +
     measureIn("milestone-label", milestone.title)
   );
@@ -607,7 +610,7 @@ export function prioPill(priority: number | null): Node {
 export function flagMark(flagged: boolean): Node {
   if (!flagged) return document.createTextNode("");
   const el = document.createElement("span");
-  el.className = "bar-flag";
+  el.className = "bar-flag bar-warning";
   el.append(icons.flag(13));
   return el;
 }
@@ -619,7 +622,7 @@ export function flagMark(flagged: boolean): Node {
 export function riskMark(atRisk: boolean): Node {
   if (!atRisk) return document.createTextNode("");
   const el = document.createElement("span");
-  el.className = "bar-risk";
+  el.className = "bar-risk bar-warning";
   el.append(icons.alertTriangle(13));
   return el;
 }
@@ -643,19 +646,35 @@ export function riskMark(atRisk: boolean): Node {
 export function depMark(summary: DepSummary | undefined): Node {
   if (!summary) return document.createTextNode("");
   const el = document.createElement("span");
-  el.className = summary.conflicts > 0 ? "bar-dep dep-conflict" : "bar-dep";
+  el.className =
+    summary.conflicts > 0 ? "bar-dep dep-conflict bar-warning" : "bar-dep";
   el.append(icons.diagramMerge(13));
   return el;
 }
 
-// A published integration milestone is the provided side of the cross-roadmap
-// contract, hence UML's provided-interface lollipop. Mirror rows will carry
-// the complementary required-interface socket instead.
-export function integrationMark(milestone: Milestone): Node {
-  if (!milestone.linkage?.integration) return document.createTextNode("");
+// The two ends of a cross-roadmap contract use UML's complementary interface
+// marks: the provider's lollipop and the consuming mirror's socket.
+function mirrorSourceUnavailable(milestone: Milestone): boolean {
+  // Snapshots contain the persisted link but deliberately no request-scoped
+  // resolution. Its absence says nothing about whether the source is healthy.
+  return Boolean(
+    !state.preview &&
+      milestone.linkage?.sourceUid &&
+      !milestone.linkage.source?.milestoneId,
+  );
+}
+
+export function linkageMark(milestone: Milestone): Node {
+  const linkage = milestone.linkage;
+  if (!linkage?.integration && !linkage?.sourceUid) return document.createTextNode("");
+  const broken = mirrorSourceUnavailable(milestone);
   const el = document.createElement("span");
-  el.className = "integration-mark";
-  el.append(icons.providedInterface(16));
+  el.className = broken
+    ? "linkage-mark broken bar-warning"
+    : "linkage-mark";
+  el.append(
+    linkage.sourceUid ? icons.requiredInterface(16) : icons.providedInterface(16),
+  );
   return el;
 }
 

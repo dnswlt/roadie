@@ -324,6 +324,30 @@ test("publishing an integration milestone is a visible modified field", () => {
   assert.deepEqual(d.lanes[0]!.milestones[0]!.fields, ["integration"]);
 });
 
+test("mirror source resolution does not change the snapshot diff", () => {
+  const cached = milestone(50, 1, {
+    linkage: { integration: false, sourceUid: "uid-source" },
+  });
+  const resolved = milestone(50, 1, {
+    linkage: {
+      integration: false,
+      sourceUid: "uid-source",
+      source: {
+        roadmapId: 2,
+        roadmapName: "Provider",
+        milestoneId: 60,
+        title: "Source milestone",
+      },
+    },
+  });
+
+  const d = diffRoadmaps(
+    roadmap([lane(1, { milestones: [cached] })]),
+    roadmap([lane(1, { milestones: [resolved] })]),
+  );
+  assert.equal(isEmptyDiff(d), true);
+});
+
 test("periods diff by value, so a relabel reads as removed plus added", () => {
   const before = roadmap([], { periods: [period("S1", "2026-01-01", "2026-01-14")] });
   const after = roadmap([], { periods: [period("Sprint 1", "2026-01-01", "2026-01-14")] });

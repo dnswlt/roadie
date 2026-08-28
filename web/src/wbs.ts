@@ -25,7 +25,7 @@ import {
   disclosure,
   emptyState,
   flagMark,
-  integrationMark,
+  linkageMark,
   laneLabel,
   prioPill,
   riskMark,
@@ -185,7 +185,7 @@ function renderMilestoneRow(m: Milestone): HTMLElement {
   el.append(
     div("wbs-ms-diamond"),
     title,
-    integrationMark(m),
+    linkageMark(m),
     depMark(depSums.get(refKey({ kind: "milestone", id: m.id }))),
     date,
   );
