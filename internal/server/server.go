@@ -165,6 +165,11 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s.mux.HandleFunc("POST /api/lanes/{id}/milestones", s.snap(snapThrottle, byLaneID, s.createMilestone))
 	s.mux.HandleFunc("PATCH /api/milestones/{id}", s.snap(snapThrottle, byMilestoneID, s.patchMilestone))
 	s.mux.HandleFunc("DELETE /api/milestones/{id}", s.snap(snapForce, byMilestoneID, s.deleteMilestone))
+	// What this roadmap could mirror: the integration milestones other visible
+	// roadmaps publish. A mirror itself is created through the milestones
+	// collection above, with a source UID in the body.
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/integration-milestones",
+		s.guard(byRoadmapID, s.listIntegrationMilestones))
 	// Dependencies are edges between items/milestones; reads ride in the
 	// roadmap payload, so only the two mutations exist. Deleting one is
 	// snapForce like the other deletes: an edge is not recoverable from
@@ -561,6 +566,13 @@ func (s *Server) getRoadmap(w http.ResponseWriter, r *http.Request) {
 	// to decide whether to offer the visibility control.
 	full.Owned, err = s.store.IsRoadmapOwner(r.Context(), id, viewer(r))
 	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	// Mirror resolution is derived per request for the same reason, but not per
+	// viewer: both ends of a cross-roadmap link are public roadmaps, so what a
+	// mirror resolves to is the same for everybody.
+	if err := s.store.ResolveMirrors(r.Context(), &full); err != nil {
 		s.writeErr(w, err)
 		return
 	}

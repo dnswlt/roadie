@@ -209,15 +209,28 @@ func scanLane(r rowScanner) (model.Lane, error) {
 	return l, err
 }
 
-const milestoneCols = "id, uid, lane_id, title, description, date, tentative, updated_at"
+const milestoneCols = "id, uid, lane_id, title, description, date, tentative, " +
+	"integration_milestone, source_milestone_uid, updated_at"
 
 func scanMilestone(r rowScanner) (model.Milestone, error) {
 	var m model.Milestone
 	var date time.Time
-	if err := r.Scan(&m.ID, &m.UID, &m.LaneID, &m.Title, &m.Description, &date, &m.Tentative, &m.UpdatedAt); err != nil {
+	var integration bool
+	var sourceUID *string
+	if err := r.Scan(&m.ID, &m.UID, &m.LaneID, &m.Title, &m.Description, &date, &m.Tentative,
+		&integration, &sourceUID, &m.UpdatedAt); err != nil {
 		return model.Milestone{}, err
 	}
 	m.Date = model.NewDate(date)
+	// A linkage exists only when the milestone actually has a cross-roadmap
+	// role. One of its two stored halves is always non-zero, so a plain
+	// milestone has exactly one spelling: no linkage at all.
+	if integration || sourceUID != nil {
+		m.Linkage = &model.MilestoneLinkage{Integration: integration}
+		if sourceUID != nil {
+			m.Linkage.SourceUID = *sourceUID
+		}
+	}
 	return m, nil
 }
 
@@ -743,16 +756,14 @@ func checkTransferable(ctx context.Context, tx pgx.Tx, src model.RoadmapFull, vi
 			uids = append(uids, ms.UID)
 		}
 	}
-	// unnest($2::text[])::uuid rather than a uuid[] parameter: pgx sends a Go
-	// []string as text, and the cast keeps the comparison itself uuid-to-uuid so
-	// the unique index still serves it. ORDER BY 3 is the visibility column:
-	// with several conflicts, report one the importer can actually be told about.
+	// ORDER BY 3 is the visibility column: with several conflicts, report one the
+	// importer can actually be told about.
 	var msTitle string
 	err = tx.QueryRow(ctx,
 		`SELECT ms.title, roadmaps.name, (`+visibleExpr+`) FROM milestones ms
 		 JOIN lanes l ON l.id = ms.lane_id
 		 JOIN roadmaps ON roadmaps.id = l.roadmap_id
-		 WHERE ms.uid = ANY(SELECT unnest($2::text[])::uuid)
+		 WHERE ms.uid = ANY($2::uuid[])
 		 ORDER BY 3 DESC LIMIT 1`,
 		viewer, uids).Scan(&msTitle, &name, &visible)
 	switch {
@@ -788,6 +799,9 @@ func (s *Store) ImportRoadmap(ctx context.Context, src model.RoadmapFull, own Ow
 	name := strings.TrimSpace(src.Name)
 	if name == "" {
 		return model.Roadmap{}, invalidf("roadmap name must not be empty")
+	}
+	if err := validateMirrorSources(src); err != nil {
+		return model.Roadmap{}, err
 	}
 	vis, err := normalizeVisibility(own.Visibility, own.Owner)
 	if err != nil {
@@ -873,6 +887,21 @@ func (p insertPolicy) stamp(t time.Time) *time.Time {
 	return &t
 }
 
+// mirrorSourceUID returns the source a milestone mirrors, nil for an owned one.
+// Every policy preserves it — a copy gets a new mirror of the same source, never
+// a mirror of nothing. Validated here so a malformed UID in a file is a
+// rejection rather than a database cast error.
+func mirrorSourceUID(ms model.Milestone) (*string, error) {
+	if !ms.IsMirror() {
+		return nil, nil
+	}
+	uid := ms.Linkage.SourceUID
+	if !validUID(uid) {
+		return nil, invalidf("milestone %q names a malformed source identity %q", ms.Title, uid)
+	}
+	return &uid, nil
+}
+
 // milestoneUID returns the UID to insert for a source milestone, nil to
 // generate a fresh one.
 func (p insertPolicy) milestoneUID(ms model.Milestone) *string {
@@ -884,6 +913,31 @@ func (p insertPolicy) milestoneUID(ms model.Milestone) *string {
 	}
 	if uid, ok := p.uidByID[ms.ID]; ok {
 		return &uid
+	}
+	return nil
+}
+
+// validateMirrorSources rejects a mirror whose source is another milestone
+// in the same payload. Such a relationship is not a valid roadmap regardless of
+// whether insertion preserves or regenerates the milestones' own UIDs.
+func validateMirrorSources(src model.RoadmapFull) error {
+	owned := map[string]string{}
+	for _, lane := range src.Lanes {
+		for _, ms := range lane.Milestones {
+			if ms.UID != "" {
+				owned[strings.ToLower(ms.UID)] = ms.Title
+			}
+		}
+	}
+	for _, lane := range src.Lanes {
+		for _, ms := range lane.Milestones {
+			if !ms.IsMirror() {
+				continue
+			}
+			if title, ok := owned[strings.ToLower(ms.Linkage.SourceUID)]; ok {
+				return invalidf("this roadmap mirrors its own milestone %q", title)
+			}
+		}
 	}
 	return nil
 }
@@ -903,6 +957,11 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 	// bind an edge to whichever happened to come last.
 	itemIDs := map[int64]int64{}
 	msIDs := map[int64]int64{}
+	// mirrorIDs marks the freshly written mirrors for the edge validation below;
+	// mirrored is the one-mirror-per-source check, which has no unique index to
+	// fall back on (milestones carry a lane, not a roadmap).
+	mirrorIDs := map[int64]bool{}
+	mirrored := map[string]bool{}
 
 	// insertItem writes one item and returns its new ID. parentID is nil for
 	// top-level items; rank is the caller-supplied dense index.
@@ -971,21 +1030,41 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 			if ms.Date.IsZero() {
 				return invalidf("milestone %q is missing a date", ms.Title)
 			}
+			// Shape only. Whether a mirror's source exists here says nothing
+			// about whether the file is well-formed, so it is not resolved.
+			sourceUID, err := mirrorSourceUID(ms)
+			if err != nil {
+				return err
+			}
+			if sourceUID != nil {
+				if ms.IsIntegration() {
+					return invalidf("milestone %q is both a mirror and an integration milestone", ms.Title)
+				}
+				key := strings.ToLower(*sourceUID)
+				if mirrored[key] {
+					return invalidf("milestone %q mirrors a source this roadmap already mirrors", ms.Title)
+				}
+				mirrored[key] = true
+			}
 			var msID int64
 			if err := tx.QueryRow(ctx,
-				`INSERT INTO milestones (id, uid, lane_id, title, description, date, tentative, updated_at)
-				 VALUES (`+nextID("milestones")+`, COALESCE($2::uuid, gen_random_uuid()), $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()))
+				`INSERT INTO milestones (id, uid, lane_id, title, description, date, tentative, integration_milestone, source_milestone_uid, updated_at)
+				 VALUES (`+nextID("milestones")+`, COALESCE($2::uuid, gen_random_uuid()), $3, $4, $5, $6, $7, $8, $9::uuid, COALESCE($10::timestamptz, now()))
 				 RETURNING id`,
 				pol.dbID(ms.ID), pol.milestoneUID(ms), laneID, ms.Title, ms.Description, ms.Date.Time,
-				ms.Tentative, pol.stamp(ms.UpdatedAt)).Scan(&msID); err != nil {
+				ms.Tentative && sourceUID == nil, ms.IsIntegration(), sourceUID,
+				pol.stamp(ms.UpdatedAt)).Scan(&msID); err != nil {
 				return err
 			}
 			if ms.ID != 0 {
 				msIDs[ms.ID] = msID
 			}
+			if sourceUID != nil {
+				mirrorIDs[msID] = true
+			}
 		}
 	}
-	if err := insertDependencies(ctx, tx, roadmapID, src, itemIDs, msIDs); err != nil {
+	if err := insertDependencies(ctx, tx, roadmapID, src, itemIDs, msIDs, mirrorIDs); err != nil {
 		return err
 	}
 	// The schedule is roadmap-scoped (not under any lane), so it is inserted once
@@ -1497,14 +1576,29 @@ type NewMilestone struct {
 	Description string     `json:"description"`
 	Date        model.Date `json:"date"`
 	Tentative   bool       `json:"tentative"`
+	// Integration publishes the milestone for other roadmaps to mirror.
+	Integration bool `json:"integration"`
+	// SourceUID makes this a mirror of another roadmap's integration milestone.
+	// Date and Tentative are then ignored (the source owns both) and an empty
+	// Title adopts the source's.
+	SourceUID string `json:"sourceUid"`
 }
 
+// CreateMilestone adds a milestone to a lane, or — when n names a source UID —
+// a mirror of another roadmap's integration milestone.
 func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMilestone) (model.Milestone, error) {
-	if n.Title == "" {
-		return model.Milestone{}, invalidf("milestone title must not be empty")
+	if n.SourceUID != "" && n.Integration {
+		return model.Milestone{}, invalidf("a mirror cannot itself be an integration milestone")
 	}
-	if n.Date.IsZero() {
-		return model.Milestone{}, invalidf("milestone date is required")
+	if n.SourceUID == "" {
+		if n.Title == "" {
+			return model.Milestone{}, invalidf("milestone title must not be empty")
+		}
+		if n.Date.IsZero() {
+			return model.Milestone{}, invalidf("milestone date is required")
+		}
+	} else if !validUID(n.SourceUID) {
+		return model.Milestone{}, invalidf("malformed source milestone identity %q", n.SourceUID)
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -1514,13 +1608,46 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 
 	// Locking by lane also answers "does this lane exist, in a live roadmap",
 	// which is what the plain existence check here used to do on its own.
-	if _, err := s.lockRoadmapByLane(ctx, tx, laneID); err != nil {
+	roadmapID, err := s.lockRoadmapByLane(ctx, tx, laneID)
+	if err != nil {
 		return model.Milestone{}, err
 	}
+
+	if n.Integration || n.SourceUID != "" {
+		if err := checkPublicLink(ctx, tx, roadmapID); err != nil {
+			return model.Milestone{}, err
+		}
+	}
+
+	title, date, tentative := n.Title, n.Date.Time, n.Tentative
+	var sourceUID *string
+	if n.SourceUID != "" {
+		src, err := resolveSource(ctx, tx, n.SourceUID)
+		if err != nil {
+			return model.Milestone{}, err
+		}
+		if src.RoadmapID == roadmapID {
+			return model.Milestone{}, invalidf("a roadmap cannot mirror its own milestone")
+		}
+		mirrored, err := roadmapMirrors(ctx, tx, roadmapID, n.SourceUID)
+		if err != nil {
+			return model.Milestone{}, err
+		}
+		if mirrored {
+			return model.Milestone{}, invalidf("this roadmap already mirrors %q", src.Title)
+		}
+		if strings.TrimSpace(title) == "" {
+			title = src.Title
+		}
+		// Provider-owned: the date is only the cache a broken mirror falls back
+		// to, and tentative is read from the source on every resolved read.
+		date, tentative = src.Date.Time, false
+		sourceUID = &n.SourceUID
+	}
 	m, err := scanMilestone(tx.QueryRow(ctx,
-		`INSERT INTO milestones (lane_id, title, description, date, tentative)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING `+milestoneCols,
-		laneID, n.Title, n.Description, n.Date.Time, n.Tentative))
+		`INSERT INTO milestones (lane_id, title, description, date, tentative, integration_milestone, source_milestone_uid)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7::uuid) RETURNING `+milestoneCols,
+		laneID, title, n.Description, date, tentative, n.Integration, sourceUID))
 	if err != nil {
 		return model.Milestone{}, err
 	}
@@ -1532,8 +1659,15 @@ type MilestonePatch struct {
 	Description model.Opt[string]     `json:"description"`
 	Date        model.Opt[model.Date] `json:"date"`
 	Tentative   model.Opt[bool]       `json:"tentative"`
+	Integration model.Opt[bool]       `json:"integration"`
 }
 
+// UpdateMilestone applies a patch. A mirror accepts only what its consuming
+// roadmap owns, title and description; the source plans the rest. The source UID
+// is not patchable at all — a mirror of another milestone is another mirror.
+//
+// Un-publishing and deleting a consumed milestone are both allowed, leaving
+// broken mirrors behind; Linkage.UsedBy shows the owner that impact first.
 func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch) (model.Milestone, error) {
 	if p.Title.Set && p.Title.Value == "" {
 		return model.Milestone{}, invalidf("milestone title must not be empty")
@@ -1547,24 +1681,49 @@ func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch)
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := s.lockRoadmapByMilestone(ctx, tx, id); err != nil {
+	roadmapID, err := s.lockRoadmapByMilestone(ctx, tx, id)
+	if err != nil {
 		return model.Milestone{}, err
+	}
+	if p.Integration.Set && p.Integration.Value {
+		if err := checkPublicLink(ctx, tx, roadmapID); err != nil {
+			return model.Milestone{}, err
+		}
+	}
+	mirror, err := isMirror(ctx, tx, id)
+	if err != nil {
+		return model.Milestone{}, err
+	}
+	if mirror {
+		switch {
+		case p.Date.Set:
+			return model.Milestone{}, invalidf("a mirror is scheduled by the roadmap that owns its source milestone")
+		case p.Tentative.Set:
+			return model.Milestone{}, invalidf("a mirror's tentative state comes from its source milestone")
+		case p.Integration.Set && p.Integration.Value:
+			return model.Milestone{}, invalidf("a mirror cannot itself be an integration milestone")
+		}
 	}
 	row := tx.QueryRow(ctx,
 		`UPDATE milestones SET title = CASE WHEN $2 THEN $3 ELSE title END,
 		        description = CASE WHEN $4 THEN $5 ELSE description END,
 		        date = CASE WHEN $6 THEN $7 ELSE date END,
 		        tentative = CASE WHEN $8 THEN $9 ELSE tentative END,
+		        integration_milestone = CASE WHEN $10 THEN $11 ELSE integration_milestone END,
 		        updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+milestoneCols,
 		id, p.Title.Set, p.Title.Value, p.Description.Set, p.Description.Value,
-		p.Date.Set, p.Date.Value.Time, p.Tentative.Set, p.Tentative.Value)
+		p.Date.Set, p.Date.Value.Time, p.Tentative.Set, p.Tentative.Value,
+		p.Integration.Set, p.Integration.Value)
 	m, err := scanMilestone(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Milestone{}, ErrNotFound
 	}
 	if err != nil {
+		return model.Milestone{}, err
+	}
+	if err := refreshMirrorCache(ctx, tx, roadmapID, m); err != nil {
 		return model.Milestone{}, err
 	}
 	return m, tx.Commit(ctx)

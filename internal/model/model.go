@@ -153,13 +153,71 @@ type Milestone struct {
 	// from creation — the name anything outside this roadmap refers to it by,
 	// where the database ID means nothing. Every milestone has one, because any
 	// of them may be published later. Items and lanes have none.
-	UID         string    `json:"uid"`
-	LaneID      int64     `json:"laneId"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Date        Date      `json:"date"`
-	Tentative   bool      `json:"tentative"` // timing is not a precise commitment
-	UpdatedAt   time.Time `json:"updatedAt"`
+	UID         string `json:"uid"`
+	LaneID      int64  `json:"laneId"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	// Date and Tentative are owned by whoever plans the milestone. On a mirror
+	// that is the provider, not this roadmap: the stored values are a cached
+	// last-known date and a constant false, and a request-scoped read replaces
+	// them with the source's current ones whenever Source resolves. Date is
+	// never null, so a broken mirror still has a timeline position.
+	Date Date `json:"date"`
+	// True if timing is not a precise commitment.
+	Tentative bool `json:"tentative"`
+	// Linkage holds information for integration milestones and their mirrors.
+	// It is nil if this milestone is neither an integration milestone nor one
+	// of its mirrors.
+	Linkage   *MilestoneLinkage `json:"linkage,omitempty"`
+	UpdatedAt time.Time         `json:"updatedAt"`
+}
+
+type MilestoneLinkage struct {
+	// Whether this milestone is an integration milestone.
+	Integration bool `json:"integration"`
+	// SourceUID identifies the integration milestone this milestone mirrors, in
+	// another roadmap. Empty on integration milestones themselves.
+	// This is a persisted "soft-link" on the mirror milestone. It may be stale
+	// (e.g. if the other roadmap was deleted).
+	SourceUID string `json:"sourceUid,omitempty"`
+	// Source holds information about the integration milestone that this mirror
+	// points at.
+	// Derived per request and kept out of export files and snapshot blobs.
+	Source *MirrorSource `json:"source,omitempty"`
+	// UsedBy counts the roadmaps that have imported this integration milestone.
+	// Derived per request like Source.
+	UsedBy int `json:"usedBy,omitempty"`
+}
+
+// IsMirror reports whether the milestone is a consumer-owned reference to
+// another roadmap's integration milestone.
+func (m Milestone) IsMirror() bool { return m.Linkage != nil && m.Linkage.SourceUID != "" }
+
+// IsIntegration reports whether the milestone is an integration milestone.
+func (m Milestone) IsIntegration() bool { return m.Linkage != nil && m.Linkage.Integration }
+
+// MirrorSource is the resolved integration milestone of a mirror.
+// Title is taken from the integration milestone (for display, to make it easier to find).
+type MirrorSource struct {
+	RoadmapID   int64  `json:"roadmapId,omitempty"`
+	RoadmapName string `json:"roadmapName,omitempty"`
+	MilestoneID int64  `json:"milestoneId,omitempty"`
+	Title       string `json:"title,omitempty"`
+}
+
+// IntegrationMilestone is one published milestone as a would-be consumer sees
+// it when choosing what to mirror: enough to pick it, plus whether the asking
+// roadmap already mirrors it, since a roadmap may hold at most one mirror per
+// source.
+type IntegrationMilestone struct {
+	UID         string `json:"uid"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Date        Date   `json:"date"`
+	Tentative   bool   `json:"tentative"`
+	RoadmapID   int64  `json:"roadmapId"`
+	RoadmapName string `json:"roadmapName"`
+	Mirrored    bool   `json:"mirrored"`
 }
 
 type LaneFull struct {
@@ -216,10 +274,12 @@ type RoadmapFull struct {
 // RoadmapFull so imports can recognize the file and reject unrelated JSON.
 // Bump ExportVersion only on incompatible changes to the payload shape.
 //
-// Version 2 added the roadmap and milestone UIDs.
+// Version 2 added the roadmap and milestone UIDs. Version 3 added integration
+// milestones and mirrors; a version 2 file simply carries neither, which reads
+// as a roadmap whose milestones are all owned and none published.
 const (
 	ExportFormat  = "roadie.roadmap"
-	ExportVersion = 2
+	ExportVersion = 3
 	// MinExportVersion is the oldest format an import accepts. Version 1 files
 	// predate entity UIDs, and an import that had to invent identities for them
 	// would need a third set of rules; they are deliberately not supported.

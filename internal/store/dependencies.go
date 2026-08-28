@@ -14,8 +14,9 @@ import (
 // Dependencies: directed edges between items and milestones of one roadmap,
 // FROM the prerequisite TO the dependent ("to needs from"). This file enforces
 // the graph invariants the schema cannot: both endpoints in the edge's own
-// roadmap, no self-edges, no duplicates, and no cycles. All of it runs under
-// the roadmap lock, which is what makes read-graph-then-insert safe: two
+// roadmap, no self-edges, no duplicates, no cycles, and the mirror rules that
+// keep cross-roadmap dependencies local (see checkMirrorEdge). All of it runs
+// under the roadmap lock, which is what makes read-graph-then-insert safe: two
 // concurrent inserts that are only cyclic together serialize on the lock, and
 // the second one's check sees the first one's edge.
 
@@ -126,6 +127,51 @@ func resolveDepRef(ctx context.Context, q querier, ref model.DependencyRef) (int
 	return roadmapID, err
 }
 
+// checkMirrorEdge holds a mirror to one shape: prerequisite of a local item,
+// nothing else. A new edge also needs a source that still resolves; edges a
+// broken mirror already has are untouched.
+func checkMirrorEdge(ctx context.Context, q querier, roadmapID int64, from, to model.DependencyRef) error {
+	if to.Kind == model.DepMilestone {
+		mirror, err := isMirror(ctx, q, to.ID)
+		if err != nil {
+			return err
+		}
+		if mirror {
+			return invalidf("a mirror is planned by its source roadmap and cannot depend on anything")
+		}
+	}
+	if from.Kind != model.DepMilestone {
+		return nil
+	}
+	sourceUID, err := mirrorSourceOf(ctx, q, from.ID)
+	if err != nil || sourceUID == "" {
+		return err
+	}
+	if to.Kind != model.DepItem {
+		return invalidf("only an item can depend on an integration milestone from another roadmap")
+	}
+	if err := checkPublicLink(ctx, q, roadmapID); err != nil {
+		return err
+	}
+	_, err = resolveSource(ctx, q, sourceUID)
+	return err
+}
+
+// checkPublicLink rejects a cross-roadmap link in a private roadmap, either end
+// (see mirrors.go). Interactive paths only: import and restore write what the
+// file holds and must never fail over a source, and the stored flag is inert
+// until the roadmap is public, since resolution decides what is live.
+func checkPublicLink(ctx context.Context, q querier, roadmapID int64) error {
+	public, err := roadmapIsPublic(ctx, q, roadmapID)
+	if err != nil {
+		return err
+	}
+	if !public {
+		return invalidf("a private roadmap cannot publish or consume integration milestones")
+	}
+	return nil
+}
+
 // depLabels loads display labels for the given nodes, for diagnostics: items
 // render as `"Title"`, milestones as `milestone "Title"`. Missing nodes (which
 // the callers' validation makes impossible) fall back to `kind id`.
@@ -221,6 +267,9 @@ func (s *Store) CreateDependency(ctx context.Context, roadmapID int64, from, to 
 			return model.Dependency{}, invalidf("%s %d belongs to a different roadmap", ref.Kind, ref.ID)
 		}
 	}
+	if err := checkMirrorEdge(ctx, tx, roadmapID, from, to); err != nil {
+		return model.Dependency{}, err
+	}
 
 	fi, fm := refCols(from)
 	ti, tm := refCols(to)
@@ -295,7 +344,7 @@ func (s *Store) DeleteDependency(ctx context.Context, id int64) error {
 // cycles are rejected — the store enforces the DAG on every path, not just the
 // API one — while exact duplicate edges are silently collapsed (the same edge
 // twice is still one edge). Called by insertRoadmapContents.
-func insertDependencies(ctx context.Context, tx pgx.Tx, roadmapID int64, src model.RoadmapFull, itemIDs, msIDs map[int64]int64) error {
+func insertDependencies(ctx context.Context, tx pgx.Tx, roadmapID int64, src model.RoadmapFull, itemIDs, msIDs map[int64]int64, mirrorIDs map[int64]bool) error {
 	if len(src.Dependencies) == 0 {
 		return nil
 	}
@@ -347,6 +396,14 @@ func insertDependencies(ctx context.Context, tx pgx.Tx, roadmapID int64, src mod
 		to, err := remap(d.To)
 		if err != nil {
 			return err
+		}
+		// Shape only — an imported mirror may legitimately be broken, so no
+		// source is resolved here.
+		if to.Kind == model.DepMilestone && mirrorIDs[to.ID] {
+			return invalidf("%s is a mirror, which cannot depend on anything", labels[nodeOf(d.To)])
+		}
+		if from.Kind == model.DepMilestone && mirrorIDs[from.ID] && to.Kind == model.DepMilestone {
+			return invalidf("%s is a mirror, so only an item can depend on it", labels[nodeOf(d.From)])
 		}
 		key := edgeKey{from: nodeOf(d.From), to: nodeOf(d.To)}
 		if seen[key] {

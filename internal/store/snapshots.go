@@ -252,6 +252,9 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snapID int64) (model.Roadma
 	if err := json.Unmarshal(data, &exp); err != nil {
 		return model.Roadmap{}, fmt.Errorf("decode snapshot %d: %w", snapID, err)
 	}
+	if err := validateMirrorSources(exp.Roadmap); err != nil {
+		return model.Roadmap{}, err
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

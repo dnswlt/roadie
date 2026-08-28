@@ -110,6 +110,7 @@ func (f privateFixture) calls() []apiCall {
 		{"POST /api/roadmaps/{id}/lanes", "POST", rm("/lanes"), `{"name":"New"}`},
 		{"PUT /api/roadmaps/{id}/lane-order", "PUT", rm("/lane-order"), fmt.Sprintf(`{"laneIds":[%d]}`, f.lane)},
 		{"PUT /api/roadmaps/{id}/schedule", "PUT", rm("/schedule"), `{"periods":[]}`},
+		{"GET /api/roadmaps/{id}/integration-milestones", "GET", rm("/integration-milestones"), ""},
 
 		{"PATCH /api/lanes/{id}", "PATCH", fmt.Sprintf("/api/lanes/%d", f.lane), `{"name":"Stolen"}`},
 		{"DELETE /api/lanes/{id}", "DELETE", fmt.Sprintf("/api/lanes/%d", f.lane), ""},

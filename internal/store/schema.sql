@@ -78,14 +78,29 @@ CREATE TABLE milestones (
     lane_id     BIGINT NOT NULL REFERENCES lanes(id) ON DELETE CASCADE,
     title       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    -- On a mirror, a cached copy of the source milestone's date.
     date        DATE NOT NULL,
     -- A tentative milestone is an estimate rather than a committed date.
+    -- Always false on a mirror, which takes its source's value at read time.
     tentative   BOOLEAN NOT NULL DEFAULT false,
+    -- Whether other roadmaps may mirror this milestone.
+    integration_milestone BOOLEAN NOT NULL DEFAULT false,
+    -- Non-NULL on a mirror, naming the milestone it mirrors. Deliberately not a
+    -- foreign key: the source may be removed and the mirror outlives it.
+    -- Cross-roadmap rules are in internal/store/mirrors.go.
+    source_milestone_uid  UUID,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- A mirror is never itself an integration milestone.
+    CONSTRAINT milestones_mirror_not_integration
+        CHECK (NOT (integration_milestone AND source_milestone_uid IS NOT NULL))
 );
 
 CREATE INDEX milestones_lane_idx ON milestones (lane_id);
+
+-- Mirror lookup by source.
+CREATE INDEX milestones_source_uid_idx ON milestones (source_milestone_uid)
+    WHERE source_milestone_uid IS NOT NULL;
 
 -- Dependencies: directed edges between items and milestones of one roadmap.
 --

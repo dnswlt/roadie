@@ -66,6 +66,7 @@ Home dialog (`home.ts`, name-path
 folding in `tree.ts`) · shortcuts (`keys.ts`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`) ·
+integration milestones and mirrors (`store/mirrors.go`, `server/integration.go`) ·
 Jira Recon view (`recon.ts`, server `tracker.go`) · schedule check
 (`internal/recon` owns the one tracker-fetching goroutine and its cache;
 scripts in `internal/tracker/extractor`; the script editor is Recon's third
@@ -77,10 +78,21 @@ snapshot banner).
 
 **Write comments for the reader of the finished code, not as a record of how the code was developed.**
 
-- Comment non-obvious intent, constraints, invariants, and reasons behind surprising choices.
-- Do not document the conversation, previous implementations, changes you made, or discarded alternatives unless an alternative must remain ruled out for a durable technical reason.
+- Comment non-obvious intent, constraints, invariants, and reasons behind surprising
+  choices.
+- Do not document the conversation, previous implementations, changes you made,
+  or discarded alternatives unless an alternative must remain ruled out for a
+  durable technical reason.
 - Do not narrate what the code plainly does.
-- Keep comments concise, professional, and durable: they should still make sense to someone who never saw the task, issue, or discussion.
+- Keep comments concise, professional, and durable: they should still make sense
+  to someone who never saw the task, issue, or discussion.
+  A typical function comment is 1-5 lines.
+- State a cross-cutting rule once, where it belongs, and reference it elsewhere.
+
+**A spec in `notes/` is a proposal, not acceptance criteria.** Implement from the
+code's grain and say where the two disagree before writing — a note can run ahead
+of the code or lag behind it, and only the code is true. Never copy spec prose
+or its reasoning into comments.
 
 **Migrations.** Add a new numbered `internal/store/migrations/00N_*.sql`; never edit
 an applied one. Then fold the same change into `internal/store/schema.sql`, which is
@@ -181,6 +193,14 @@ knows. Secrets come from the env, never flags (flags are visible in `ps`).
   labels (the user-colored-star argument again). Stored prerequisite → dependent;
   roadmap-scoped only; a DAG, enforced in the store with rejections that name the
   conflicting chain. Nesting implies no edges.
+- **Milestones export; items import** (`notes/external_milestones.md`). A
+  consumer holds one *mirror* per published source and hangs local items off it;
+  a mirror cannot publish, depend on anything, or be a milestone's prerequisite.
+  State lives in `Milestone.Linkage`, nil when there is no cross-roadmap role.
+  **Both ends must be public** — the provider must be able to name who carries
+  its milestone — so nothing here takes a viewer. Resolution is derived on the
+  request read, never fails a load, and never blocks a later flip: a broken
+  mirror keeps its cached date and its edges.
 - **Timeline dependencies are a one-hop focus, never a global edge layer.** The
   toolbar draws the selection's incident edges at their chart positions, with
   arrows from prerequisites to dependents. The toolbar alone toggles it;
@@ -277,7 +297,8 @@ A third render scope · multi-track schedule · e2e tests outside the browser-on
 smoke scope (screenshots, exact visual assertions, logic a DOM-free module could
 pin) · a second flag ·
 changing what `-auth=off` does · dependency edge attributes or kinds · drawing
-non-local dependencies on the timeline.
+non-local dependencies on the timeline · a spec sentence that forces new plumbing
+through existing signatures.
 
 ## Verification
 
