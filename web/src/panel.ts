@@ -96,6 +96,27 @@ async function freshIntegrationUsage(milestone: Milestone): Promise<number> {
   return fallback;
 }
 
+async function confirmIntegrationDateChange(
+  milestone: Milestone,
+  previous: string,
+  next: string,
+): Promise<boolean> {
+  const usedBy = await freshIntegrationUsage(milestone);
+  const usage = integrationUsageCopy(usedBy);
+  const content = usage
+    ? {
+        title: usage.title,
+        message: `Change the date of "${milestone.title}" from ${previous} to ${next}? ${
+          usedBy === 1 ? "Its linked milestone" : "Their linked milestones"
+        } will move to the new date.`,
+      }
+    : {
+        title: "Change integration milestone date?",
+        message: `Change the date of "${milestone.title}" from ${previous} to ${next}? Other roadmaps may be planning against the published date.`,
+      };
+  return confirmDialog(content, "Change date", "primary");
+}
+
 // deleteSelection deletes everything selected: one milestone, one item, or a
 // whole multi-selection of items. Deleting is a **per-item** operation like
 // flagging — "delete these five" is unambiguous — so unlike `n`/`c` it does not
@@ -704,9 +725,17 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
   const commit = (next: string): void => {
     const previous = value;
     show(next);
-    if (next !== previous) {
+    if (next === previous) return;
+    void (async () => {
+      if (
+        milestone.linkage?.integration &&
+        !(await confirmIntegrationDateChange(milestone, previous, next))
+      ) {
+        show(previous);
+        return;
+      }
       savePanelField(() => void actions.updateMilestone(milestone.id, { date: next }));
-    }
+    })();
   };
   const date = dateField("Date", "Choose date", "end", commit);
   const sourceOwned = milestone.linkage?.sourceUid !== undefined;
