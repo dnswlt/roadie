@@ -728,19 +728,15 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
   return { dateRow: date.wrap, periodRow: periodRowElement };
 }
 
-// milestoneLaneSelect moves a milestone between contexts. It is the only way
-// to do that: a milestone is a point with no width, so a timeline drag would
-// mean date and context at once with no separate grab region to tell them
-// apart (see dnd.ts, which treats a milestone as "not a bar").
-//
 // Hidden contexts stay in the list — a context you can't see is still a place a
-// milestone belongs. Moving into one takes the milestone off the chart, and the
-// selection follows it out, exactly as hiding its own context would.
-//
-// A mirror's context belongs to the consuming roadmap, which picked it when the
-// mirror was created, so this is enabled where the date and tentative fields
-// are not.
-function milestoneLaneSelect(milestone: Milestone): HTMLElement {
+// selected entity belongs. Moving into one takes it off the chart, and the
+// selection follows it out, exactly as hiding its own context would. The
+// current lane is read lazily because optimistic actions mutate the entity
+// while the focused select remains mounted.
+function laneSelect(
+  currentLaneId: () => number,
+  onChange: (laneId: number, select: HTMLSelectElement) => void,
+): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "panel-field";
   const caption = document.createElement("span");
@@ -755,16 +751,51 @@ function milestoneLaneSelect(milestone: Milestone): HTMLElement {
     opt.textContent = l.name;
     sel.append(opt);
   }
-  sel.value = String(milestone.laneId);
+  sel.value = String(currentLaneId());
   sel.addEventListener("change", () => {
     const laneId = Number(sel.value);
-    if (laneId !== milestone.laneId) {
-      savePanelField(() => void actions.updateMilestone(milestone.id, { laneId }));
-    }
+    if (laneId !== currentLaneId()) onChange(laneId, sel);
   });
 
   wrap.append(caption, sel);
   return wrap;
+}
+
+// milestoneLaneSelect moves a milestone between contexts. It is the only way
+// to do that: a milestone is a point with no width, so a timeline drag would
+// mean date and context at once with no separate grab region to tell them
+// apart (see dnd.ts, which treats a milestone as "not a bar").
+//
+// A mirror's context belongs to the consuming roadmap, which picked it when the
+// mirror was created, so this is enabled where the date and tentative fields
+// are not.
+function milestoneLaneSelect(milestone: Milestone): HTMLElement {
+  return laneSelect(
+    () => milestone.laneId,
+    (laneId) => {
+      savePanelField(() => void actions.updateMilestone(milestone.id, { laneId }));
+    },
+  );
+}
+
+// Moving a child to another context also detaches it: a child inherits its
+// parent's context, so keeping the parent would make the requested move
+// impossible. That structural change rebuilds the panel immediately so its
+// header and child actions describe the item's new top-level position.
+function itemLaneSelect(item: Item): HTMLElement {
+  return laneSelect(
+    () => item.laneId,
+    (laneId, select) => {
+      if (item.parentId !== null) {
+        // The focused-field guard normally preserves the rail. A detach changes
+        // the form itself, so release focus and let updateItem rebuild it.
+        select.blur();
+        void actions.updateItem(item.id, { laneId, parentId: null });
+        return;
+      }
+      savePanelField(() => void actions.updateItem(item.id, { laneId }));
+    },
+  );
 }
 
 // renderPanel routes the rail to one of four views. The rail itself is a
@@ -926,7 +957,14 @@ export function renderPanel(panel: HTMLElement): void {
   attrs.className = "panel-attrs";
   attrs.append(dates.dateRow);
   if (dates.periodRow) attrs.append(dates.periodRow);
-  attrs.append(metadata, labels, dependenciesSection({ kind: "item", id: item.id }));
+  attrs.append(
+    metadata,
+    labels,
+    dependenciesSection({ kind: "item", id: item.id }),
+    // Last, above the item actions, matching the milestone panel: most items
+    // land in the right context when created and move only occasionally.
+    itemLaneSelect(item),
+  );
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
 }

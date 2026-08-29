@@ -1,6 +1,6 @@
-// The milestone panel's Context dropdown — the only way to move a milestone
-// between contexts, since a milestone is a point with no width and a timeline
-// drag could not tell "change the date" from "change the context" apart.
+// The item and milestone panel Context dropdowns. Milestones need the picker
+// because their point marker has no separate vertical drag gesture; items need
+// it so a distant context does not require dragging while scrolling.
 //
 // Same shape as the other panel spec: seed via API → pick in the browser →
 // assert via API → purge. One assertion reads the DOM, for the same reason
@@ -11,7 +11,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   addLane,
+  addItem,
   addMilestone,
+  laneItems,
   laneMilestones,
   purgeRoadmap,
   seedRoadmap,
@@ -36,6 +38,11 @@ const contextSelect = (page: Page) => page.locator('#panel select[aria-label="Co
 
 async function openMilestone(page: Page): Promise<void> {
   await page.goto(`/?roadmap=${seeded.roadmapId}&milestone=${milestoneId}`);
+  await contextSelect(page).waitFor();
+}
+
+async function openItem(page: Page, itemId: number): Promise<void> {
+  await page.goto(`/?roadmap=${seeded.roadmapId}&item=${itemId}`);
   await contextSelect(page).waitFor();
 }
 
@@ -75,4 +82,50 @@ test("the moved milestone is redrawn under its new lane", async ({ page }) => {
   // descendant of the other lane's row, and of no other.
   await expect(marker(otherLaneId)).toBeVisible();
   await expect(marker(seeded.laneId)).toHaveCount(0);
+});
+
+test("picking a context moves an item to that lane", async ({ page, request }) => {
+  const itemId = seeded.items[0]!.id;
+  await openItem(page, itemId);
+  expect(await shown(page)).toBe("Lane");
+
+  await contextSelect(page).selectOption({ label: "Platform" });
+
+  await expect
+    .poll(async () => (await laneItems(request, seeded.roadmapId, otherLaneId))[0]?.id)
+    .toBe(itemId);
+  expect(await laneItems(request, seeded.roadmapId, seeded.laneId)).toEqual([]);
+  expect(await shown(page)).toBe("Platform");
+  await expect(
+    page.locator(`.lane[data-lane-id="${otherLaneId}"] .bar[data-item-id="${itemId}"]`),
+  ).toBeVisible();
+});
+
+test("moving a child to another context makes it top-level", async ({ page, request }) => {
+  const parentId = seeded.items[0]!.id;
+  const childId = await addItem(request, seeded.laneId, "Child", parentId);
+  await openItem(page, childId);
+  await expect(page.locator("#panel .panel-kind")).toHaveText("Child item");
+
+  await contextSelect(page).selectOption({ label: "Platform" });
+
+  await expect
+    .poll(async () => {
+      const source = await laneItems(request, seeded.roadmapId, seeded.laneId);
+      const target = await laneItems(request, seeded.roadmapId, otherLaneId);
+      return {
+        sourceChildren: source[0]?.children.map((item) => item.id),
+        target: target.map((item) => ({
+          id: item.id,
+          laneId: item.laneId,
+          parentId: item.parentId,
+        })),
+      };
+    })
+    .toEqual({
+      sourceChildren: [],
+      target: [{ id: childId, laneId: otherLaneId, parentId: null }],
+    });
+  await expect(page.locator("#panel .panel-kind")).toHaveText("Item");
+  await expect(page.getByRole("button", { name: "Add Child", exact: true })).toBeVisible();
 });
