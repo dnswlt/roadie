@@ -233,17 +233,12 @@ function renderScheduleRow(periods: SchedulePeriod[]): HTMLElement {
   return row;
 }
 
-// laneLabel builds a lane's sticky label column: grip, name, hover actions.
+// laneLabel builds a lane's sticky label column: name and hover actions.
 // Shared with the WBS view (wbs.ts), which renders the same rail — every
-// label gesture (rename, the lane menu, reorder by grip) is view-independent,
-// so both views reuse the .lane/.lane-label classes and the handlers wired to
-// them (app.ts wireChart, dnd.ts lane drag).
+// label gesture (rename and the lane menu) is view-independent, so both views
+// reuse the .lane/.lane-label classes and the handlers wired in app.ts.
 export function laneLabel(lane: LaneFull): HTMLElement {
   const label = div("lane-label");
-  const grip = document.createElement("button");
-  grip.className = "lane-grip";
-  grip.title = "Drag to reorder";
-  grip.append(icons.grip());
   const name = document.createElement("span");
   name.className = "lane-name";
   name.textContent = lane.name;
@@ -258,7 +253,7 @@ export function laneLabel(lane: LaneFull): HTMLElement {
   menu.title = "More actions";
   menu.append(icons.dots(16));
   laneActions.append(add, menu);
-  label.append(grip, name, laneActions);
+  label.append(name, laneActions);
   return label;
 }
 

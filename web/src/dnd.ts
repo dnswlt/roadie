@@ -1,10 +1,9 @@
 // Pointer-based drag controller for the chart:
 //  - drag a bar to move it in time, across lanes, or into/out of a parent
 //  - drag a bar's edge handles to adjust start/end date
-//  - drag a lane's grip to reorder swimlanes
 // All previews are visual only; the model is updated once on drop.
 // While an item filter is active, bar moves pause because the hidden structure
-// makes a drop ambiguous; resize handles and lane grips remain active.
+// makes a drop ambiguous; resize handles remain active.
 //
 // The snapping math lives in snap.ts (DOM-free, tested); this file collects the
 // candidate boundaries, reads the modifier keys, and applies the result.
@@ -24,8 +23,7 @@ import type { ItemFull, ItemPatch, LaneFull } from "./types";
 
 type Mode = "move" | "resize-l" | "resize-r";
 
-interface ItemDrag {
-  kind: "item";
+interface Drag {
   mode: Mode;
   id: number;
   el: HTMLElement; // element that moves: .block (top-level) or .child-bar
@@ -59,18 +57,9 @@ interface ItemDrag {
   suppressedDragRecognized: boolean; // crossed 4px; pointer-up must not synthesize a click
 }
 
-interface LaneDrag {
-  kind: "lane";
-  laneId: number;
-  laneEl: HTMLElement;
-  py: number;
-  started: boolean;
-  insertIndex: number;
-}
-
-let drag: ItemDrag | LaneDrag | null = null;
+let drag: Drag | null = null;
 let tooltip: HTMLElement | null = null;
-let chartEl: HTMLElement | null = null;
+let chartEl: HTMLElement;
 
 // Double-click-to-rename on bars (see the click branch in onPointerUp).
 const dblClick = new DoubleClickDetector();
@@ -98,7 +87,7 @@ export function initDnd(chart: HTMLElement): void {
 }
 
 function onPointerDown(e: PointerEvent): void {
-  if (e.button !== 0 || drag || !chartEl) return;
+  if (e.button !== 0 || drag) return;
   // No gestures while previewing a snapshot: the view is read-only (see
   // actions.optimistic). Bailing here avoids a drag preview that couldn't commit.
   if (state.preview) return;
@@ -110,27 +99,6 @@ function onPointerDown(e: PointerEvent): void {
 
   // Same for a parent's fold chevron: it is a button, not a drag handle.
   if (t.closest(".disclosure")) return;
-
-  const grip = t.closest(".lane-grip");
-  if (grip) {
-    dblClick.reset();
-    const laneEl = grip.closest<HTMLElement>(".lane");
-    if (!laneEl) return;
-    drag = {
-      kind: "lane",
-      laneId: Number(laneEl.dataset.laneId),
-      laneEl,
-      py: e.clientY,
-      started: false,
-      insertIndex: -1,
-    };
-    // Pointer capture is taken only once the drag actually starts (see
-    // onPointerMove) — capturing on pointerdown makes Safari/Firefox dispatch
-    // the ensuing click to the capture element, which would swallow a plain
-    // click's selection.
-    e.preventDefault();
-    return;
-  }
 
   const barEl = t.closest<HTMLElement>(".bar, .child-bar");
   if (!barEl) {
@@ -148,7 +116,7 @@ function onPointerDown(e: PointerEvent): void {
   // chart; in that case it keeps the normal single-item resize/structure
   // gestures rather than acting like an invisible group still exists.
   const visibleSelected = [...state.selectedItemIds].filter((selectedId) =>
-    chartEl?.querySelector(
+    chartEl.querySelector(
       `.block[data-item-id="${selectedId}"], .child-bar[data-item-id="${selectedId}"]`,
     ),
   );
@@ -176,7 +144,6 @@ function onPointerDown(e: PointerEvent): void {
     isGroup,
   );
   drag = {
-    kind: "item",
     mode,
     id,
     el,
@@ -308,10 +275,6 @@ function collectDragMembers(
 
 function onPointerMove(e: PointerEvent): void {
   if (!drag) return;
-  if (drag.kind === "lane") {
-    laneDragMove(e);
-    return;
-  }
   const bypass = e.altKey; // hold Alt/Option to suppress snapping and coarse stepping
   const gridOnly = e.shiftKey; // hold Shift to snap only to the selected granularity (drop feature magnets)
   const d = drag;
@@ -324,19 +287,19 @@ function onPointerMove(e: PointerEvent): void {
       toast(DRAG_BLOCKED_HINT);
       // Capture only after this is clearly an attempted drag, so release is
       // observed even if the pointer leaves the chart. No preview is started.
-      chartEl?.setPointerCapture(e.pointerId);
+      chartEl.setPointerCapture(e.pointerId);
     }
     return;
   }
   if (!d.started) {
     if (Math.hypot(dx, dy) < 4) return;
     d.started = true;
-    chartEl?.setPointerCapture(e.pointerId); // now dragging: keep events if the pointer leaves the chart
+    chartEl.setPointerCapture(e.pointerId); // now dragging: keep events if the pointer leaves the chart
     for (const m of d.members) {
       m.classList.add("dragging");
       m.style.pointerEvents = "none";
     }
-    if (d.isGroup) chartEl?.classList.add("group-dragging");
+    if (d.isGroup) chartEl.classList.add("group-dragging");
     tooltip = document.createElement("div");
     tooltip.className = "drag-tooltip";
     document.body.append(tooltip);
@@ -398,7 +361,7 @@ function onPointerMove(e: PointerEvent): void {
   }
 }
 
-function updateDropTarget(d: ItemDrag, e: PointerEvent): void {
+function updateDropTarget(d: Drag, e: PointerEvent): void {
   const under = document.elementFromPoint(e.clientX, e.clientY);
   clearHighlights();
   if (!under) return;
@@ -493,7 +456,7 @@ function removeInsertLine(): void {
 // clears the guide. When snapping is bypassed the guide is always cleared — no
 // alignment assistance. The line sits at the boundary's pixel column, which is
 // the bar edge itself (xOf(end + 1) for a right edge).
-function updateSnapGuide(d: ItemDrag, bypass: boolean, ...bounds: number[]): void {
+function updateSnapGuide(d: Drag, bypass: boolean, ...bounds: number[]): void {
   removeSnapGuide();
   if (bypass) return;
   const bound = bounds.find((b) => d.snapBounds.includes(b));
@@ -511,7 +474,6 @@ function removeSnapGuide(): void {
 }
 
 function clearHighlights(): void {
-  if (!chartEl) return;
   for (const el of chartEl.querySelectorAll(".drop-target, .drop-lane")) {
     el.classList.remove("drop-target", "drop-lane");
   }
@@ -521,12 +483,8 @@ function clearHighlights(): void {
 
 function onPointerUp(e: PointerEvent): void {
   if (!drag) return;
-  if (drag.kind === "lane") {
-    laneDragEnd();
-    return;
-  }
   const d = drag;
-  resetItemVisuals(d);
+  resetVisuals(d);
   drag = null;
 
   if (d.suppressedDragRecognized) return;
@@ -599,7 +557,7 @@ function onPointerUp(e: PointerEvent): void {
   }
 }
 
-function resetItemVisuals(d: ItemDrag): void {
+function resetVisuals(d: Drag): void {
   // `started` gates every preview mutation, so before it there is nothing to
   // reset — and clearing anyway would wipe a child bar's inline left/width
   // (its only geometry), which no full re-render repairs on a click anymore.
@@ -611,7 +569,7 @@ function resetItemVisuals(d: ItemDrag): void {
   }
   d.barEl.style.left = "";
   d.barEl.style.width = "";
-  chartEl?.classList.remove("group-dragging");
+  chartEl.classList.remove("group-dragging");
   clearHighlights();
   tooltip?.remove();
   tooltip = null;
@@ -622,79 +580,10 @@ function cancelDrag(): void {
   const d = drag;
   drag = null;
   dblClick.reset();
-  if (d.kind === "item") {
-    resetItemVisuals(d);
-    // A started resize preview overwrote the bar's inline left/width, and for
-    // a child bar those are its only geometry — clearing them cannot bring the
-    // originals back, so rebuild from the model. (Previously this repair came
-    // accidentally, from the Esc keybinding's full notify on deselect.)
-    if (d.started) state.notify();
-  } else {
-    d.laneEl.classList.remove("lane-dragging");
-    removeLaneIndicator();
-  }
-}
-
-// Lane reordering
-
-function laneEls(): HTMLElement[] {
-  return chartEl ? Array.from(chartEl.querySelectorAll<HTMLElement>(".lane")) : [];
-}
-
-function laneDragMove(e: PointerEvent): void {
-  const d = drag as LaneDrag;
-  if (!d.started) {
-    if (Math.abs(e.clientY - d.py) < 4) return;
-    d.started = true;
-    chartEl?.setPointerCapture(e.pointerId); // now dragging: keep events if the pointer leaves the chart
-    d.laneEl.classList.add("lane-dragging");
-  }
-  const els = laneEls();
-  let idx = els.length;
-  for (let i = 0; i < els.length; i++) {
-    const r = els[i]!.getBoundingClientRect();
-    if (e.clientY < r.top + r.height / 2) {
-      idx = i;
-      break;
-    }
-  }
-  d.insertIndex = idx;
-  showLaneIndicator(els, idx);
-}
-
-function showLaneIndicator(els: HTMLElement[], idx: number): void {
-  removeLaneIndicator();
-  const lanes = chartEl?.querySelector<HTMLElement>(".lanes");
-  if (!lanes || els.length === 0) return;
-  const ind = document.createElement("div");
-  ind.className = "lane-insert";
-  const lanesRect = lanes.getBoundingClientRect();
-  const y =
-    idx < els.length
-      ? els[idx]!.getBoundingClientRect().top - lanesRect.top
-      : els[els.length - 1]!.getBoundingClientRect().bottom - lanesRect.top;
-  ind.style.top = `${y - 1 + lanes.scrollTop}px`;
-  lanes.append(ind);
-}
-
-function removeLaneIndicator(): void {
-  chartEl?.querySelector(".lane-insert")?.remove();
-}
-
-function laneDragEnd(): void {
-  const d = drag as LaneDrag;
-  d.laneEl.classList.remove("lane-dragging");
-  removeLaneIndicator();
-  drag = null;
-  if (!d.started || !state.current || d.insertIndex < 0) return;
-
-  const ids = state.current.lanes.map((l) => l.id);
-  const from = ids.indexOf(d.laneId);
-  if (from < 0) return;
-  let to = d.insertIndex;
-  ids.splice(from, 1);
-  if (to > from) to--;
-  ids.splice(to, 0, d.laneId);
-  const changed = ids.some((id, i) => id !== state.current!.lanes[i]!.id);
-  if (changed) void actions.reorderLanes(ids);
+  resetVisuals(d);
+  // A started resize preview overwrote the bar's inline left/width, and for
+  // a child bar those are its only geometry — clearing them cannot bring the
+  // originals back, so rebuild from the model. (Previously this repair came
+  // accidentally, from the Esc keybinding's full notify on deselect.)
+  if (d.started) state.notify();
 }

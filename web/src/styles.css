@@ -342,11 +342,10 @@ body {
 }
 
 /* A menu built from user data has no natural length — the filter lists every
-   label in the roadmap, the eye menu every context — so it scrolls inside
-   itself rather than running off the bottom of the window, as .find-list does.
-   Contained so reaching the end scrolls the menu and not the chart behind it.
-   Anchored under the topbar, so 60vh always fits; the fixed-length lane menu
-   never reaches it. */
+   label in the roadmap, the eye and move menus every context — so it scrolls
+   inside itself rather than running off the bottom of the window, as
+   .find-list does. Contained so reaching the end scrolls the menu and not the
+   chart behind it. */
 .menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -459,6 +458,42 @@ kbd {
    staying a 12px dot; without it this row's label sits 4px left of the rest. */
 .lane-menu .color-dot {
   margin: 0 2px;
+}
+
+.lane-move-menu {
+  width: min(240px, calc(100vw - 24px));
+}
+
+.lane-move-menu .menu-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lane-move-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+}
+
+.lane-move-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lane-move-current {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lane-move-item.is-hidden .lane-move-name,
+.lane-move-item.is-hidden .color-dot {
+  opacity: 0.45;
 }
 
 .menu-item {
@@ -800,24 +835,9 @@ kbd {
   display: flex;
   align-items: flex-start;
   gap: 2px;
-  padding: 10px 8px 10px 4px;
+  padding: 10px 8px;
   background: var(--surface);
   border-right: 1px solid var(--border);
-}
-
-.lane-grip {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  cursor: grab;
-  padding: 4px 2px;
-  border-radius: 4px;
-  display: inline-flex;
-}
-
-.lane-grip:hover {
-  color: var(--ink-2);
-  background: var(--grid);
 }
 
 .lane-name {
@@ -957,20 +977,6 @@ kbd {
   position: sticky;
   left: 0;
   width: 220px;
-}
-
-.lane-dragging {
-  opacity: 0.45;
-}
-
-.lane-insert {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 0;
-  border-top: 2px solid var(--ink);
-  z-index: 15;
-  pointer-events: none;
 }
 
 /* Items — all colors derive from the lane's --c via color-mix. */
@@ -1564,7 +1570,7 @@ kbd {
 
 /* A drag preview intentionally has no live edge routing. Hiding the stale
    paths is enough: commit/cancel already restores the chart from state. */
-.chart-scroll:has(.dragging, .lane-dragging) .timeline-deps-overlay {
+.chart-scroll:has(.dragging) .timeline-deps-overlay {
   display: none;
 }
 

@@ -18,6 +18,7 @@ import { initHome, openHome } from "./home";
 import { openHelpDialog } from "./help";
 import { copyText } from "./clipboard";
 import { bindings, initKeys } from "./keys";
+import { buildLaneMoveMenu } from "./lane-move";
 import { projectSelection, renderChart } from "./render";
 import { renderRecon } from "./recon";
 import { projectWbsSelection, renderWbs } from "./wbs";
@@ -735,9 +736,7 @@ function buildLaneVisMenu(pop: HTMLElement): void {
     state.showAllLanes();
     buildLaneVisMenu(pop);
   });
-  const sep = document.createElement("div");
-  sep.className = "menu-sep";
-  pop.append(showAll, sep);
+  pop.append(showAll, menuSeparator());
 
   for (const lane of lanes) {
     const hidden = state.isLaneHidden(lane.id);
@@ -797,6 +796,24 @@ let colorPop: PopoverHandle | null = null;
 
 function closeLaneMenu(): void {
   laneMenu?.close();
+}
+
+function menuSeparator(): HTMLElement {
+  const sep = document.createElement("div");
+  sep.className = "menu-sep";
+  return sep;
+}
+
+function openLaneMoveMenu(anchor: HTMLElement, laneId: number): void {
+  const menu = buildLaneMoveMenu(laneId, (laneIds) => {
+    closeLaneMenu();
+    void actions.reorderLanes(laneIds);
+  });
+  if (!menu) return;
+
+  document.body.append(menu);
+  placePopover(menu, anchor, "right");
+  laneMenu = openPopover({ root: menu, opener: anchor, onDismiss: () => menu.remove() });
 }
 
 function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
@@ -862,6 +879,15 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     toggleColorPop(anchor, laneId);
   });
 
+  const move = document.createElement("button");
+  move.className = "menu-item";
+  move.disabled = (state.current?.lanes.length ?? 0) < 2;
+  move.append(icons.moveVertical(16), text("Move context…"));
+  move.addEventListener("click", () => {
+    closeLaneMenu();
+    openLaneMoveMenu(anchor, laneId);
+  });
+
   const copyMd = document.createElement("button");
   copyMd.className = "menu-item";
   copyMd.append(icons.copy(16), text("Copy as Markdown"));
@@ -884,7 +910,18 @@ function toggleLaneMenu(anchor: HTMLElement, laneId: number): void {
     })();
   });
 
-  menu.append(addMs, linkMs, color, copyMd, rename, del);
+  menu.append(
+    addMs,
+    linkMs,
+    menuSeparator(),
+    rename,
+    color,
+    move,
+    menuSeparator(),
+    copyMd,
+    menuSeparator(),
+    del,
+  );
   document.body.append(menu);
   // Right-aligned under the button, which keeps it clear of the right edge.
   placePopover(menu, anchor, "right");
@@ -1001,9 +1038,7 @@ function buildFilterMenu(pop: HTMLElement): void {
     );
   }
   if ((flagged > 0 || atRisk > 0 || dependencyConflicts > 0) && labels.length > 0) {
-    const sep = document.createElement("div");
-    sep.className = "menu-sep";
-    pop.append(sep);
+    pop.append(menuSeparator());
   }
   for (const l of labels) {
     pop.append(

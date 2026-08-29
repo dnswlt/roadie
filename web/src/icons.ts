@@ -93,12 +93,10 @@ export const icons = {
       `<circle cx="5" cy="12" r="0.8"/><circle cx="12" cy="12" r="0.8"/><circle cx="19" cy="12" r="0.8"/>`,
       size,
     ),
-  grip: (size = 14) =>
-    svg(
-      `<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>` +
-        `<circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>`,
-      size,
-    ),
+  moveVertical: (size = 16) =>
+    svg(`<path d="m8 7 4-4 4 4"/><path d="M12 3v18"/><path d="m8 17 4 4 4-4"/>`, size),
+  moveBottom: (size = 16) =>
+    svg(`<path d="M12 3v14"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/>`, size),
   download: (size = 16) =>
     svg(
       `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>` +

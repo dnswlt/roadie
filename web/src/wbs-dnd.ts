@@ -10,7 +10,7 @@
 // is then incomplete; rows remain selectable through the same controller.
 //
 // Deliberately blind to the timeline's DOM: this file matches only .wbs-*
-// classes, as dnd.ts matches only .bar/.child-bar/.lane-grip. Neither
+// classes, as dnd.ts matches only .bar/.child-bar. Neither
 // controller can see the other's elements, so neither needs a view-mode gate.
 
 import { actions } from "./actions";

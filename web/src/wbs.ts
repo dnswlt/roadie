@@ -1,7 +1,7 @@
 // Renders the WBS outline from the current state: the same model as the
 // timeline chart with the time axis projected away. Lanes stay lanes (same
-// .lane/.lane-label rail, so every label gesture and the grip reorder drag
-// work unchanged); items become uniform full-width rows, children indented
+// .lane/.lane-label rail, so every label gesture works unchanged); items
+// become uniform full-width rows, children indented
 // inside their parent's block; milestones a small foldable group at the top
 // of each lane. Rebuilt on every state change, like render.ts.
 //
