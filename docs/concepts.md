@@ -41,6 +41,8 @@ stops there: a child item cannot have children of its own. This is deliberate:
 deeper hierarchies tend to turn a roadmap into a nested task tracker, obscuring
 the outcomes and relationships the roadmap is meant to communicate.
 
+[![A parent item expanded to show three child items, with priorities, an external reference, a dependency, and an at-risk marker.](assets/roadie-item-with-children.png)](assets/roadie-item-with-children.png)
+
 ## Milestones
 
 A **milestone** marks a significant date: a decision, release, review, handover,
@@ -50,6 +52,8 @@ diamond.
 
 Milestones can participate in dependencies, so a plan can express that an item
 must finish before a decision date, or that later work depends on a milestone.
+
+![The symbols for a milestone, tentative milestone, and integration milestone.](assets/roadie-milestones.png)
 
 ## Integration milestones
 
@@ -71,9 +75,13 @@ Roadie offers two views of a roadmap. The **timeline** emphasizes when things
 are planned: item bars span their planned dates, milestones appear at their
 dates, and contexts form horizontal swimlanes.
 
+[![The Tracker Consolidation roadmap in timeline view, showing contexts, nested items, milestones, priorities, risks, flags, and dependencies.](assets/roadie-overview.png)](assets/roadie-overview.png)
+
 The **Work Breakdown Structure (WBS) view** emphasizes structure. It shows the
 same content as an ordered hierarchy, making context membership, parent-child
 relationships, labels, and ordering easier to scan.
+
+[![The Tracker Consolidation roadmap in WBS view, showing contexts, milestones, expanded parent and child items, labels, dates, planning signals, and timeline sparklines.](assets/roadie-tracker-consolidation-wbs.png)](assets/roadie-tracker-consolidation-wbs.png)
 
 ## Schedule
 
@@ -102,6 +110,8 @@ plan automatically.
 Roadie shows an entity's immediate prerequisites and dependents, never the
 whole graph at once. A chain is followed by moving from one entity to the next,
 which is what keeps the plan free of a spaghetti of dependency lines.
+
+[![Dependency arrows from two prerequisite items into a selected item, followed by a dependent milestone.](assets/roadie-dependency-edges.png)](assets/roadie-dependency-edges.png)
 
 ## Metadata
 

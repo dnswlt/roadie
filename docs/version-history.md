@@ -72,6 +72,8 @@ the differences change.
 
 ### Reading the comparison
 
+[![A Roadie version comparison showing its summary, changed fields, an expanded description diff, dependency changes, and the version-history rail.](assets/roadie-version-comparison.png)](assets/roadie-version-comparison.png)
+
 A summary strip gives the totals: items and milestones added, removed, or
 changed, plus whether the schedule, dependencies, or context order changed.
 
