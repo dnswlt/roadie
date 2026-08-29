@@ -25,8 +25,3 @@ The remaining guides cover particular parts of Roadie:
   link Jira issues and Roadie items that are missing references.
 - [Schedule check](schedule-check.md) compares issue schedules in Jira with the
   dates in a roadmap.
-
-!!! note
-
-    The guide is currently being built. For installation and development
-    instructions, see the [project README](https://github.com/dnswlt/roadie#readme).
