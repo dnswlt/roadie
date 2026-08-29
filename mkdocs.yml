@@ -12,11 +12,13 @@ theme:
     - navigation.sections
 
 nav:
-  - Home: index.md
-  - Key concepts: concepts.md
-  - Integration milestones: integration-milestones.md
-  - Managing roadmaps: managing-roadmaps.md
-  - Version history: version-history.md
+  - Start here:
+      - Overview: index.md
+      - Key concepts: concepts.md
+  - Working with roadmaps:
+      - Managing roadmaps: managing-roadmaps.md
+      - Integration milestones: integration-milestones.md
+      - Version history: version-history.md
   - Jira reconciliation: jira-reconciliation.md
 
 plugins:

@@ -51,6 +51,20 @@ diamond.
 Milestones can participate in dependencies, so a plan can express that an item
 must finish before a decision date, or that later work depends on a milestone.
 
+## Integration milestones
+
+An **integration milestone** is a milestone made available to other roadmaps.
+Those roadmaps can link it into their own plans and make local work depend on
+it.
+
+Together, the integration milestone and its links form an **integration seam**:
+an explicit handoff between independently maintained plans. Integration seams
+are a key ingredient in making planning scale. Each roadmap can stay focused
+while still showing where it connects with others, so work can span many
+planning scopes without one roadmap containing all of it.
+
+→ [Integration milestones](integration-milestones.md)
+
 ## Views
 
 Roadie offers two views of a roadmap. The **timeline** emphasizes when things
