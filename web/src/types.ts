@@ -342,6 +342,7 @@ export interface MilestonePatch {
   date?: string;
   tentative?: boolean;
   integration?: boolean;
+  laneId?: number;
 }
 
 // Me mirrors the server's /api/me response. mode tells the UI whether this

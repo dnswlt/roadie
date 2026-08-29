@@ -210,6 +210,27 @@ func TestMirrorIsPlannedByItsSource(t *testing.T) {
 		!renamed.Date.Equal(f.source.Date.Time) || !renamed.Tentative {
 		t.Errorf("updated mirror is not resolved: %+v", renamed)
 	}
+
+	// The mirror's lane is one the consumer picked at creation, so it can pick
+	// another — but only one of its own.
+	second, err := testStore.CreateLane(ctx, f.consumer.ID, "Mobile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		LaneID: model.Opt[int64]{Set: true, Value: second.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.LaneID != second.ID {
+		t.Errorf("mirror lane move: got lane %d, want %d", moved.LaneID, second.ID)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		LaneID: model.Opt[int64]{Set: true, Value: f.providerLane.ID},
+	}); !isValidation(err) {
+		t.Errorf("mirror into the provider's lane: got %v, want validation error", err)
+	}
 }
 
 func TestMirrorEdgeRules(t *testing.T) {

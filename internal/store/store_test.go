@@ -788,6 +788,36 @@ func TestMilestones(t *testing.T) {
 		t.Errorf("update missing milestone: want ErrNotFound, got %v", err)
 	}
 
+	// A lane move within the roadmap; across roadmaps, and to no lane at all,
+	// it is a validation error.
+	other, _ := testStore.CreateLane(ctx, rm.ID, "L2")
+	moved, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		LaneID: model.Opt[int64]{Set: true, Value: other.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.LaneID != other.ID || moved.Title != "GA launch" ||
+		!moved.Date.Equal(date("2026-07-15").Time) {
+		t.Errorf("lane move: %+v", moved)
+	}
+	foreign, _ := testStore.CreateLane(ctx, newRoadmap(t).ID, "F")
+	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		LaneID: model.Opt[int64]{Set: true, Value: foreign.ID},
+	}); !isValidation(err) {
+		t.Errorf("cross-roadmap lane move: want validation error, got %v", err)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		LaneID: model.Opt[int64]{Set: true, Value: -1},
+	}); !isValidation(err) {
+		t.Errorf("missing lane: want validation error, got %v", err)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		LaneID: model.Opt[int64]{Set: true, Value: lane.ID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	// Milestones appear in the full roadmap, ordered by date, attached to the lane.
 	m2, _ := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{Title: "Beta", Date: date("2026-03-01")})
 	full, err := testStore.GetRoadmapFull(ctx, rm.ID)

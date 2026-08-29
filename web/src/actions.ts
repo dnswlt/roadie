@@ -658,6 +658,19 @@ export const actions = {
           milestone.date = patch.date;
           loc.lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
         }
+        // A lane move is a plain relocation: milestones have no rank, so the
+        // target lane keeps its date order and neither lane renumbers.
+        if (patch.laneId !== undefined && patch.laneId !== milestone.laneId) {
+          const target = state.findLane(patch.laneId);
+          if (target) {
+            loc.lane.milestones = loc.lane.milestones.filter(
+              (m) => m.id !== id,
+            );
+            milestone.laneId = patch.laneId;
+            target.milestones.push(milestone);
+            target.milestones.sort((a, b) => a.date.localeCompare(b.date));
+          }
+        }
       },
       () => api.updateMilestone(id, patch),
     );

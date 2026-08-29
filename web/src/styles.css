@@ -2067,6 +2067,13 @@ kbd {
   color: var(--ink);
 }
 
+/* .panel-select is sized by `flex: 1` for the rows it usually sits in. On its
+   own as a field it has no flex parent, so it needs the same full width the
+   inputs above take. */
+.panel-field > .panel-select {
+  width: 100%;
+}
+
 /* The description is the panel's only textarea. It rests on the page tint
    rather than on white: a white box on a white panel has no shape, so the body
    text was disappearing into the surface. Focus lifts it to white, which reads
@@ -2098,12 +2105,9 @@ kbd {
   background: var(--surface);
 }
 
-/* The attribute zone — dates, priority, labels — separated from the content
-   above (title, description, links) by a hairline. */
+/* The attribute zone: dates, priority, labels, dependencies, context. */
 .panel-attrs {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  margin-top: 14px;
 }
 
 .panel-row {
@@ -2316,9 +2320,7 @@ kbd {
   align-items: center;
   flex-wrap: wrap; /* a top-level item shows three buttons; the panel narrows to 300px */
   gap: 8px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  margin-top: 22px;
 }
 
 /* The trash sits at the trailing edge, away from the additive buttons, so the
@@ -2829,12 +2831,8 @@ dialog.mirror-dialog {
 
 /* ---- Dependencies (deps.ts) ------------------------------------------- */
 
-/* Dependencies are a subsection rather than one more scalar field: the
-   divider keeps their two directional lists from floating under Labels. */
 .deps-section {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  margin-top: 14px;
 }
 
 .dep-groups {

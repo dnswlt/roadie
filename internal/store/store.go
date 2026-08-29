@@ -1665,11 +1665,17 @@ type MilestonePatch struct {
 	Date        model.Opt[model.Date] `json:"date"`
 	Tentative   model.Opt[bool]       `json:"tentative"`
 	Integration model.Opt[bool]       `json:"integration"`
+	LaneID      model.Opt[int64]      `json:"laneId"`
 }
 
 // UpdateMilestone applies a patch. A mirror accepts only what its consuming
-// roadmap owns, title and description; the source plans the rest. The source UID
-// is not patchable at all — a mirror of another milestone is another mirror.
+// roadmap owns, title, description and lane; the source plans the rest. The
+// source UID is not patchable at all — a mirror of another milestone is another
+// mirror.
+//
+// A lane move stays inside the roadmap: nothing but rendering reads a
+// milestone's lane, so this is a display move, but crossing roadmaps would move
+// it out from under its dependencies and its consumers' mirrors.
 //
 // Un-publishing and deleting a consumed milestone are both allowed, leaving
 // broken mirrors behind; Linkage.UsedBy shows the owner that impact first.
@@ -1709,18 +1715,33 @@ func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch)
 			return model.Milestone{}, invalidf("a mirror cannot itself be an integration milestone")
 		}
 	}
+	if p.LaneID.Set {
+		var laneRoadmap int64
+		err := tx.QueryRow(ctx,
+			`SELECT roadmap_id FROM lanes WHERE id = $1`, p.LaneID.Value).Scan(&laneRoadmap)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.Milestone{}, invalidf("lane %d not found", p.LaneID.Value)
+		}
+		if err != nil {
+			return model.Milestone{}, err
+		}
+		if laneRoadmap != roadmapID {
+			return model.Milestone{}, invalidf("lane %d belongs to a different roadmap", p.LaneID.Value)
+		}
+	}
 	row := tx.QueryRow(ctx,
 		`UPDATE milestones SET title = CASE WHEN $2 THEN $3 ELSE title END,
 		        description = CASE WHEN $4 THEN $5 ELSE description END,
 		        date = CASE WHEN $6 THEN $7 ELSE date END,
 		        tentative = CASE WHEN $8 THEN $9 ELSE tentative END,
 		        integration_milestone = CASE WHEN $10 THEN $11 ELSE integration_milestone END,
+		        lane_id = CASE WHEN $12 THEN $13 ELSE lane_id END,
 		        updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+milestoneCols,
 		id, p.Title.Set, p.Title.Value, p.Description.Set, p.Description.Value,
 		p.Date.Set, p.Date.Value.Time, p.Tentative.Set, p.Tentative.Value,
-		p.Integration.Set, p.Integration.Value)
+		p.Integration.Set, p.Integration.Value, p.LaneID.Set, p.LaneID.Value)
 	m, err := scanMilestone(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Milestone{}, ErrNotFound

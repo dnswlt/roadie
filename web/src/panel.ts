@@ -728,6 +728,45 @@ function milestoneDateEditor(milestone: Milestone): DateEditorRows {
   return { dateRow: date.wrap, periodRow: periodRowElement };
 }
 
+// milestoneLaneSelect moves a milestone between contexts. It is the only way
+// to do that: a milestone is a point with no width, so a timeline drag would
+// mean date and context at once with no separate grab region to tell them
+// apart (see dnd.ts, which treats a milestone as "not a bar").
+//
+// Hidden contexts stay in the list — a context you can't see is still a place a
+// milestone belongs. Moving into one takes the milestone off the chart, and the
+// selection follows it out, exactly as hiding its own context would.
+//
+// A mirror's context belongs to the consuming roadmap, which picked it when the
+// mirror was created, so this is enabled where the date and tentative fields
+// are not.
+function milestoneLaneSelect(milestone: Milestone): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "panel-field";
+  const caption = document.createElement("span");
+  caption.textContent = "Context";
+
+  const sel = document.createElement("select");
+  sel.className = "panel-select";
+  sel.setAttribute("aria-label", "Context");
+  for (const l of state.current?.lanes ?? []) {
+    const opt = document.createElement("option");
+    opt.value = String(l.id);
+    opt.textContent = l.name;
+    sel.append(opt);
+  }
+  sel.value = String(milestone.laneId);
+  sel.addEventListener("change", () => {
+    const laneId = Number(sel.value);
+    if (laneId !== milestone.laneId) {
+      savePanelField(() => void actions.updateMilestone(milestone.id, { laneId }));
+    }
+  });
+
+  wrap.append(caption, sel);
+  return wrap;
+}
+
 // renderPanel routes the rail to one of four views. The rail itself is a
 // fixture — it holds its width whatever is selected, so selecting and
 // deselecting never resizes the chart out from under you. Only two things ever
@@ -1375,6 +1414,9 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
       { kind: "milestone", id: milestone.id },
       mirrorSourceGroup(milestone) ?? integrationConsumersGroup(milestone),
     ),
+    // Last, above only the delete button: a milestone lands in the right
+    // context when it is created and rarely moves after that.
+    milestoneLaneSelect(milestone),
   );
 
   body.append(head, crumb, title.wrap, desc.wrap, linksSection, attrs, actionsRow);
