@@ -1,4 +1,4 @@
-# Jira reconciliation
+# Finding missing links
 
 Roadie and Jira serve different purposes. A roadmap describes the plan: its
 significant outcomes, intended timing, structure, and dependencies. Jira tracks
@@ -11,7 +11,8 @@ These references are deliberately shallow. Roadie does not synchronize Jira
 status, dates, estimates, progress, or hierarchy, and Jira needs no
 Roadie-specific fields or configuration.
 
-Jira reconciliation uses these references to answer two questions:
+The first two tabs in **Jira Recon** use these references to answer two
+questions:
 
 - Which issues in a chosen Jira result set have no reference from this roadmap?
 - Which Roadie items have no Jira reference?
@@ -19,6 +20,9 @@ Jira reconciliation uses these references to answer two questions:
 The lists identify relationships to review; they do not declare that either
 system is wrong. Roadie reads the Jira issues needed for the review but never
 creates or updates them.
+
+The third tab, **Schedule check**, uses established links for a different
+purpose: [comparing the dates in Jira with the roadmap](schedule-check.md).
 
 The **Jira Recon** view is available when the Roadie deployment has a Jira
 connection and a roadmap is open. Select **Jira Recon** in the top bar, or press

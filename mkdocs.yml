@@ -19,7 +19,9 @@ nav:
       - Managing roadmaps: managing-roadmaps.md
       - Integration milestones: integration-milestones.md
       - Version history: version-history.md
-  - Jira reconciliation: jira-reconciliation.md
+  - Jira reconciliation:
+      - Finding missing links: jira-reconciliation.md
+      - Schedule check: schedule-check.md
 
 plugins:
   - search

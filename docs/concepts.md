@@ -137,8 +137,10 @@ resources by including links in their descriptions. For items, the first link
 is the primary reference and can be opened directly from the timeline or WBS;
 all links remain available when editing the item.
 
-Roadie treats external references as links, not integrations: it does not fetch
-status, synchronize another system's hierarchy, or derive roadmap progress from
-external tools.
+Roadie treats external references as links, not synchronized copies. With a
+Jira connection, it can read linked issues on demand to find missing references
+or compare schedules. It does not reproduce Jira's hierarchy or derive roadmap
+progress from issue status.
 
-→ [Jira reconciliation](jira-reconciliation.md)
+→ [Finding missing Jira links](jira-reconciliation.md) ·
+[Schedule check](schedule-check.md)

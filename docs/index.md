@@ -21,8 +21,10 @@ The remaining guides cover particular parts of Roadie:
   independently maintained roadmaps through milestones they share.
 - [Version history](version-history.md) explains how earlier versions are kept,
   compared, and restored.
-- [Jira reconciliation](jira-reconciliation.md) explains how to find and link
-  Jira issues and Roadie items that are missing references.
+- [Finding missing Jira links](jira-reconciliation.md) explains how to find and
+  link Jira issues and Roadie items that are missing references.
+- [Schedule check](schedule-check.md) compares issue schedules in Jira with the
+  dates in a roadmap.
 
 !!! note
 
