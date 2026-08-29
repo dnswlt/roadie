@@ -14,6 +14,7 @@ theme:
 nav:
   - Home: index.md
   - Key concepts: concepts.md
+  - Integration milestones: integration-milestones.md
   - Managing roadmaps: managing-roadmaps.md
   - Version history: version-history.md
   - Jira reconciliation: jira-reconciliation.md
