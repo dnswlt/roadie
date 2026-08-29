@@ -8,7 +8,7 @@ task tracker.
 This guide will explain both how to use Roadie and how to construct roadmaps
 that remain useful at scale.
 
-[![A Roadie timeline with contexts, parent and child items, milestones, schedule periods, dependencies, and the item panel.](assets/roadie-overview.png)](assets/roadie-overview.png)
+[![A Roadie timeline with contexts, parent and child items, milestones, dependencies, and the item panel.](assets/roadie-overview.png)](assets/roadie-overview.png)
 
 ## Start here
 

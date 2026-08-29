@@ -1,0 +1,346 @@
+{
+  "format": "roadie.roadmap",
+  "version": 3,
+  "roadmap": {
+    "id": 1,
+    "uid": "a996b977-8b4c-4d09-9a73-8a824bdfe46e",
+    "name": "Tracker Consolidation 2027",
+    "visibility": "public",
+    "lanes": [
+      {
+        "id": 10,
+        "roadmapId": 1,
+        "name": "Platform",
+        "position": 0,
+        "color": "blue",
+        "items": [
+          {
+            "id": 101,
+            "laneId": 10,
+            "parentId": null,
+            "title": "Run the new tracker in production",
+            "description": "The replacement tracker runs as the system of record, with the workflows, permissions and history teams need to work in it.\n\n[Migration plan](https://example.com/tracker/plan)",
+            "startDate": "2026-09-07",
+            "endDate": "2026-12-18",
+            "rank": 0,
+            "priority": 1,
+            "labels": ["platform", "migration"],
+            "flagged": false,
+            "tentative": false,
+            "atRisk": false,
+            "children": [
+              {
+                "id": 102,
+                "laneId": 10,
+                "parentId": 101,
+                "title": "Agree the workspace and access model",
+                "description": "One workspace layout and permission model covers every team, so projects do not each invent their own.",
+                "startDate": "2026-09-07",
+                "endDate": "2026-10-16",
+                "rank": 0,
+                "priority": 1,
+                "labels": ["platform"],
+                "flagged": false,
+                "tentative": false,
+                "atRisk": false
+              },
+              {
+                "id": 103,
+                "laneId": 10,
+                "parentId": 101,
+                "title": "Build leaner workflows in the new tracker",
+                "description": "Teams get short, explicit state models built for how they work now, instead of a copy of the legacy tracker's conventions.",
+                "startDate": "2026-10-05",
+                "endDate": "2026-11-27",
+                "rank": 1,
+                "priority": 2,
+                "labels": ["process"],
+                "flagged": false,
+                "tentative": false,
+                "atRisk": false
+              },
+              {
+                "id": 104,
+                "laneId": 10,
+                "parentId": 101,
+                "title": "Import ticket history",
+                "description": "Closed and open tickets, comments and attachments are available in the new tracker with their original dates.",
+                "startDate": "2026-11-02",
+                "endDate": "2026-12-18",
+                "rank": 2,
+                "priority": 1,
+                "labels": ["migration"],
+                "flagged": false,
+                "tentative": false,
+                "atRisk": true
+              }
+            ]
+          },
+          {
+            "id": 105,
+            "laneId": 10,
+            "parentId": null,
+            "title": "Keep both trackers usable during the move",
+            "description": "A sync bridge keeps tickets readable and updatable in both trackers while teams migrate in waves.",
+            "startDate": "2026-11-02",
+            "endDate": "2027-04-30",
+            "rank": 1,
+            "priority": 2,
+            "labels": ["migration", "dual-run"],
+            "flagged": true,
+            "tentative": false,
+            "atRisk": false,
+            "children": []
+          },
+          {
+            "id": 106,
+            "laneId": 10,
+            "parentId": null,
+            "title": "Prove the tracker holds up at full load",
+            "description": "The tracker answers within the agreed limits with the whole imported history in place and every team's traffic on it.",
+            "startDate": "2027-01-04",
+            "endDate": "2027-02-19",
+            "rank": 2,
+            "priority": 1,
+            "labels": ["platform", "performance"],
+            "flagged": false,
+            "tentative": false,
+            "atRisk": true,
+            "children": []
+          }
+        ],
+        "milestones": [
+          {
+            "id": 1001,
+            "uid": "017f245b-d5a1-4ac6-a62b-d4aca5492e1d",
+            "laneId": 10,
+            "title": "New tracker open for pilot teams",
+            "description": "Pilot teams can create and work tickets in the new tracker.",
+            "date": "2026-12-04",
+            "tentative": false,
+            "linkage": {
+              "integration": true
+            }
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "roadmapId": 1,
+        "name": "Adoption",
+        "position": 1,
+        "color": "green",
+        "items": [
+          {
+            "id": 201,
+            "laneId": 20,
+            "parentId": null,
+            "title": "Move every delivery team",
+            "description": "All delivery teams plan and track their work in the new tracker, in waves that keep delivery running.",
+            "startDate": "2026-11-02",
+            "endDate": "2027-05-07",
+            "rank": 0,
+            "priority": 1,
+            "labels": ["adoption", "migration"],
+            "flagged": false,
+            "tentative": false,
+            "atRisk": false,
+            "children": [
+              {
+                "id": 202,
+                "laneId": 20,
+                "parentId": 201,
+                "title": "Cut the pilot teams over",
+                "description": "Three pilot teams stop using the legacy tracker entirely and confirm the workflows hold up.",
+                "startDate": "2026-11-16",
+                "endDate": "2027-01-15",
+                "rank": 0,
+                "priority": 1,
+                "labels": ["adoption"],
+                "flagged": false,
+                "tentative": false,
+                "atRisk": false
+              },
+              {
+                "id": 205,
+                "laneId": 20,
+                "parentId": 201,
+                "title": "Deliver the pilot evaluation",
+                "description": "The pilot teams write up what worked, what slowed them down, and what must change before the remaining waves.",
+                "startDate": "2027-01-18",
+                "endDate": "2027-02-19",
+                "rank": 1,
+                "priority": 2,
+                "labels": ["adoption", "evaluation"],
+                "flagged": false,
+                "tentative": false,
+                "atRisk": false
+              },
+              {
+                "id": 203,
+                "laneId": 20,
+                "parentId": 201,
+                "title": "Run migration waves 2-5",
+                "description": "The remaining teams move on a published schedule, each with a rehearsed cutover.",
+                "startDate": "2027-03-01",
+                "endDate": "2027-04-30",
+                "rank": 2,
+                "priority": 1,
+                "labels": ["migration"],
+                "flagged": false,
+                "tentative": false,
+                "atRisk": true
+              }
+            ]
+          },
+          {
+            "id": 204,
+            "laneId": 20,
+            "parentId": null,
+            "title": "Replace spreadsheet reporting",
+            "description": "Delivery and portfolio reporting comes from the tracker itself, replacing the exports teams maintain by hand.",
+            "startDate": "2027-03-01",
+            "endDate": "2027-06-11",
+            "rank": 1,
+            "priority": 2,
+            "labels": ["reporting"],
+            "flagged": false,
+            "tentative": true,
+            "atRisk": false,
+            "children": []
+          }
+        ],
+        "milestones": [
+          {
+            "id": 2003,
+            "uid": "4bffa5a8-54b9-40f6-9d5f-dcc881486af8",
+            "laneId": 20,
+            "title": "Go-ahead for rollout",
+            "description": "The steering group accepts the pilot evaluation and the load results, and clears the remaining waves to run.",
+            "date": "2027-02-26",
+            "tentative": true
+          }
+        ]
+      },
+      {
+        "id": 30,
+        "roadmapId": 1,
+        "name": "Retirement",
+        "position": 2,
+        "color": "purple",
+        "items": [
+          {
+            "id": 301,
+            "laneId": 30,
+            "parentId": null,
+            "title": "Agree the admin and support model",
+            "description": "Named owners, request paths and change rules are in place, so administration does not fall back on the migration team.",
+            "startDate": "2026-11-30",
+            "endDate": "2027-04-30",
+            "rank": 0,
+            "priority": 2,
+            "labels": ["operations"],
+            "flagged": false,
+            "tentative": false,
+            "atRisk": false,
+            "children": []
+          },
+          {
+            "id": 302,
+            "laneId": 30,
+            "parentId": null,
+            "title": "Retire the legacy tracker",
+            "description": "The legacy tracker is switched off, with its data archived and everything that pointed at it moved across.",
+            "startDate": "2027-03-01",
+            "endDate": "2027-06-18",
+            "rank": 1,
+            "priority": 3,
+            "labels": ["decommissioning"],
+            "flagged": false,
+            "tentative": false,
+            "atRisk": false,
+            "children": [
+              {
+                "id": 303,
+                "laneId": 30,
+                "parentId": 302,
+                "title": "Repoint the integrations",
+                "description": "Build pipelines, chat notifications and the customer portal read from the new tracker.",
+                "startDate": "2027-03-01",
+                "endDate": "2027-05-21",
+                "rank": 0,
+                "priority": 2,
+                "labels": ["integrations"],
+                "flagged": false,
+                "tentative": false,
+                "atRisk": false
+              },
+              {
+                "id": 304,
+                "laneId": 30,
+                "parentId": 302,
+                "title": "Sign off archive and audit evidence",
+                "description": "The retained export satisfies audit retention rules and is accepted by the compliance team.",
+                "startDate": "2027-05-24",
+                "endDate": "2027-06-18",
+                "rank": 1,
+                "priority": 3,
+                "labels": ["compliance"],
+                "flagged": true,
+                "tentative": false,
+                "atRisk": false
+              }
+            ]
+          }
+        ],
+        "milestones": [
+          {
+            "id": 3001,
+            "uid": "f652ca8e-1719-4eb9-af9c-1b262c0422fb",
+            "laneId": 30,
+            "title": "Legacy tracker read-only",
+            "description": "The legacy tracker accepts no new tickets or edits.",
+            "date": "2027-05-21",
+            "tentative": false
+          },
+          {
+            "id": 3002,
+            "uid": "42938f9a-8a6a-41b3-ac09-33b206908f61",
+            "laneId": 30,
+            "title": "One tracker for everyone",
+            "description": "The legacy tracker is gone. Every team, integration and report uses the new tracker.",
+            "date": "2027-06-25",
+            "tentative": false,
+            "linkage": {
+              "integration": true
+            }
+          },
+          {
+            "id": 3003,
+            "uid": "2c17f7e2-ef39-4577-ae84-1fa9e9b7871e",
+            "laneId": 30,
+            "title": "Legacy tracker licence expires",
+            "description": "The support contract for the legacy tracker ends and will not be renewed.",
+            "date": "2027-06-30",
+            "tentative": false
+          }
+        ]
+      }
+    ],
+    "periods": [],
+    "dependencies": [
+      {"id": 1, "from": {"kind": "milestone", "id": 1001}, "to": {"kind": "item", "id": 202}},
+      {"id": 2, "from": {"kind": "item", "id": 202}, "to": {"kind": "item", "id": 205}},
+      {"id": 3, "from": {"kind": "item", "id": 104}, "to": {"kind": "item", "id": 106}},
+      {"id": 4, "from": {"kind": "item", "id": 205}, "to": {"kind": "milestone", "id": 2003}},
+      {"id": 5, "from": {"kind": "item", "id": 106}, "to": {"kind": "milestone", "id": 2003}},
+      {"id": 6, "from": {"kind": "milestone", "id": 2003}, "to": {"kind": "item", "id": 203}},
+      {"id": 7, "from": {"kind": "item", "id": 105}, "to": {"kind": "item", "id": 203}},
+      {"id": 8, "from": {"kind": "item", "id": 201}, "to": {"kind": "milestone", "id": 3001}},
+      {"id": 9, "from": {"kind": "item", "id": 301}, "to": {"kind": "milestone", "id": 3001}},
+      {"id": 10, "from": {"kind": "item", "id": 303}, "to": {"kind": "milestone", "id": 3001}},
+      {"id": 11, "from": {"kind": "milestone", "id": 3001}, "to": {"kind": "item", "id": 304}},
+      {"id": 12, "from": {"kind": "item", "id": 302}, "to": {"kind": "milestone", "id": 3002}}
+    ]
+  }
+}

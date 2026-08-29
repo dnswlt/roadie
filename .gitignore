@@ -8,3 +8,4 @@ web/dist/*
 web/test-out/
 web/test-results/
 web/playwright-report/
+__pycache__/
