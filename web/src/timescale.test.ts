@@ -1,6 +1,15 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { contentRange, dayOf, isoOf, quarterStart, snapToGrid, spanFraction, weekStart } from "./timescale";
+import {
+  contentRange,
+  dayOf,
+  isoOf,
+  quarterStart,
+  snapToGrid,
+  spanFraction,
+  weekStart,
+  yearTicks,
+} from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone } from "./types";
 
 // Helper: snap an ISO date to a grid and read the result back as ISO.
@@ -85,6 +94,22 @@ test("spanFraction measures in the boundary domain", () => {
 test("spanFraction handles a single-day extent", () => {
   const day = dayOf("2024-01-01");
   assert.deepEqual(spanFraction(day, day, { startDay: day, endDay: day }), { left: 0, width: 1 });
+});
+
+test("yearTicks clips the first and last years to the scale", () => {
+  const ticks = yearTicks({
+    startDay: dayOf("2025-11-01"),
+    endDay: dayOf("2027-02-28"),
+    pxPerDay: 1,
+  });
+  assert.deepEqual(
+    ticks.map((tick) => ({ start: isoOf(tick.day), days: tick.days, label: tick.label })),
+    [
+      { start: "2025-11-01", days: 61, label: "2025" },
+      { start: "2026-01-01", days: 365, label: "2026" },
+      { start: "2027-01-01", days: 59, label: "2027" },
+    ],
+  );
 });
 
 test("weekStart returns the Monday on or before the day", () => {

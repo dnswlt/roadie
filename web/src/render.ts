@@ -18,6 +18,15 @@ import { extractLinks } from "./links";
 import { scheduleBounds } from "./schedule";
 import { state } from "./state";
 import {
+  calendarGridTicks,
+  calendarLabelFits,
+  scheduleCalendarRuler,
+  scheduleHeaderIsCompact,
+  scheduleLabelFits,
+  type CalendarUnit,
+  type LabelMetrics,
+} from "./timeline-grid";
+import {
   chartWidth,
   computeRange,
   dayOf,
@@ -27,6 +36,7 @@ import {
   todayDay,
   xOf,
   type Scale,
+  type Tick,
 } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./types";
 
@@ -79,25 +89,28 @@ export function renderChart(container: HTMLElement): void {
   const grid = div("grid");
   grid.style.width = `${LABEL_W + w}px`;
 
-  // Time axis header. Two rows: a coarse top row + the months row. When the
-  // roadmap defines a schedule, its period band replaces the quarter row (and
-  // the months then carry the year, since the quarter row otherwise owns it).
+  // Period names and calendar labels have independent density thresholds:
+  // short sprints may need unnamed bands while months still fit comfortably.
+  // Without a schedule the usual quarters + months stay.
   const hasSchedule = rm.periods.length > 0;
+  const calendar = hasSchedule ? scheduleCalendarRuler(scale) : null;
+  const compactSchedule =
+    hasSchedule &&
+    scheduleHeaderIsCompact(rm.periods, scale.pxPerDay, (label) =>
+      measureIn("th-period", label),
+    );
   const thead = div("thead");
   const corner = div("corner");
   corner.textContent = "Contexts";
   const thRows = div("th-rows");
   thRows.style.width = `${w}px`;
 
-  const topRow = hasSchedule ? renderScheduleRow(rm.periods) : renderQuarterRow();
-  const mRow = div("th-row th-months");
-  for (const t of monthTicks(scale, hasSchedule)) {
-    const cell = div("th-cell");
-    const cw = t.days * scale.pxPerDay;
-    cell.style.width = `${cw}px`;
-    cell.textContent = cw >= 34 ? t.label : "";
-    mRow.append(cell);
-  }
+  const topRow = hasSchedule
+    ? renderScheduleRow(rm.periods, compactSchedule)
+    : renderTickRow("quarter", quarterTicks(scale));
+  const calendarRow = calendar
+    ? renderTickRow(calendar.unit, calendar.ticks)
+    : renderTickRow("month", monthTicks(scale));
   // Today: a small triangle at the bottom edge of the time header.
   const tx = xOf(scale, today);
   if (tx >= 0 && tx <= w) {
@@ -106,7 +119,7 @@ export function renderChart(container: HTMLElement): void {
     marker.title = "Today";
     thRows.append(marker);
   }
-  thRows.append(topRow, mRow);
+  thRows.append(topRow, calendarRow);
   thead.append(corner, thRows);
 
   // Lanes (hidden ones are skipped — see the eye menu in the topbar).
@@ -191,19 +204,15 @@ export function projectSelection(container: HTMLElement): void {
   renderTimelineDependencies(container);
 }
 
-// SCHEDULE_LABEL_PX: hide a period's label below this width, like the months
-// row — the boundaries still show, so the rhythm reads; the full label is on the
-// span's title. Slightly wider than the months threshold since it centers.
-const SCHEDULE_LABEL_PX = 40;
-
-// renderQuarterRow builds the default coarse header row: contiguous quarter
-// cells (Q1 2026, ...), the sole place the year appears when there's no schedule.
-function renderQuarterRow(): HTMLElement {
-  const row = div("th-row th-quarters");
-  for (const t of quarterTicks(scale)) {
+function renderTickRow(unit: CalendarUnit, ticks: Tick[]): HTMLElement {
+  const className = `th-${unit}s`;
+  const row = div(`th-row ${className}`);
+  const metrics = measureLabel("th-cell", className);
+  for (const t of ticks) {
     const cell = div("th-cell");
-    cell.style.width = `${t.days * scale.pxPerDay}px`;
-    cell.textContent = t.days * scale.pxPerDay >= 44 ? t.label : "";
+    const width = t.days * scale.pxPerDay;
+    cell.style.width = `${width}px`;
+    cell.textContent = calendarLabelFits(t.label, width, metrics) ? t.label : "";
     row.append(cell);
   }
   return row;
@@ -213,7 +222,7 @@ function renderQuarterRow(): HTMLElement {
 // a schedule is defined. Unlike quarters/months it does not tile the axis:
 // periods are sparse (gaps are real, and they need not align to the chart edge),
 // so each is an absolutely-positioned span; a bar owns [xOf(start), xOf(end+1)).
-function renderScheduleRow(periods: SchedulePeriod[]): HTMLElement {
+function renderScheduleRow(periods: SchedulePeriod[], compact: boolean): HTMLElement {
   const row = div("th-row th-schedule");
   // Alternating fills (zebra) so adjacent periods — which touch with no gap —
   // read as distinct. Periods arrive ordered by start date, so index parity is
@@ -227,7 +236,12 @@ function renderScheduleRow(periods: SchedulePeriod[]): HTMLElement {
     // Tooltip carries the dates (end inclusive) too — useful when the label is
     // hidden on a narrow period, and to read a period's span without measuring.
     span.title = `${p.label}\n${formatDay(dayOf(p.startDate))} – ${formatDay(dayOf(p.endDate))}`;
-    if (width >= SCHEDULE_LABEL_PX) span.textContent = p.label;
+    if (
+      !compact &&
+      scheduleLabelFits(p, scale.pxPerDay, (label) => measureIn("th-period", label))
+    ) {
+      span.textContent = p.label;
+    }
     row.append(span);
   });
   return row;
@@ -269,14 +283,11 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   canvas.style.width = `${chartW}px`;
   canvas.style.height = `${layout.height}px`;
 
-  // Month gridlines. Normally the quarter starts are drawn slightly stronger;
-  // when a schedule is active its period boundaries take that emphasis instead
-  // (added below), so the whole board aligns to the planning rhythm.
   const periods = state.current?.periods ?? [];
   const hasSchedule = periods.length > 0;
-  for (const t of monthTicks(scale)) {
+  for (const t of calendarGridTicks(scale, hasSchedule)) {
     const d = new Date(t.day * 86_400_000);
-    const strong = !hasSchedule && d.getUTCDate() === 1 && d.getUTCMonth() % 3 === 0;
+    const strong = hasSchedule || (d.getUTCDate() === 1 && d.getUTCMonth() % 3 === 0);
     const gl = div(strong ? "gl gl-q" : "gl");
     gl.style.left = `${xOf(scale, t.day)}px`;
     canvas.append(gl);
@@ -507,28 +518,37 @@ function titleFits(item: Item, width: number, hasDisclosure = false, hasDeps = f
   return measureTitleWidth(item.title) <= width - reserved;
 }
 
-// One offscreen canvas per measured class, kept between passes. Measuring text
-// this way is exact for the font and, unlike reading scrollWidth, forces no
-// reflow — which is what lets the milestone packer ask for every title's width
-// before any of them is in the document. Each font is read once from a probe
-// element so it tracks the real stylesheet rule rather than restating it.
-const measureCtxByClass = new Map<string, CanvasRenderingContext2D | null>();
+// One canvas per class/context, kept between passes. Each font and horizontal
+// inset is read once from a CSS probe; subsequent text measurements need no
+// layout or live label nodes, so milestone packing can run before rendering.
+const labelMetricsByClass = new Map<string, LabelMetrics>();
+
+function measureLabel(className: string, parentClass = ""): LabelMetrics {
+  const key = `${parentClass}/${className}`;
+  const cached = labelMetricsByClass.get(key);
+  if (cached) return cached;
+
+  // Header fonts and padding depend on the row's class, not just .th-cell.
+  const parent = div(parentClass);
+  const probe = div(className);
+  parent.style.position = "absolute";
+  parent.style.visibility = "hidden";
+  parent.append(probe);
+  document.body.append(parent);
+  const cs = getComputedStyle(probe);
+  const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const inset = [cs.paddingLeft, cs.paddingRight, cs.borderLeftWidth, cs.borderRightWidth]
+    .reduce((sum, value) => sum + (Number.parseFloat(value) || 0), 0);
+  parent.remove();
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (ctx) ctx.font = font;
+  const metrics = { textWidth: (text: string) => ctx ? ctx.measureText(text).width : 0, inset };
+  labelMetricsByClass.set(key, metrics);
+  return metrics;
+}
 
 function measureIn(className: string, text: string): number {
-  let ctx = measureCtxByClass.get(className);
-  if (ctx === undefined) {
-    const probe = div(className);
-    probe.style.position = "absolute";
-    probe.style.visibility = "hidden";
-    document.body.append(probe);
-    const cs = getComputedStyle(probe);
-    const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-    probe.remove();
-    ctx = document.createElement("canvas").getContext("2d");
-    if (ctx) ctx.font = font;
-    measureCtxByClass.set(className, ctx);
-  }
-  return ctx ? ctx.measureText(text).width : 0;
+  return measureLabel(className).textWidth(text);
 }
 
 function measureTitleWidth(text: string): number {

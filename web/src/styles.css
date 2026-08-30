@@ -782,6 +782,13 @@ kbd {
   border-left-color: var(--grid);
 }
 
+.th-years .th-cell {
+  padding-left: 0;
+  text-align: center;
+  font-weight: 600;
+  color: var(--ink);
+}
+
 /* Schedule band: sparse, absolutely-positioned period spans (gaps are real),
    replacing the quarter row when a roadmap defines a schedule. */
 .th-schedule {

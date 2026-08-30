@@ -203,6 +203,21 @@ export function quarterTicks(scale: Scale): Tick[] {
   return ticks;
 }
 
+export function yearTicks(scale: Scale): Tick[] {
+  const ticks: Tick[] = [];
+  const first = new Date(scale.startDay * MS_PER_DAY);
+  let day = Math.round(Date.UTC(first.getUTCFullYear(), 0, 1) / MS_PER_DAY);
+  while (day <= scale.endDay) {
+    const d = new Date(day * MS_PER_DAY);
+    const next = Math.round(Date.UTC(d.getUTCFullYear() + 1, 0, 1) / MS_PER_DAY);
+    const from = Math.max(day, scale.startDay);
+    const to = Math.min(next - 1, scale.endDay);
+    ticks.push({ day: from, days: to - from + 1, label: String(d.getUTCFullYear()) });
+    day = next;
+  }
+  return ticks;
+}
+
 // formatDay renders a day number as a British-format date: day-month-year,
 // e.g. "5 Jan 2026".
 export function formatDay(day: number): string {
