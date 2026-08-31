@@ -97,7 +97,7 @@ function item(
   };
 }
 
-test("comparison checks only issue overhang", () => {
+test("comparison flags outside endpoints but allows contained ranges", () => {
   const items = [item(1, "2026-09-01", "2026-09-30", ["PAY-1", "PAY-2", "PAY-3"])];
   const results: TrackerScheduleResult[] = [
     { key: "PAY-1", state: "ok", start: "2026-08-31", end: "2026-09-15" },
@@ -119,6 +119,69 @@ test("comparison checks only issue overhang", () => {
   assert.equal(projected.summary.checked, 3);
   assert.equal(projected.summary.outsidePairs, 2);
   assert.equal(projected.summary.outsideItems, 1);
+});
+
+for (const edge of ["start", "end"] as const) {
+  test(`${edge}-only ranges check both inclusive item boundaries`, () => {
+    for (const [date, outside] of [
+      ["2026-08-31", true],
+      ["2026-09-01", false],
+      ["2026-09-15", false],
+      ["2026-09-30", false],
+      ["2026-10-01", true],
+    ] as const) {
+      const projected = projectScheduleCheck(
+        [item(1, "2026-09-01", "2026-09-30", ["PAY-1"])],
+        [{ key: "PAY-1", state: "ok", [edge]: date }],
+        [],
+      );
+      const row = projected.rows[0]!;
+      const issue = row.issues[0]!;
+      if (issue.state !== "ok") throw new Error(`Expected ok, got ${issue.state}`);
+      assert.equal(issue.startOutside, edge === "start" && outside, date);
+      assert.equal(issue.endOutside, edge === "end" && outside, date);
+      assert.equal(row.outside, outside, date);
+      assert.equal(projected.summary.checked, 1);
+      assert.equal(projected.summary.outsidePairs, outside ? 1 : 0);
+      assert.equal(projected.summary.outsideItems, outside ? 1 : 0);
+      const report = reportScheduleCheck(projected);
+      assert.equal(report.matchingItems, outside ? 0 : 1);
+      assert.equal(report.matchingIssues, outside ? 0 : 1);
+    }
+  });
+}
+
+test("one-sided period references check both item boundaries after resolution", () => {
+  const projected = projectScheduleCheck(
+    [
+      item(1, "2026-10-01", "2026-10-31", ["PAY-1"]),
+      item(2, "2026-09-01", "2026-09-30", ["PAY-2"]),
+    ],
+    [
+      { key: "PAY-1", state: "ok", endPeriod: "PI2026-09" },
+      { key: "PAY-2", state: "ok", startPeriod: "PI2026-10" },
+    ],
+    periods,
+  );
+  assert.deepEqual(projected.rows.map(row => row.outside), [true, true]);
+  assert.deepEqual(projected.rows.flatMap(row => row.issues).map(issue =>
+    issue.state === "ok" ? [issue.startOutside, issue.endOutside] : null,
+  ), [[false, true], [true, false]]);
+});
+
+test("fully disjoint ranges flag both endpoints", () => {
+  const projected = projectScheduleCheck(
+    [item(1, "2026-09-01", "2026-09-30", ["PAY-1", "PAY-2"])],
+    [
+      { key: "PAY-1", state: "ok", start: "2026-08-01", end: "2026-08-31" },
+      { key: "PAY-2", state: "ok", start: "2026-10-01", end: "2026-10-31" },
+    ],
+    [],
+  );
+  assert.deepEqual(projected.rows[0]!.issues.map(issue =>
+    issue.state === "ok" ? [issue.startOutside, issue.endOutside] : null,
+  ), [[true, true], [true, true]]);
+  assert.equal(projected.summary.outsidePairs, 2);
 });
 
 test("one issue is compared independently with every linked item", () => {

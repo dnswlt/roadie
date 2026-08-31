@@ -164,6 +164,9 @@ export function projectScheduleCheck(
     unchecked: 0,
   };
   const rows = items.map((item): ScheduleCheckRow => {
+    // A known endpoint must lie within the item even when its other edge is unknown.
+    const outsideItem = (date: string | undefined): boolean =>
+      date !== undefined && (date < item.startDate || date > item.endDate);
     const issues = item.issueKeys.map((key): ScheduleCheckIssue => {
       summary.pairs++;
       const result = byKey.get(key);
@@ -183,8 +186,8 @@ export function projectScheduleCheck(
             outside: false,
           };
         }
-        const startOutside = resolved.start !== undefined && resolved.start < item.startDate;
-        const endOutside = resolved.end !== undefined && resolved.end > item.endDate;
+        const startOutside = outsideItem(resolved.start);
+        const endOutside = outsideItem(resolved.end);
         const outside = startOutside || endOutside;
         summary.checked++;
         if (outside) summary.outsidePairs++;
