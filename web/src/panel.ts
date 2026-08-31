@@ -10,6 +10,7 @@ import { editRangeDate, parseDateInput, type DateEdge } from "./dates";
 import { dependenciesSection, depsGraphButton } from "./deps";
 import { confirmDialog } from "./dialogs";
 import { icons } from "./icons";
+import { parseLabelInput } from "./labels";
 import { extractLinks } from "./links";
 import { itemMarkdown } from "./markdown";
 import { periodAtEdge, periodDates, periodsByStart } from "./schedule";
@@ -590,7 +591,7 @@ function dateField(
   picker.setAttribute("aria-hidden", "true");
 
   const error = document.createElement("span");
-  error.className = "panel-date-error";
+  error.className = "panel-field-error";
   error.textContent = "Try 2026-07-15, 7/26, or Q3/2026";
   error.hidden = true;
 
@@ -1191,7 +1192,20 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
   const input = document.createElement("input");
   input.className = "label-input";
   input.placeholder = "Add label…";
+  input.setAttribute("aria-label", "Add label");
   input.setAttribute("list", "label-suggestions");
+
+  const error = document.createElement("span");
+  error.id = "label-input-error";
+  error.className = "panel-field-error";
+  error.setAttribute("aria-live", "polite");
+  error.hidden = true;
+  input.setAttribute("aria-describedby", error.id);
+  const clearError = () => {
+    input.removeAttribute("aria-invalid");
+    error.hidden = true;
+    error.textContent = "";
+  };
 
   const datalist = document.createElement("datalist");
   datalist.id = "label-suggestions";
@@ -1227,7 +1241,15 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
   };
 
   const add = () => {
-    const v = input.value.trim();
+    const result = parseLabelInput(input.value);
+    if ("error" in result) {
+      input.setAttribute("aria-invalid", "true");
+      error.hidden = false;
+      error.textContent = result.error;
+      return;
+    }
+    clearError();
+    const v = result.value;
     input.value = "";
     if (!v || labels.includes(v)) return;
     labels.push(v);
@@ -1236,6 +1258,7 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
   };
 
   input.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       add();
@@ -1245,11 +1268,12 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
       commit();
     }
   });
+  input.addEventListener("input", clearError);
   input.addEventListener("blur", add); // commit a typed-but-unentered label
 
   renderChips();
   editor.append(chips, input, datalist);
-  wrap.append(label, editor);
+  wrap.append(label, editor, error);
   return wrap;
 }
 

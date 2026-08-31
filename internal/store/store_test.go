@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -420,6 +421,39 @@ func TestItemUpdateFields(t *testing.T) {
 	}
 }
 
+func TestNormalizeLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		unit  string
+		count int
+	}{
+		{"ASCII", "a", 64},
+		{"CJK", "界", 64},
+		{"emoji", "😀", 64},
+		{"combining", "e\u0301", 32},
+		{"joined emoji", "👩‍💻", 21},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			label := strings.Repeat(tc.unit, tc.count)
+			got, err := normalizeLabels([]string{"  " + label + "  ", label, ""})
+			if err != nil || !slices.Equal(got, []string{label}) {
+				t.Fatalf("accepted boundary: got %q, %v", got, err)
+			}
+			if _, err := normalizeLabels([]string{label + tc.unit}); !isValidation(err) {
+				t.Errorf("over limit: want validation error, got %v", err)
+			}
+		})
+	}
+	// Whitespace cleanup inside labels is an editor convenience, not an API rule.
+	labels := []string{"@team", "#hashtag", "this-dash", "snake_case", "C++", "/_.:", "a  b", "a\tb", "a\nb"}
+	if got, err := normalizeLabels(labels); err != nil || !slices.Equal(got, labels) {
+		t.Errorf("permissive labels: got %q, %v", got, err)
+	}
+	if _, err := normalizeLabels([]string{strings.Repeat("a", 1_000_000)}); !isValidation(err) {
+		t.Errorf("large label: want validation error, got %v", err)
+	}
+}
+
 func TestItemLabels(t *testing.T) {
 	ctx := context.Background()
 	rm := newRoadmap(t)
@@ -480,6 +514,28 @@ func TestItemLabels(t *testing.T) {
 	}
 	if got := full.Lanes[0].Items[0].Labels; len(got) != 1 || got[0] != "x" {
 		t.Errorf("labels from GetRoadmapFull: %#v", got)
+	}
+
+	// A rejected label rolls back the whole patch, including unrelated fields.
+	if _, err := testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Title:  model.Opt[string]{Set: true, Value: "Should not persist"},
+		Labels: model.Opt[[]string]{Set: true, Value: []string{"valid", strings.Repeat("😀", 65)}},
+	}); !isValidation(err) {
+		t.Fatalf("long label: want validation error, got %v", err)
+	}
+	full, err = testStore.GetRoadmapFull(ctx, rm.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := full.Lanes[0].Items[0]; got.Title != "T2" || !slices.Equal(got.Labels, []string{"x"}) {
+		t.Errorf("rejected patch changed item: %+v", got)
+	}
+	label := strings.Repeat("😀", 64)
+	upd, err = testStore.UpdateItem(ctx, it.ID, ItemPatch{
+		Labels: model.Opt[[]string]{Set: true, Value: []string{label}},
+	})
+	if err != nil || !slices.Equal(upd.Labels, []string{label}) {
+		t.Errorf("64-code-point label: got %q, %v", upd.Labels, err)
 	}
 }
 
@@ -949,6 +1005,61 @@ func TestImportRoadmap(t *testing.T) {
 	// Empty name is rejected.
 	if _, err := testStore.ImportRoadmap(ctx, model.RoadmapFull{}, Ownership{}, ImportCopy); !isValidation(err) {
 		t.Errorf("empty name: want validation error, got %v", err)
+	}
+}
+
+func TestImportLabelLength(t *testing.T) {
+	ctx := context.Background()
+	for _, child := range []bool{false, true} {
+		for _, length := range []int{64, 65} {
+			t.Run(fmt.Sprintf("child=%t/length=%d", child, length), func(t *testing.T) {
+				item := model.Item{
+					Title: "Item", StartDate: date("2026-01-01"), EndDate: date("2026-02-01"),
+				}
+				parent := model.ItemFull{Item: item, Children: []model.Item{item}}
+				label := strings.Repeat("😀", length)
+				if child {
+					parent.Children[0].Labels = []string{label}
+				} else {
+					parent.Labels = []string{label}
+				}
+				src := model.RoadmapFull{
+					Roadmap: model.Roadmap{UID: testUID(), Name: "test-" + t.Name()},
+					Lanes:   []model.LaneFull{{Lane: model.Lane{Name: "Lane"}, Items: []model.ItemFull{parent}}},
+				}
+				rm, err := testStore.ImportRoadmap(ctx, src, Ownership{}, ImportCopy)
+				if err == nil {
+					t.Cleanup(func() { testStore.DeleteRoadmap(ctx, rm.ID) })
+				}
+				if length > 64 {
+					if !isValidation(err) || !strings.Contains(err.Error(), "labels must be at most") {
+						t.Fatalf("long label: want validation error, got %v", err)
+					}
+					var count int
+					if err := testStore.pool.QueryRow(ctx, "SELECT count(*) FROM roadmaps WHERE name=$1", src.Name).Scan(&count); err != nil {
+						t.Fatal(err)
+					}
+					if count != 0 {
+						t.Error("failed import left a roadmap behind")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := full.Lanes[0].Items[0].Labels
+				if child {
+					got = full.Lanes[0].Items[0].Children[0].Labels
+				}
+				if !slices.Equal(got, []string{label}) {
+					t.Errorf("imported label: got %q", got)
+				}
+			})
+		}
 	}
 }
 

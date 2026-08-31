@@ -17,6 +17,7 @@ export interface ItemNode {
   id: number;
   title: string;
   description: string;
+  labels: string[];
   startDate: string;
   endDate: string;
   rank: number;

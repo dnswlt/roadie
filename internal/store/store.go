@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -184,21 +185,26 @@ func scanItem(r rowScanner) (model.Item, error) {
 	return it, nil
 }
 
-// normalizeLabels trims, drops empties, and de-duplicates a label set while
-// preserving first-seen order, so the stored set stays clean regardless of
-// what the client sends.
-func normalizeLabels(labels []string) []string {
+const labelMaxCodePoints = 64
+
+// normalizeLabels validates length, trims, drops empties, and de-duplicates
+// while preserving first-seen order. Length counts Unicode code points,
+// not bytes or grapheme clusters; frontend label input uses the same limit.
+func normalizeLabels(labels []string) ([]string, error) {
 	out := []string{}
 	seen := map[string]bool{}
 	for _, l := range labels {
 		l = strings.TrimSpace(l)
+		if utf8.RuneCountInString(l) > labelMaxCodePoints {
+			return nil, invalidf("labels must be at most %d Unicode code points", labelMaxCodePoints)
+		}
 		if l == "" || seen[l] {
 			continue
 		}
 		seen[l] = true
 		out = append(out, l)
 	}
-	return out
+	return out, nil
 }
 
 const laneCols = "id, roadmap_id, name, position, color, updated_at"
@@ -978,12 +984,16 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 		if it.Priority != nil && (*it.Priority < 1 || *it.Priority > 4) {
 			return 0, invalidf("item %q priority must be between 1 and 4", it.Title)
 		}
+		labels, err := normalizeLabels(it.Labels)
+		if err != nil {
+			return 0, err
+		}
 		var id int64
-		err := tx.QueryRow(ctx,
+		err = tx.QueryRow(ctx,
 			`INSERT INTO items (id, lane_id, parent_id, title, description, start_date, end_date, rank, priority, labels, flagged, tentative, at_risk, updated_at)
 			 VALUES (`+nextID("items")+`, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::timestamptz, now())) RETURNING id`,
 			pol.dbID(it.ID), laneID, parentID, it.Title, it.Description, it.StartDate.Time, it.EndDate.Time,
-			rank, it.Priority, normalizeLabels(it.Labels), it.Flagged, it.Tentative, it.AtRisk,
+			rank, it.Priority, labels, it.Flagged, it.Tentative, it.AtRisk,
 			pol.stamp(it.UpdatedAt)).Scan(&id)
 		return id, err
 	}
@@ -1408,7 +1418,10 @@ func (s *Store) UpdateItem(ctx context.Context, id int64, p ItemPatch) (model.It
 		next.Priority = p.Priority.Value
 	}
 	if p.Labels.Set {
-		next.Labels = normalizeLabels(p.Labels.Value)
+		next.Labels, err = normalizeLabels(p.Labels.Value)
+		if err != nil {
+			return model.Item{}, err
+		}
 	}
 	if p.Flagged.Set {
 		next.Flagged = p.Flagged.Value

@@ -2204,14 +2204,14 @@ kbd {
   pointer-events: none;
 }
 
-.panel-date-error {
+.panel-field-error {
   display: block;
   margin-top: 3px;
   font-size: 11px;
   color: var(--danger);
 }
 
-.panel-date-error[hidden] {
+.panel-field-error[hidden] {
   display: none;
 }
 
@@ -2793,6 +2793,10 @@ dialog.mirror-dialog {
 .label-editor:focus-within {
   border-color: var(--focus);
   box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
+}
+
+.label-editor:has(.label-input[aria-invalid="true"]) {
+  border-color: var(--danger);
 }
 
 .label-chips {
