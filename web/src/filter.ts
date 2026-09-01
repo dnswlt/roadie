@@ -14,11 +14,12 @@ import type { Item, ItemFull, LaneFull } from "./types";
 // "flagged" distinct from the flag itself. A labels filter is non-empty; no
 // filter at all is null. Nothing derived is stored here — conflict membership
 // is resolved where the projection is built — so a Filter cannot go stale.
-export type Filter =
+export type Filter = { readonly inverted?: boolean } & (
   | { readonly kind: "labels"; readonly labels: readonly string[] }
   | { readonly kind: "flagged" }
   | { readonly kind: "atRisk" }
-  | { readonly kind: "dependencyConflicts" };
+  | { readonly kind: "dependencyConflicts" }
+);
 
 export type SignalFilterKind = Exclude<Filter["kind"], "labels">;
 
@@ -35,6 +36,12 @@ export function itemPredicate(
   conflictItemIds: ReadonlySet<number>,
 ): ItemMatch | null {
   if (filter === null) return null;
+  const match = positivePredicate(filter, conflictItemIds);
+  // Invert the combined match before projection retains parent breadcrumbs.
+  return filter.inverted ? (item) => !match(item) : match;
+}
+
+function positivePredicate(filter: Filter, conflictItemIds: ReadonlySet<number>): ItemMatch {
   switch (filter.kind) {
     case "flagged":
       return (item) => item.flagged;

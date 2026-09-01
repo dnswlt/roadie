@@ -123,9 +123,9 @@ class AppState {
   panelCollapsed = false;
   // The item filter: when set, chart views show only matching items. A
   // transient "what's relevant right now" view, not persisted. Several labels
-  // can be picked at once (matching is OR — an item needs any one of them),
-  // but labels and each attention signal stay exclusive: they are one field,
-  // not two, since filtering on both at once has no meaning.
+  // can be picked at once (matching is OR — an item needs any one of them).
+  // Labels and each attention signal stay exclusive; inversion negates the
+  // combined match, not the individual label picks.
   //
   // Assignment invalidates what is derived from it, so no caller has to
   // remember to notify before the next read. Every active filter also becomes
@@ -597,14 +597,26 @@ class AppState {
   }
 
   toggleFilterSignal(kind: SignalFilterKind): void {
-    this.filter = this.filter?.kind === kind ? null : { kind };
+    this.setFilterSelection(this.filter?.kind === kind ? null : { kind });
+  }
+
+  // Inversion belongs to the active filter, not to a particular selection.
+  // Changing labels or signals preserves it; clearing the filter resets it.
+  private setFilterSelection(next: Filter | null): void {
+    this.filter = next && this.filter?.inverted ? { ...next, inverted: true } : next;
+  }
+
+  toggleFilterInversion(): void {
+    if (this.filter === null) return;
+    const { inverted, ...selection } = this.filter;
+    this.filter = inverted ? selection : { ...selection, inverted: true };
   }
 
   // `f` is a quick toggle within one roadmap, not a saved preference: it does
   // not survive switching roadmaps (resetFilter) or a reload. Before restoring
-  // it, resolve it against the live roadmap: a label deleted or a signal
-  // resolved while it was off silently discards a now-useless memory instead
-  // of opening an empty view.
+  // it, evaluate it against the live roadmap. A useful inverted filter must
+  // both exclude and retain something; otherwise it is indistinguishable from
+  // no filter or opens an empty view while still disabling filtered actions.
   toggleRecentFilter(): void {
     if (!this.current || this.navigation.view === "recon") return;
     if (this.filter !== null) {
@@ -614,10 +626,18 @@ class AppState {
     }
     const recent = this.recentFilter;
     if (!recent) return;
-    const match = itemPredicate(recent, this.dependencyConflictItemIds());
+    const conflicts = this.dependencyConflictItemIds();
+    const match = itemPredicate(recent, conflicts);
     if (match === null || this.countItems(match) === 0) {
       this.recentFilter = null;
       return;
+    }
+    if (recent.inverted) {
+      const positive = itemPredicate({ ...recent, inverted: false }, conflicts);
+      if (positive === null || this.countItems(positive) === 0) {
+        this.recentFilter = null;
+        return;
+      }
     }
     this.filter = recent;
     this.notify();
@@ -642,14 +662,13 @@ class AppState {
     const next = current.includes(label)
       ? current.filter((l) => l !== label)
       : [...current, label];
-    this.filter = next.length > 0 ? { kind: "labels", labels: next } : null;
+    this.setFilterSelection(next.length > 0 ? { kind: "labels", labels: next } : null);
   }
 
-  // isolateFilterLabel drops the rest of the selection for this one label (the
-  // filter menu's Alt-click). Like isolateLane it only narrows; "Show all items"
-  // is the way back.
+  // isolateFilterLabel selects only this label (the filter menu's Alt-click),
+  // keeping inversion. "Show all items" clears the filter instead.
   isolateFilterLabel(label: string): void {
-    this.filter = { kind: "labels", labels: [label] };
+    this.setFilterSelection({ kind: "labels", labels: [label] });
   }
 
   findMilestone(id: number): MilestoneLocation | null {

@@ -61,6 +61,44 @@ test("label filtering keeps direct matches and matching labels combine as OR", (
   ]);
 });
 
+test("inverted label filters match neither selected label, including unlabeled items", () => {
+  const filter: Filter = { kind: "labels", labels: ["needs-refinement", "refined"], inverted: true };
+  const items = [
+    item(1, ["needs-refinement"]),
+    item(2, ["refined", "@team"]),
+    item(3, ["needs-refinement", "refined"]),
+    item(4, ["@team"]),
+    item(5),
+  ];
+  assert.deepEqual(ids(filterItems(items, match(filter))), [[4, []], [5, []]]);
+});
+
+test("inversion applies before retaining parent breadcrumbs", () => {
+  const parent = item(1, ["refined"], false, [item(2), item(3, ["refined"])]);
+  const pred = match({ kind: "labels", labels: ["refined"], inverted: true })!;
+  assert.deepEqual(ids(filterItems([parent], pred)), [[1, [2]]]);
+  assert.equal(pred(parent), false);
+  assert.equal(parent.children.length, 2);
+});
+
+test("each signal filter can be inverted independently", () => {
+  const items = [item(1, [], true), item(2, [], false, [], true), item(3)];
+  for (const [kind, expected] of [
+    ["flagged", [2, 3]],
+    ["atRisk", [1, 3]],
+    ["dependencyConflicts", [1, 2]],
+  ] as const) {
+    const pred = itemPredicate({ kind, inverted: true }, new Set([3]))!;
+    assert.deepEqual(items.filter(pred).map(i => i.id), expected, kind);
+  }
+});
+
+test("an inverted filter with no positive matches matches every item", () => {
+  assert.equal(match({ kind: "labels", labels: ["gone"], inverted: true })!(item(1)), true);
+  assert.equal(match({ kind: "flagged", inverted: true })!(item(1)), true);
+  assert.equal(match({ kind: "dependencyConflicts", inverted: true })!(item(1)), true);
+});
+
 test("a matching child keeps its non-matching parent and filters its siblings", () => {
   const matching = item(2, ["keep"]);
   const hidden = item(3, ["other"]);
@@ -132,6 +170,8 @@ test("item moves pause while filtering but timeline resizing remains available",
   assert.equal(canDrag(null, "resize"), true);
   assert.equal(canDrag(filter, "move"), false);
   assert.equal(canDrag(filter, "resize"), true);
+  assert.equal(canDrag({ ...filter, inverted: true }, "move"), false);
+  assert.equal(canDrag({ ...filter, inverted: true }, "resize"), true);
 });
 
 test("hasMatch sees a lane's own match, a child's match, and neither", () => {

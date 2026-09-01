@@ -116,6 +116,40 @@ test("toggling labels builds and empties the filter", () => {
   assert.equal(state.isFilterLabel("b"), false);
 });
 
+test("inversion follows label and signal selections, and clears with the last selection", () => {
+  state.resetFilter();
+  state.toggleFilterInversion();
+  assert.equal(state.filter, null, "no selection cannot be inverted");
+
+  state.toggleFilterLabel("a");
+  const candidate = item(1, ["a"], false);
+  assert.equal(state.matchesFilter(candidate), true);
+  state.toggleFilterInversion();
+  assert.equal(state.matchesFilter(candidate), false, "inversion invalidates the projection");
+  state.toggleFilterLabel("b");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["a", "b"], inverted: true });
+  state.isolateFilterLabel("b");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["b"], inverted: true });
+
+  state.toggleFilterSignal("flagged");
+  assert.deepEqual(state.filter, { kind: "flagged", inverted: true });
+  state.toggleFilterSignal("atRisk");
+  assert.deepEqual(state.filter, { kind: "atRisk", inverted: true });
+  state.toggleFilterLabel("b");
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["b"], inverted: true });
+
+  state.toggleFilterInversion();
+  assert.deepEqual(state.filter, { kind: "labels", labels: ["b"] });
+  state.toggleFilterInversion();
+  state.toggleFilterLabel("b");
+  assert.equal(state.filter, null);
+  state.toggleFilterSignal("flagged");
+  assert.deepEqual(state.filter, { kind: "flagged" }, "clearing resets inversion");
+  state.toggleFilterInversion();
+  state.toggleFilterSignal("flagged");
+  assert.equal(state.filter, null, "toggling the selected inverted signal clears it");
+});
+
 // Labels and the flag are one exclusive field, so picking either drops the other.
 test("picking a label replaces a flag filter", () => {
   state.filter = { kind: "flagged" };
@@ -185,6 +219,36 @@ test("the recent filter is session-only, singular, and discarded when stale", ()
   tagged.flagged = true;
   state.toggleRecentFilter();
   assert.equal(state.filter, null, "a rejected filter is forgotten, not merely skipped");
+});
+
+test("the recent filter remembers inversion and evaluates the negated matches", () => {
+  const untouched = item(1, [], false);
+  const refined = item(2, ["refined"], false);
+  state.current = roadmap([untouched, refined]);
+  const filter = { kind: "labels", labels: ["refined"], inverted: true } as const;
+  state.filter = filter;
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null);
+  state.toggleRecentFilter();
+  assert.deepEqual(state.filter, filter, "a filter that divides the roadmap is restored");
+
+  state.toggleRecentFilter();
+  refined.labels = [];
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null, "nothing excluded makes an inverted filter stale");
+
+  untouched.labels = ["refined"];
+  refined.labels = ["refined"];
+  state.filter = filter;
+  state.toggleRecentFilter();
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null, "a negated filter that would hide everything is discarded too");
+
+  state.filter = filter;
+  state.resetFilter();
+  untouched.labels = ["refined"];
+  state.toggleRecentFilter();
+  assert.equal(state.filter, null, "leaving the roadmap forgets inversion with the filter");
 });
 
 // resetFilter is selectRoadmap's leaving-this-roadmap call. A label filter

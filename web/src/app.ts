@@ -939,19 +939,24 @@ function text(s: string): HTMLElement {
 // all other non-matches are hidden. "Show all items" clears the filter.
 // Rebuilt after each pick so the checks stay current while the menu is open.
 //
-// Labels are a multi-select: a click toggles one, and several picked labels
-// match as OR. Alt-click is the shortcut back to a single label (isolateClick),
-// which is what a plain click used to do — so the eye menu and this one now
-// read the same way: click toggles, Alt-click isolates.
+// Labels are a multi-select: a click toggles one, Alt-click isolates it, and
+// several picks match as OR. Inversion negates that whole match.
 //
 // The button's tooltip, which states the active filter while the menu is
 // closed.
 function filterTitle(): string {
-  if (state.filter === null) return "Filter items by labels, flags, risk or dependency conflicts";
-  if (state.filter.kind === "flagged") return "Filter: flagged items";
-  if (state.filter.kind === "atRisk") return "Filter: at-risk items";
-  if (state.filter.kind === "dependencyConflicts") return "Filter: items in conflict";
-  return `Filter: ${state.filter.labels.join(", ")}`;
+  const filter = state.filter;
+  if (filter === null) return "Filter items by labels, flags, risk or dependency conflicts";
+  if (filter.kind === "flagged") {
+    return filter.inverted ? "Filter: items not flagged" : "Filter: flagged items";
+  }
+  if (filter.kind === "atRisk") {
+    return filter.inverted ? "Filter: items not at risk" : "Filter: at-risk items";
+  }
+  if (filter.kind === "dependencyConflicts") {
+    return filter.inverted ? "Filter: items not in conflict" : "Filter: items in conflict";
+  }
+  return `Filter: ${filter.inverted ? "without any of: " : ""}${filter.labels.join(", ")}`;
 }
 
 // Signals are pinned above the labels rather than sorted among them: they
@@ -960,10 +965,16 @@ function filterTitle(): string {
 // signal, never a mix.
 function buildFilterMenu(pop: HTMLElement): void {
   pop.replaceChildren();
-  const labels = state.allLabels();
+  // Active selections remain editable even after their last use is removed.
+  const selectedLabels = state.filter?.kind === "labels" ? state.filter.labels : [];
+  const labels = [...new Set([...state.allLabels(), ...selectedLabels])]
+    .sort((a, b) => a.localeCompare(b));
   const flagged = state.flaggedCount();
   const atRisk = state.atRiskCount();
   const dependencyConflicts = state.dependencyConflictCount();
+  const showFlagged = flagged > 0 || state.filter?.kind === "flagged";
+  const showAtRisk = atRisk > 0 || state.filter?.kind === "atRisk";
+  const showConflicts = dependencyConflicts > 0 || state.filter?.kind === "dependencyConflicts";
 
   const row = (
     labelText: string,
@@ -973,6 +984,7 @@ function buildFilterMenu(pop: HTMLElement): void {
   ): HTMLButtonElement => {
     const b = document.createElement("button");
     b.className = active ? "menu-item is-active" : "menu-item";
+    b.setAttribute("aria-pressed", String(active));
     const mark = document.createElement("span");
     mark.className = "menu-check";
     if (active) mark.append(icons.check(14));
@@ -990,17 +1002,7 @@ function buildFilterMenu(pop: HTMLElement): void {
     return b;
   };
 
-  if (labels.length === 0 && flagged === 0 && atRisk === 0 && dependencyConflicts === 0) {
-    // The last matching signal can be removed from the panel while its filter
-    // remains active. Keep the exit visible even though there are no longer
-    // any filter candidates to list.
-    if (state.filter !== null) {
-      pop.append(
-        row("Show all items", false, () => {
-          state.filter = null;
-        }),
-      );
-    }
+  if (labels.length === 0 && !showFlagged && !showAtRisk && !showConflicts) {
     const empty = document.createElement("div");
     empty.className = "menu-empty";
     empty.textContent = "No labels, flags, at-risk items or dependency conflicts to filter by yet.";
@@ -1013,6 +1015,11 @@ function buildFilterMenu(pop: HTMLElement): void {
       state.filter = null;
     }),
   );
+  const invert = row("Invert filter", !!state.filter?.inverted, () => state.toggleFilterInversion());
+  invert.disabled = state.filter === null;
+  invert.title = "Show items that do not match the selected labels or signal";
+  pop.append(invert, menuSeparator());
+
   const signalRow = (text: string, kind: SignalFilterKind, icon: Node): HTMLButtonElement => {
     const active = state.filter?.kind === kind;
     return row(
@@ -1022,11 +1029,11 @@ function buildFilterMenu(pop: HTMLElement): void {
       icon,
     );
   };
-  if (flagged > 0) pop.append(signalRow(`Flagged (${flagged})`, "flagged", icons.flag(14)));
-  if (atRisk > 0) {
+  if (showFlagged) pop.append(signalRow(`Flagged (${flagged})`, "flagged", icons.flag(14)));
+  if (showAtRisk) {
     pop.append(signalRow(`At risk (${atRisk})`, "atRisk", icons.alertTriangle(14)));
   }
-  if (dependencyConflicts > 0) {
+  if (showConflicts) {
     // "In conflict", not "Conflicts": the count is items, like the two rows
     // above it, and one bad edge puts both of its ends in the list.
     pop.append(
@@ -1037,7 +1044,7 @@ function buildFilterMenu(pop: HTMLElement): void {
       ),
     );
   }
-  if ((flagged > 0 || atRisk > 0 || dependencyConflicts > 0) && labels.length > 0) {
+  if ((showFlagged || showAtRisk || showConflicts) && labels.length > 0) {
     pop.append(menuSeparator());
   }
   for (const l of labels) {

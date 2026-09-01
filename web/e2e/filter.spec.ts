@@ -52,6 +52,9 @@ function row(page: Page, itemId: number) {
 async function open(page: Page, view: "timeline" | "wbs"): Promise<void> {
   await page.addInitScript((v) => localStorage.setItem("roadie.view", v), view);
   await page.goto(`/?roadmap=${seeded.roadmapId}`);
+  // The document can finish loading before the roadmap request does.
+  const first = seeded.items[0]!.id;
+  await expect(view === "timeline" ? bar(page, first) : row(page, first)).toBeVisible();
 }
 
 test("filtering removes non-matching bars from the timeline", async ({ page, request }) => {
@@ -141,6 +144,11 @@ test("a context with no items says nothing about filters", async ({ page, reques
     await page.goto(`/?roadmap=${empty.roadmapId}`);
     await expect(page.locator("#add-lane")).toBeVisible(); // the chart has rendered
     await expect(page.locator(".lanes-hint")).toHaveCount(0);
+    await page.locator("#filter-menu").click();
+    const menu = page.locator("#filter-pop");
+    await expect(menu).toContainText("No labels, flags, at-risk items or dependency conflicts to filter by yet.");
+    await expect(menu.getByRole("button")).toHaveCount(0);
+    await expect(menu.locator(".menu-sep")).toHaveCount(0);
   } finally {
     await purgeRoadmap(request, empty.roadmapId);
   }
@@ -156,6 +164,75 @@ test("filtering removes non-matching rows from the WBS", async ({ page, request 
   await expect(row(page, seeded.items[0]!.id)).toHaveCount(0);
   await expect(row(page, childId)).toHaveCount(0);
 });
+
+for (const view of ["timeline", "wbs"] as const) {
+  test(`inverting label picks shows unclassified items in ${view}`, async ({ page, request }) => {
+    const alpha = seeded.items[0]!.id;
+    const beta = seeded.items[1]!.id;
+    const gamma = await addItem(request, seeded.laneId, "Gamma");
+    for (const [id, label] of [[alpha, "needs-refinement"], [beta, "refined"], [gamma, "@team"]] as const) {
+      const res = await request.patch(`/api/items/${id}`, { data: { labels: [label] } });
+      expect(res.ok()).toBe(true);
+    }
+    await open(page, view);
+    const entity = (id: number) => view === "timeline" ? bar(page, id) : row(page, id);
+
+    await page.locator("#filter-menu").click();
+    const menu = page.locator("#filter-pop");
+    const invert = menu.getByRole("button", { name: "Invert filter", exact: true });
+    await expect(invert).toBeDisabled();
+    await menu.getByRole("button", { name: "needs-refinement", exact: true }).click();
+    await menu.getByRole("button", { name: "refined", exact: true }).click();
+    await invert.click();
+    await expect(invert).toHaveAttribute("aria-pressed", "true");
+    await page.locator("#filter-menu").click();
+
+    await expect(entity(alpha)).toBeVisible(); // the child's breadcrumb
+    await expect(entity(childId)).toBeVisible(); // no labels
+    await expect(entity(gamma)).toBeVisible(); // unrelated label
+    await expect(entity(beta)).toHaveCount(0);
+    await expect(page.locator("#filter-menu")).toHaveAttribute("title", /without any of: needs-refinement, refined/);
+
+    await page.keyboard.press("f");
+    await expect(entity(beta)).toBeVisible();
+    await page.keyboard.press("f");
+    await expect(entity(beta)).toHaveCount(0);
+
+    await pickFilter(page, "Show all items");
+    await expect(entity(beta)).toBeVisible();
+    await page.locator("#filter-menu").click();
+    await expect(invert).toBeDisabled();
+    await expect(invert).toHaveAttribute("aria-pressed", "false");
+  });
+}
+
+for (const kind of ["signal", "label"] as const) {
+  test(`an active ${kind} remains invertible after its last use is removed`, async ({ page, request }) => {
+    const alpha = seeded.items[0]!.id;
+    const data = kind === "signal" ? { flagged: true } : { labels: ["refined"] };
+    const res = await request.patch(`/api/items/${alpha}`, { data });
+    expect(res.ok()).toBe(true);
+    await open(page, "timeline");
+    await bar(page, alpha).click();
+    await pickFilter(page, kind === "signal" ? "Flagged (1)" : "refined");
+    const saved = page.waitForResponse(
+      res => res.url().endsWith(`/api/items/${alpha}`) && res.request().method() === "PATCH",
+    );
+    await page.locator(kind === "signal" ? "#panel .flag-btn" : "#panel .label-x").click();
+    await saved;
+    await expect(bar(page, alpha)).toHaveCount(0);
+
+    await page.locator("#filter-menu").click();
+    const name = kind === "signal" ? "Flagged (0)" : "refined";
+    await expect(page.locator("#filter-pop").getByRole("button", { name, exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Invert filter", exact: true }).click();
+    await page.locator("#filter-menu").click();
+    await expect(bar(page, alpha)).toBeVisible();
+    await expect(bar(page, seeded.items[1]!.id)).toBeVisible();
+    await expect(bar(page, childId)).toBeVisible();
+  });
+}
 
 // The one non-match that survives, in both views: a parent is kept when a child
 // matches, because a bare matching child would otherwise appear with nothing
