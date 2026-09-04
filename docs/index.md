@@ -13,6 +13,7 @@ that remain useful at scale.
 ## Start here
 
 If you are new to Roadie, begin with [Key concepts](concepts.md), then read
+[Building a useful roadmap](building-a-roadmap.md) and
 [Managing roadmaps](managing-roadmaps.md).
 
 The remaining guides cover particular parts of Roadie:

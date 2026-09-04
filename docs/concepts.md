@@ -25,8 +25,9 @@ Roadie.
 
 ## Items and child items
 
-An **item** is a result, capability, undertaking, or other meaningful part of
-the plan. It has:
+An **item** is a meaningful result that takes time to achieve and matters to the
+wider plan. It has a recognizable finish, and its timing, priority, or
+dependencies deserve separate attention. Each item has:
 
 - a title and description;
 - an inclusive start and end date;
@@ -40,6 +41,8 @@ decomposition. Child items have their own dates and attributes. The hierarchy
 stops there: a child item cannot have children of its own. This is deliberate:
 deeper hierarchies tend to turn a roadmap into a nested task tracker, obscuring
 the outcomes and relationships the roadmap is meant to communicate.
+
+→ [Building a useful roadmap](building-a-roadmap.md)
 
 [![A parent item expanded to show three child items, with priorities, an external reference, a dependency, and an at-risk marker.](assets/roadie-item-with-children.png)](assets/roadie-item-with-children.png)
 
