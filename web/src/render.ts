@@ -136,11 +136,16 @@ export function renderChart(container: HTMLElement): void {
     const hint = div("lanes-hint");
     hint.textContent = "All contexts are hidden — use the eye menu to show them.";
     lanesEl.append(hint);
-  } else if (state.filter !== null && projection.drawnItemIds.size === 0) {
+  } else if (
+    state.filter !== null &&
+    projection.drawnItemIds.size === 0 &&
+    projection.drawnMilestoneIds.size === 0
+  ) {
     // Filtering removes non-matches outright, so a filter that matches nothing
     // leaves empty contexts that would otherwise read as lost data.
     const hint = div("lanes-hint");
-    hint.textContent = "No items match this filter — use the filter menu to change or clear it.";
+    hint.textContent =
+      "No items or milestones match this filter — use the filter menu to change or clear it.";
     lanesEl.append(hint);
   }
 
@@ -317,10 +322,6 @@ function renderLane(lane: LaneFull, chartW: number): HTMLElement {
   return laneEl;
 }
 
-// Milestones are never removed by the filter, here or in the WBS. They carry
-// neither labels nor a flag, so they could never match one — they are the
-// chart's landmarks, not candidates that lost. Fading them took the calendar
-// anchors away exactly when a filter is on and the eye needs them most.
 function renderMilestoneLine(m: Milestone): HTMLElement {
   const line = div("milestone-line");
   line.style.left = `${xOf(scale, dayOf(m.date))}px`;
@@ -369,7 +370,7 @@ function renderBlock(block: PlacedBlock): HTMLElement {
   if (state.filter !== null) bar.classList.add("move-disabled");
   // The only non-match that survives filtering is the parent of a matching
   // child. It stays readable as hierarchy, but recedes behind the result.
-  if (!state.matchesFilter(item)) bar.classList.add("dimmed");
+  if (!state.matchesItem(item)) bar.classList.add("dimmed");
   bar.dataset.itemId = String(item.id);
   bar.title = item.title;
   fillBar(
@@ -469,7 +470,7 @@ export function disclosure(item: ItemFull, collapsed: boolean): HTMLElement {
 // link icon re-enables clicks, via CSS).
 function barOutside(item: Item, geom: BarGeom, lead: HTMLElement | null = null): HTMLElement {
   const lbl = div("bar-outside");
-  if (!state.matchesFilter(item)) lbl.classList.add("dimmed");
+  if (!state.matchesItem(item)) lbl.classList.add("dimmed");
   lbl.style.left = `${geom.left + OUTSIDE_GAP}px`;
   lbl.style.top = `${geom.top}px`;
   lbl.style.height = `${geom.height}px`;

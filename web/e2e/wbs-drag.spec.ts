@@ -108,7 +108,7 @@ test("filtering blocks WBS item rearrangement", async ({ page, request }) => {
   // never moved: had the blocked drag landed, the model would read
   // ["Beta", "Gamma", "Alpha"] here and this same gesture would end
   // ["Gamma", "Alpha", "Beta"] instead.
-  await pickFilter(page, "Show all items");
+  await pickFilter(page, "Show all");
   await expect(row(page, beta!.id)).toBeVisible();
   const g2 = (await row(page, gamma!.id).boundingBox())!;
   await dragTo(page, beta!.id, g2.x + g2.width / 2, g2.y + g2.height + 4);

@@ -10,6 +10,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   addLane,
+  addMilestone,
   laneItems,
   markFlagged,
   purgeRoadmap,
@@ -219,6 +220,10 @@ async function placeNeighbour(request: Parameters<typeof setItemDates>[0]): Prom
   );
 }
 
+async function placeMilestone(request: Parameters<typeof setItemDates>[0]): Promise<void> {
+  await addMilestone(request, seeded.laneId, "Target", iso(addDays(monday, 40)));
+}
+
 test("a resize snaps to a neighbouring bar's edge", async ({ page, request }) => {
   await placeNeighbour(request);
   await openTimeline(page, "day");
@@ -238,6 +243,24 @@ test("a resize does not snap to a bar the filter removed", async ({ page, reques
   // Same gesture as the control. With Beta off the chart its edge is no longer
   // a target, so the edge stays where the pointer put it: monday+38, one day
   // short of the snapped result above.
+  await resizeBy(page, seeded.items[0]!.id, 30);
+  await expect.poll(() => dates(request)).toEqual([iso(monday), iso(addDays(monday, 37))]);
+});
+
+test("a resize snaps to a milestone", async ({ page, request }) => {
+  await placeMilestone(request);
+  await openTimeline(page, "day");
+
+  await resizeBy(page, seeded.items[0]!.id, 30);
+  await expect.poll(() => dates(request)).toEqual([iso(monday), iso(addDays(monday, 39))]);
+});
+
+test("a resize does not snap to a milestone the filter removed", async ({ page, request }) => {
+  await placeMilestone(request);
+  await markFlagged(request, seeded.items[0]!.id);
+  await openTimeline(page, "day");
+  await pickFilter(page, /^Flagged \(/);
+
   await resizeBy(page, seeded.items[0]!.id, 30);
   await expect.poll(() => dates(request)).toEqual([iso(monday), iso(addDays(monday, 37))]);
 });

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { state } from "./state";
-import type { ItemFull, LaneFull, RoadmapFull } from "./types";
+import type { ItemFull, LaneFull, Milestone, RoadmapFull } from "./types";
 
 // Minimal fixtures: scalar filters read labels/signals; dependency conflicts
 // additionally read the dates below. Every other field gets a throwaway value.
@@ -27,6 +27,18 @@ function item(
     tentative: false,
     atRisk,
     children,
+  };
+}
+
+function milestone(id: number, laneId = 1): Milestone {
+  return {
+    id,
+    uid: `uid-m${id}`,
+    laneId,
+    title: `m${id}`,
+    description: "",
+    date: "2026-01-02",
+    tentative: false,
   };
 }
 
@@ -73,27 +85,29 @@ function roadmap(items: ItemFull[]): RoadmapFull {
   return roadmapOf([lane(1, items)]);
 }
 
-test("no filter matches every item", () => {
+test("no filter matches every entity", () => {
   state.filter = null;
-  assert.equal(state.matchesFilter(item(1, [], false)), true);
-  assert.equal(state.matchesFilter(item(2, ["a"], true)), true);
+  assert.equal(state.matchesItem(item(1, [], false)), true);
+  assert.equal(state.matchesItem(item(2, ["a"], true)), true);
+  assert.equal(state.matchesMilestone(milestone(3)), true);
 });
 
-test("label filter matches items carrying that label", () => {
+test("label filter matches items carrying that label and excludes milestones", () => {
   state.filter = { kind: "labels", labels: ["a"] };
-  assert.equal(state.matchesFilter(item(1, ["a", "b"], false)), true);
-  assert.equal(state.matchesFilter(item(2, ["b"], false)), false);
+  assert.equal(state.matchesItem(item(1, ["a", "b"], false)), true);
+  assert.equal(state.matchesItem(item(2, ["b"], false)), false);
   // A flagged item is not exempt: the two filter kinds are independent.
-  assert.equal(state.matchesFilter(item(3, [], true)), false);
+  assert.equal(state.matchesItem(item(3, [], true)), false);
+  assert.equal(state.matchesMilestone(milestone(4)), false);
 });
 
 // Several picked labels match as OR: adding one widens the filter result.
 test("multi-label filter excludes items carrying none of the labels", () => {
   state.filter = { kind: "labels", labels: ["a", "b"] };
-  assert.equal(state.matchesFilter(item(1, ["a"], false)), true);
-  assert.equal(state.matchesFilter(item(2, ["b", "c"], false)), true);
-  assert.equal(state.matchesFilter(item(3, ["c"], false)), false);
-  assert.equal(state.matchesFilter(item(4, [], false)), false);
+  assert.equal(state.matchesItem(item(1, ["a"], false)), true);
+  assert.equal(state.matchesItem(item(2, ["b", "c"], false)), true);
+  assert.equal(state.matchesItem(item(3, ["c"], false)), false);
+  assert.equal(state.matchesItem(item(4, [], false)), false);
 });
 
 test("toggling labels builds and empties the filter", () => {
@@ -104,7 +118,7 @@ test("toggling labels builds and empties the filter", () => {
   assert.deepEqual(state.filter, { kind: "labels", labels: ["a", "b"] });
   assert.equal(state.isFilterLabel("b"), true);
 
-  // Alt-click narrows to one label, never back out — "Show all items" does that.
+  // Alt-click narrows to one label, never back out — "Show all" does that.
   state.isolateFilterLabel("b");
   assert.deepEqual(state.filter, { kind: "labels", labels: ["b"] });
   state.isolateFilterLabel("b");
@@ -123,9 +137,9 @@ test("inversion follows label and signal selections, and clears with the last se
 
   state.toggleFilterLabel("a");
   const candidate = item(1, ["a"], false);
-  assert.equal(state.matchesFilter(candidate), true);
+  assert.equal(state.matchesItem(candidate), true);
   state.toggleFilterInversion();
-  assert.equal(state.matchesFilter(candidate), false, "inversion invalidates the projection");
+  assert.equal(state.matchesItem(candidate), false, "inversion invalidates the projection");
   state.toggleFilterLabel("b");
   assert.deepEqual(state.filter, { kind: "labels", labels: ["a", "b"], inverted: true });
   state.isolateFilterLabel("b");
@@ -159,28 +173,28 @@ test("picking a label replaces a flag filter", () => {
 
 test("flag filter excludes unflagged items regardless of labels", () => {
   state.filter = { kind: "flagged" };
-  assert.equal(state.matchesFilter(item(1, [], true)), true);
-  assert.equal(state.matchesFilter(item(2, ["a"], false)), false);
+  assert.equal(state.matchesItem(item(1, [], true)), true);
+  assert.equal(state.matchesItem(item(2, ["a"], false)), false);
 });
 
 // A user's own label literally named "flagged" must not act as the flag —
 // the whole reason the filter target is a tagged union and not a string.
 test("a label named 'flagged' is not the flag", () => {
   state.filter = { kind: "flagged" };
-  assert.equal(state.matchesFilter(item(1, ["flagged"], false)), false);
+  assert.equal(state.matchesItem(item(1, ["flagged"], false)), false);
   state.filter = { kind: "labels", labels: ["flagged"] };
-  assert.equal(state.matchesFilter(item(2, ["flagged"], false)), true);
-  assert.equal(state.matchesFilter(item(3, [], true)), false);
+  assert.equal(state.matchesItem(item(2, ["flagged"], false)), true);
+  assert.equal(state.matchesItem(item(3, [], true)), false);
 });
 
 test("at-risk filter excludes items that are not at risk, flagged or not", () => {
   state.filter = { kind: "atRisk" };
-  assert.equal(state.matchesFilter(item(1, [], false, [], true)), true);
-  assert.equal(state.matchesFilter(item(2, ["a"], false, [], false)), false);
+  assert.equal(state.matchesItem(item(1, [], false, [], true)), true);
+  assert.equal(state.matchesItem(item(2, ["a"], false, [], false)), false);
   // The two signals are independent: a flagged item is not spared, and an
   // at-risk one is included even when it lacks the flag.
-  assert.equal(state.matchesFilter(item(3, [], true, [], false)), false);
-  assert.equal(state.matchesFilter(item(4, [], true, [], true)), true);
+  assert.equal(state.matchesItem(item(3, [], true, [], false)), false);
+  assert.equal(state.matchesItem(item(4, [], true, [], true)), true);
 });
 
 // The filter holds labels or one signal, never a mix, so each pick drops the other.
@@ -268,30 +282,39 @@ test("switching roadmaps forgets the recent filter, even by label-name coinciden
   assert.equal(state.filter, null, "no memory survived the switch to reapply");
 });
 
-test("dependency-conflict filter derives both item endpoints and refreshes with dates", () => {
+test("dependency-conflict filter derives item and milestone endpoints and refreshes with dates", () => {
   const prerequisite = item(1, [], false);
   prerequisite.endDate = "2026-02-01";
   const dependent = item(2, [], false);
   const unrelated = item(3, [], false);
   state.current = roadmap([prerequisite, dependent, unrelated]);
+  const conflictedMilestone = milestone(10);
+  state.current.lanes[0]!.milestones.push(conflictedMilestone);
   state.current.dependencies = [
     {
       id: 1,
       from: { kind: "item", id: prerequisite.id },
       to: { kind: "item", id: dependent.id },
     },
+    {
+      id: 2,
+      from: { kind: "item", id: prerequisite.id },
+      to: { kind: "milestone", id: conflictedMilestone.id },
+    },
   ];
 
-  assert.equal(state.dependencyConflictCount(), 2);
+  assert.equal(state.dependencyConflictCount(), 3);
   state.toggleFilterSignal("dependencyConflicts");
-  assert.equal(state.matchesFilter(prerequisite), true);
-  assert.equal(state.matchesFilter(dependent), true);
-  assert.equal(state.matchesFilter(unrelated), false);
+  assert.equal(state.matchesItem(prerequisite), true);
+  assert.equal(state.matchesItem(dependent), true);
+  assert.equal(state.matchesMilestone(conflictedMilestone), true);
+  assert.equal(state.matchesItem(unrelated), false);
 
   prerequisite.endDate = dependent.endDate;
   state.notify();
   assert.equal(state.dependencyConflictCount(), 0);
-  assert.equal(state.matchesFilter(prerequisite), false);
+  assert.equal(state.matchesItem(prerequisite), false);
+  assert.equal(state.matchesMilestone(conflictedMilestone), false);
   state.filter = null;
 });
 
@@ -300,7 +323,7 @@ test("jumpTo clears filter for a non-matching item, including a retained parent"
   state.current = roadmap([parent]);
   state.filter = { kind: "labels", labels: ["keep"] };
 
-  assert.equal(state.matchesFilter(parent), false, "the parent is only a hierarchy breadcrumb");
+  assert.equal(state.matchesItem(parent), false, "the parent is only a hierarchy breadcrumb");
   assert.equal(state.jumpTo("item", parent.id), true);
   assert.equal(state.filter, null);
   assert.equal(state.selectedItemId, parent.id);
@@ -314,6 +337,19 @@ test("jumpTo preserves filter for a direct match", () => {
   assert.equal(state.jumpTo("item", matching.id), true);
   assert.deepEqual(state.filter, { kind: "labels", labels: ["keep"] });
   assert.equal(state.selectedItemId, matching.id);
+});
+
+test("jumpTo clears a filter that excludes a milestone", () => {
+  const only = lane(1);
+  const ms = milestone(10);
+  only.milestones.push(ms);
+  state.current = roadmapOf([only]);
+  state.filter = { kind: "labels", labels: ["keep"] };
+
+  assert.equal(state.matchesMilestone(ms), false);
+  assert.equal(state.jumpTo("milestone", ms.id), true);
+  assert.equal(state.filter, null);
+  assert.equal(state.selectedMilestoneId, ms.id);
 });
 
 test("an active filter forces every parent open without losing the saved fold", () => {
@@ -355,6 +391,20 @@ test("a full render drops a selected item that stops matching the active filter"
   state.notify();
 
   assert.equal(state.selectedItemId, null);
+});
+
+test("a full render drops a milestone excluded by the active filter", () => {
+  const only = lane(1, [item(1, ["keep"], false)]);
+  const ms = milestone(10);
+  only.milestones.push(ms);
+  state.current = roadmapOf([only]);
+  state.selectedMilestoneId = ms.id;
+  state.filter = { kind: "labels", labels: ["keep"] };
+
+  state.notify();
+
+  assert.equal(state.selectedMilestoneId, null);
+  assert.deepEqual([...state.projection().drawnMilestoneIds], []);
 });
 
 test("hiding contexts drops their item and milestone selections", () => {

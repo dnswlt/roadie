@@ -1,13 +1,14 @@
 // The chart projection: what the timeline and the WBS actually draw, which is
 // the roadmap minus what three things hide — a hidden context, a folded
-// parent, an active item filter. It is derived once (state.projection()) and
+// parent, an active filter. It is derived once (state.projection()) and
 // handed out; a reader that rebuilds the rule by hand is a copy that drifts.
 //
 // Both views consume the same projected lane, so hierarchy behaves identically
 // in each: direct matches stay, a non-matching parent stays only when one of
 // its children matches, everything else disappears.
 
-import type { Item, ItemFull, LaneFull } from "./types";
+import { refKey } from "./deps-graph";
+import type { Item, ItemFull, LaneFull, Milestone } from "./types";
 
 // What the filter menu is filtering to: a set of labels, or one built-in
 // attention signal. A tagged union keeps a user's label literally named
@@ -23,35 +24,67 @@ export type Filter = { readonly inverted?: boolean } & (
 
 export type SignalFilterKind = Exclude<Filter["kind"], "labels">;
 
-// Whether one item matches the filter, ignoring the breadcrumb rule. Null is
-// "no filter", so callers skip the work instead of running a predicate that
-// always says yes.
-export type ItemMatch = (item: Item) => boolean;
-
-// itemPredicate turns a Filter into that test. Conflict membership is the one
-// kind that cannot be read off the item, so it arrives as a set from the
-// dependency graph.
-export function itemPredicate(
-  filter: Filter | null,
-  conflictItemIds: ReadonlySet<number>,
-): ItemMatch | null {
-  if (filter === null) return null;
-  const match = positivePredicate(filter, conflictItemIds);
-  // Invert the combined match before projection retains parent breadcrumbs.
-  return filter.inverted ? (item) => !match(item) : match;
+// What the filter can ask about anything the chart draws. Milestones carry no
+// labels and no attention marks: they answer those item-only questions with
+// the empty answer rather than becoming a special case in every filter kind.
+export interface Filterable {
+  readonly key: string;
+  readonly labels: readonly string[];
+  readonly flagged: boolean;
+  readonly atRisk: boolean;
 }
 
-function positivePredicate(filter: Filter, conflictItemIds: ReadonlySet<number>): ItemMatch {
+export function itemFacts(item: Item): Filterable {
+  return {
+    key: refKey({ kind: "item", id: item.id }),
+    labels: item.labels,
+    flagged: item.flagged,
+    atRisk: item.atRisk,
+  };
+}
+
+export function milestoneFacts(milestone: Milestone): Filterable {
+  return {
+    key: refKey({ kind: "milestone", id: milestone.id }),
+    labels: [],
+    flagged: false,
+    atRisk: false,
+  };
+}
+
+// Whether one entity's filter facts match, ignoring the item breadcrumb rule.
+// Null is "no filter", so callers skip the work instead of running a predicate
+// that always says yes.
+export type FilterMatch = (entity: Filterable) => boolean;
+
+// filterPredicate turns a Filter into that test. Conflict membership is the
+// one fact derived outside an entity, so it arrives as qualified dependency
+// keys: item and milestone ids are separate id spaces.
+export function filterPredicate(
+  filter: Filter | null,
+  conflictEntityKeys: ReadonlySet<string>,
+): FilterMatch | null {
+  if (filter === null) return null;
+  const match = positivePredicate(filter, conflictEntityKeys);
+  // Invert the combined match before projection retains parent breadcrumbs.
+  return filter.inverted ? (entity) => !match(entity) : match;
+}
+
+function positivePredicate(
+  filter: Filter,
+  conflictEntityKeys: ReadonlySet<string>,
+): FilterMatch {
   switch (filter.kind) {
     case "flagged":
-      return (item) => item.flagged;
+      return (entity) => entity.flagged;
     case "atRisk":
-      return (item) => item.atRisk;
+      return (entity) => entity.atRisk;
     case "dependencyConflicts":
-      return (item) => conflictItemIds.has(item.id);
+      return (entity) => conflictEntityKeys.has(entity.key);
     case "labels":
       // Several label picks match as OR: adding a label widens the result.
-      return (item) => filter.labels.some((label) => item.labels.includes(label));
+      return (entity) =>
+        filter.labels.some((label) => entity.labels.includes(label));
   }
 }
 
@@ -73,35 +106,40 @@ export const DRAG_BLOCKED_HINT = "Clear the filter to rearrange items";
 // model: kept parents are shallow copies whose children contain only direct
 // matches. A child match retains its parent as the hierarchy breadcrumb even
 // when the parent is not itself a match.
-export function filterItems(items: ItemFull[], match: ItemMatch | null): ItemFull[] {
+export function filterItems(items: ItemFull[], match: FilterMatch | null): ItemFull[] {
   if (match === null) return items;
   const out: ItemFull[] = [];
   for (const item of items) {
-    const children = item.children.filter(match);
-    if (match(item) || children.length > 0) out.push({ ...item, children });
+    const children = item.children.filter((child) => match(itemFacts(child)));
+    if (match(itemFacts(item)) || children.length > 0) out.push({ ...item, children });
   }
   return out;
 }
 
-// filterLane deliberately never removes the lane itself. Milestones are not
-// item-filter candidates and remain as calendar landmarks; a lane with no
-// matching items therefore renders exactly like an otherwise empty lane.
-export function filterLane(lane: LaneFull, match: ItemMatch | null): LaneFull {
+// filterLane deliberately never removes the lane itself. A lane with no
+// matching entities therefore renders exactly like an otherwise empty lane.
+export function filterLane(lane: LaneFull, match: FilterMatch | null): LaneFull {
   if (match === null) return lane;
-  return { ...lane, items: filterItems(lane.items, match) };
+  return {
+    ...lane,
+    items: filterItems(lane.items, match),
+    milestones: lane.milestones.filter((milestone) => match(milestoneFacts(milestone))),
+  };
 }
 
-// What is on screen, in the two forms callers need: `lanes` to draw from, and
-// `drawnItemIds` to ask about one id.
+// What is on screen, in the forms callers need: `lanes` to draw from, and one
+// id set per entity kind for membership checks.
 //
-// They differ by folds. A folded parent's children stay in `lanes` — the WBS
-// needs them to know it has something to unfold, and the timeline's layout
-// drops them itself — but they are not drawn, so they are absent from
-// `drawnItemIds`, which is what selection, snapping and zoom respect.
+// A folded parent's children stay in `lanes` — the WBS needs them to know it
+// has something to unfold, and the timeline's layout drops them itself — but
+// they are absent from `drawnItemIds`, which selection and snapping respect.
+// Milestones have no hierarchy, so their set is exactly their projected ids.
 export interface Projection {
   lanes: LaneFull[];
   drawnItemIds: ReadonlySet<number>;
-  matches: ItemMatch;
+  drawnMilestoneIds: ReadonlySet<number>;
+  matchesItem: (item: Item) => boolean;
+  matchesMilestone: (milestone: Milestone) => boolean;
 }
 
 // `isFolded` is supplied rather than decided here: whether a fold is honoured
@@ -112,20 +150,31 @@ export function project(
   opts: {
     isLaneHidden: (laneId: number) => boolean;
     isFolded: (itemId: number) => boolean;
-    match: ItemMatch | null;
+    match: FilterMatch | null;
   },
 ): Projection {
   const out: LaneFull[] = [];
   const drawnItemIds = new Set<number>();
+  const drawnMilestoneIds = new Set<number>();
   for (const lane of lanes) {
     if (opts.isLaneHidden(lane.id)) continue;
     const projected = filterLane(lane, opts.match);
     out.push(projected);
+    for (const milestone of projected.milestones) drawnMilestoneIds.add(milestone.id);
     for (const item of projected.items) {
       drawnItemIds.add(item.id);
       if (opts.isFolded(item.id)) continue;
       for (const child of item.children) drawnItemIds.add(child.id);
     }
   }
-  return { lanes: out, drawnItemIds, matches: opts.match ?? (() => true) };
+  const match = opts.match;
+  return {
+    lanes: out,
+    drawnItemIds,
+    drawnMilestoneIds,
+    matchesItem: match ? (item) => match(itemFacts(item)) : () => true,
+    matchesMilestone: match
+      ? (milestone) => match(milestoneFacts(milestone))
+      : () => true,
+  };
 }

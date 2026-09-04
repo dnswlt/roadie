@@ -122,7 +122,7 @@ export const bindings: Binding[] = [
   {
     key: "f",
     label: "f",
-    description: "*Toggle* between Show all items and the most recently used filter.",
+    description: "*Toggle* between Show all and the most recently used filter.",
     run: () => state.toggleRecentFilter(),
   },
   {

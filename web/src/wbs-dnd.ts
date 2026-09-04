@@ -35,7 +35,7 @@ interface WbsDrag {
   dropLaneId: number;
   dropParentId: number | null;
   dropRank: number | null; // insertion index in the drop container; null = keep/append
-  moveSuppressed: boolean; // this move was disabled by the active item filter at pointer-down
+  moveSuppressed: boolean; // this move was disabled by the active filter at pointer-down
   suppressedDragRecognized: boolean; // crossed 4px; pointer-up must not synthesize a click
 }
 

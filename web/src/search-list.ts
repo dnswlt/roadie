@@ -34,9 +34,9 @@ export interface SearchListSpec {
   // part of the answer; off for the picker, whose narrow panel wants only the
   // candidates.
   showCount?: boolean;
-  // Mark item rows that do not directly match the active item filter. Global
-  // Find enables this because committing such a row clears that filter; the
-  // dependency picker does neither.
+  // Mark rows that do not directly match the active filter. Global Find enables
+  // this because committing such a row clears that filter; the dependency
+  // picker does neither.
   showFilterState?: boolean;
   // Drops candidates before counting and drawing. The picker excludes the
   // entity itself and everything already linked to it.
@@ -74,6 +74,15 @@ const TAG_TEXT: Record<Match["field"], string> = {
   context: "context",
 };
 
+function isOutsideFilter(m: Match): boolean {
+  if (m.kind === "item") {
+    const loc = state.findItem(m.id);
+    return loc !== null && !state.matchesItem(loc.item);
+  }
+  const loc = state.findMilestone(m.id);
+  return loc !== null && !state.matchesMilestone(loc.milestone);
+}
+
 function renderRow(
   m: Match,
   active: boolean,
@@ -108,12 +117,9 @@ function renderRow(
   const meta = document.createElement("span");
   meta.className = "find-meta";
   meta.textContent = `${m.laneName} · ${dateText(m)}`;
-  if (showFilterState && m.kind === "item") {
-    const loc = state.findItem(m.id);
-    if (loc && !state.matchesFilter(loc.item)) {
-      meta.append(document.createTextNode(" · outside filter"));
-      row.title = "Selecting this item clears the current filter";
-    }
+  if (showFilterState && isOutsideFilter(m)) {
+    meta.append(document.createTextNode(" · outside filter"));
+    row.title = "Selecting this result clears the current filter";
   }
   // A match in a hidden context is the case the browser's own find cannot
   // reach at all, so say so rather than letting the row look like any other.

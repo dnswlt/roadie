@@ -1,9 +1,12 @@
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
 import { analyzeDependencies, type DependencyAnalysis } from "./deps-graph";
 import {
-  itemPredicate,
+  filterPredicate,
+  itemFacts,
+  milestoneFacts,
   project,
   type Filter,
+  type FilterMatch,
   type Projection,
   type SignalFilterKind,
 } from "./filter";
@@ -121,9 +124,9 @@ class AppState {
   // an explicit edit does (see focusPanelTitle). Persisted in localStorage like
   // panelWidth (read at boot in app.ts).
   panelCollapsed = false;
-  // The item filter: when set, chart views show only matching items. A
+  // The roadmap filter: when set, chart views show only matching entities. A
   // transient "what's relevant right now" view, not persisted. Several labels
-  // can be picked at once (matching is OR — an item needs any one of them).
+  // can be picked at once (matching is OR — a label-bearing item needs any one).
   // Labels and each attention signal stay exclusive; inversion negates the
   // combined match, not the individual label picks.
   //
@@ -239,26 +242,25 @@ class AppState {
     return (this.proj ??= project(this.current?.lanes ?? [], {
       isLaneHidden: (id) => this.isLaneHidden(id),
       isFolded: (id) => this.rendersCollapsed(id),
-      match: itemPredicate(this.filter, this.dependencyConflictItemIds()),
+      match: filterPredicate(this.filter, this.dependencyConflictEntityKeys()),
     }));
   }
 
   // Selection is a subset of what is on screen: narrowing the view discards
   // what it removed, and widening never brings it back.
   //
-  // Milestones are never filtered, so only a hidden context or a vanished
-  // milestone takes one off screen. The WBS milestone fold is view-local — the
-  // timeline always draws milestones — so it drops its own selection as it
-  // folds (setMilestonesCollapsed) instead of being answered here.
+  // The WBS milestone fold is view-local — the timeline always draws projected
+  // milestones — so it drops its own selection as it folds
+  // (setMilestonesCollapsed) instead of being answered here.
   private pruneSelection(): void {
-    const drawn = this.projection().drawnItemIds;
+    const projection = this.projection();
     for (const id of [...this.selectedItemIds]) {
-      if (!drawn.has(id)) this.selectedItemIds.delete(id);
+      if (!projection.drawnItemIds.has(id)) this.selectedItemIds.delete(id);
     }
-    if (this.selectedMilestoneId !== null) {
-      const loc = this.findMilestone(this.selectedMilestoneId);
-      if (!loc || this.isLaneHidden(loc.lane.id)) this.selectedMilestoneId = null;
-    }
+    if (
+      this.selectedMilestoneId !== null &&
+      !projection.drawnMilestoneIds.has(this.selectedMilestoneId)
+    ) this.selectedMilestoneId = null;
   }
 
   // The narrower of the two invalidation scopes: selection-only changes,
@@ -541,8 +543,9 @@ class AppState {
     return null;
   }
 
-  // allLabels returns the distinct labels in use across the current roadmap,
-  // sorted — the source for the filter dropdown and the editor's autocomplete.
+  // allLabels returns the distinct item labels in use across the current
+  // roadmap, sorted — the source for the filter dropdown and the editor's
+  // autocomplete. Milestones have no label field.
   allLabels(): string[] {
     const set = new Set<string>();
     for (const lane of this.current?.lanes ?? []) {
@@ -567,6 +570,16 @@ class AppState {
     return n;
   }
 
+  private countEntities(match: FilterMatch): number {
+    let n = this.countItems((item) => match(itemFacts(item)));
+    for (const lane of this.current?.lanes ?? []) {
+      for (const milestone of lane.milestones) {
+        if (match(milestoneFacts(milestone))) n++;
+      }
+    }
+    return n;
+  }
+
   // These drive the filter menu's signal rows, each both the filter and the
   // only place its total is visible — a mark nobody can see never gets dealt
   // with.
@@ -578,22 +591,19 @@ class AppState {
     return this.countItems((i) => i.atRisk);
   }
 
-  // Both item ends of every conflicting edge, which is the rule itself: the
-  // contradiction belongs to the pair (deps-graph.ts). A milestone end is
-  // skipped rather than missing — milestones are never filtered.
-  private dependencyConflictItemIds(): Set<number> {
-    const { conflictingEdges } = this.dependencyAnalysis();
-    const ids = new Set<number>();
-    for (const d of this.current?.dependencies ?? []) {
-      if (!conflictingEdges.has(d.id)) continue;
-      if (d.from.kind === "item") ids.add(d.from.id);
-      if (d.to.kind === "item") ids.add(d.to.id);
+  // Both ends of every conflicting edge, which is the rule itself: the
+  // contradiction belongs to the pair (deps-graph.ts). Keys are kind-qualified
+  // because item and milestone ids are separate spaces.
+  private dependencyConflictEntityKeys(): Set<string> {
+    const keys = new Set<string>();
+    for (const [key, summary] of this.dependencyAnalysis().summaries) {
+      if (summary.conflicts > 0) keys.add(key);
     }
-    return ids;
+    return keys;
   }
 
   dependencyConflictCount(): number {
-    return this.dependencyConflictItemIds().size;
+    return this.dependencyConflictEntityKeys().size;
   }
 
   toggleFilterSignal(kind: SignalFilterKind): void {
@@ -626,15 +636,15 @@ class AppState {
     }
     const recent = this.recentFilter;
     if (!recent) return;
-    const conflicts = this.dependencyConflictItemIds();
-    const match = itemPredicate(recent, conflicts);
-    if (match === null || this.countItems(match) === 0) {
+    const conflicts = this.dependencyConflictEntityKeys();
+    const match = filterPredicate(recent, conflicts);
+    if (match === null || this.countEntities(match) === 0) {
       this.recentFilter = null;
       return;
     }
     if (recent.inverted) {
-      const positive = itemPredicate({ ...recent, inverted: false }, conflicts);
-      if (positive === null || this.countItems(positive) === 0) {
+      const positive = filterPredicate({ ...recent, inverted: false }, conflicts);
+      if (positive === null || this.countEntities(positive) === 0) {
         this.recentFilter = null;
         return;
       }
@@ -643,11 +653,15 @@ class AppState {
     this.notify();
   }
 
-  // Whether an item matches the filter directly, which is stricter than being
-  // on screen: a non-matching parent is retained as a breadcrumb. Find and
-  // revealAndSelect want the strict answer.
-  matchesFilter(item: Item): boolean {
-    return this.projection().matches(item);
+  // Whether an item matches directly is stricter than being on screen: a
+  // non-matching parent can be retained as a breadcrumb. Find and
+  // revealAndSelect want these strict, kind-preserving answers.
+  matchesItem(item: Item): boolean {
+    return this.projection().matchesItem(item);
+  }
+
+  matchesMilestone(milestone: Milestone): boolean {
+    return this.projection().matchesMilestone(milestone);
   }
 
   isFilterLabel(label: string): boolean {
@@ -666,7 +680,7 @@ class AppState {
   }
 
   // isolateFilterLabel selects only this label (the filter menu's Alt-click),
-  // keeping inversion. "Show all items" clears the filter instead.
+  // keeping inversion. "Show all" clears the filter instead.
   isolateFilterLabel(label: string): void {
     this.setFilterSelection({ kind: "labels", labels: [label] });
   }
@@ -761,29 +775,34 @@ class AppState {
   // to finding nothing. Reveal must then precede selection: selecting something
   // unrendered scrolls nowhere, so a hidden lane is unhidden and a folded
   // parent unfolded.
-  // An active item filter is the third way a target can be off-screen, and it
+  // An active filter is the third way a target can be off-screen, and it
   // is cleared for the same reason a lane is unhidden: every caller here means
   // "take me to this". A parent retained only as a matching child's breadcrumb
   // is still a non-match, so it clears the filter too — navigation lands on one
   // coherent chart rather than an exception. Callers that want to report the
-  // clearing compare `filter` across the call (find.ts). Milestones are never
-  // filtered, so only items can trigger it. Returns false if the target no
-  // longer exists.
+  // clearing compare `filter` across the call (find.ts). Returns false if the
+  // target no longer exists.
   //
   // Deliberately does not render: the scope is the caller's to choose, and boot
   // has one render of its own at the end. Anything jumping *during* a session
   // wants jumpTo below.
   revealAndSelect(kind: "item" | "milestone", id: number): boolean {
-    const itemLoc = kind === "item" ? this.findItem(id) : null;
-    const loc = kind === "item" ? itemLoc : this.findMilestone(id);
-    if (!loc) return false;
-    if (itemLoc && !this.matchesFilter(itemLoc.item)) this.filter = null;
-    if (this.isLaneHidden(loc.lane.id)) this.setLaneHidden(loc.lane.id, false);
-    if ("parent" in loc && loc.parent && this.isCollapsed(loc.parent.id)) {
-      this.setCollapsed(loc.parent.id, false);
+    if (kind === "item") {
+      const loc = this.findItem(id);
+      if (!loc) return false;
+      if (!this.matchesItem(loc.item)) this.filter = null;
+      if (this.isLaneHidden(loc.lane.id)) this.setLaneHidden(loc.lane.id, false);
+      if (loc.parent && this.isCollapsed(loc.parent.id)) {
+        this.setCollapsed(loc.parent.id, false);
+      }
+      this.selectItem(id);
+    } else {
+      const loc = this.findMilestone(id);
+      if (!loc) return false;
+      if (!this.matchesMilestone(loc.milestone)) this.filter = null;
+      if (this.isLaneHidden(loc.lane.id)) this.setLaneHidden(loc.lane.id, false);
+      this.selectMilestone(id);
     }
-    if (kind === "item") this.selectItem(id);
-    else this.selectMilestone(id);
     this.scrollToSelection = true;
     return true;
   }

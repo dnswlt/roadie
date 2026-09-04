@@ -936,8 +936,9 @@ function text(s: string): HTMLElement {
 }
 
 // The filter menu: pick labels — or an attention signal — to narrow the chart
-// to them. A matching child's parent remains as a dimmed hierarchy breadcrumb;
-// all other non-matches are hidden. "Show all items" clears the filter.
+// to matching items and milestones. A matching child's parent remains as a
+// dimmed hierarchy breadcrumb; all other non-matches are hidden. "Show all"
+// clears the filter.
 // Rebuilt after each pick so the checks stay current while the menu is open.
 //
 // Labels are a multi-select: a click toggles one, Alt-click isolates it, and
@@ -947,15 +948,17 @@ function text(s: string): HTMLElement {
 // closed.
 function filterTitle(): string {
   const filter = state.filter;
-  if (filter === null) return "Filter items by labels, flags, risk or dependency conflicts";
+  if (filter === null) {
+    return "Filter roadmap by labels, flags, risk or dependency conflicts";
+  }
   if (filter.kind === "flagged") {
-    return filter.inverted ? "Filter: items not flagged" : "Filter: flagged items";
+    return filter.inverted ? "Filter: not flagged" : "Filter: flagged items";
   }
   if (filter.kind === "atRisk") {
-    return filter.inverted ? "Filter: items not at risk" : "Filter: at-risk items";
+    return filter.inverted ? "Filter: not at risk" : "Filter: at-risk items";
   }
   if (filter.kind === "dependencyConflicts") {
-    return filter.inverted ? "Filter: items not in conflict" : "Filter: items in conflict";
+    return filter.inverted ? "Filter: not in conflict" : "Filter: in conflict";
   }
   return `Filter: ${filter.inverted ? "without any of: " : ""}${filter.labels.join(", ")}`;
 }
@@ -1012,13 +1015,13 @@ function buildFilterMenu(pop: HTMLElement): void {
   }
 
   pop.append(
-    row("Show all items", state.filter === null, () => {
+    row("Show all", state.filter === null, () => {
       state.filter = null;
     }),
   );
   const invert = row("Invert filter", !!state.filter?.inverted, () => state.toggleFilterInversion());
   invert.disabled = state.filter === null;
-  invert.title = "Show items that do not match the selected labels or signal";
+  invert.title = "Show items and milestones that do not match the selected labels or signal";
   pop.append(invert, menuSeparator());
 
   const signalRow = (text: string, kind: SignalFilterKind, icon: Node): HTMLButtonElement => {
@@ -1035,8 +1038,8 @@ function buildFilterMenu(pop: HTMLElement): void {
     pop.append(signalRow(`At risk (${atRisk})`, "atRisk", icons.alertTriangle(14)));
   }
   if (showConflicts) {
-    // "In conflict", not "Conflicts": the count is items, like the two rows
-    // above it, and one bad edge puts both of its ends in the list.
+    // "In conflict", not "Conflicts": one bad edge puts both of its item or
+    // milestone endpoints in the list.
     pop.append(
       signalRow(
         `In conflict (${dependencyConflicts})`,

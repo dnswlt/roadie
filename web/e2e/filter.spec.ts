@@ -1,8 +1,8 @@
-// What the item filter actually removes from the two chart projections.
+// What the filter actually removes from the two chart projections.
 //
 // This is the one spec whose oracle is the DOM rather than the API, and the
 // reason is that filtering never touches the server: the roadmap still holds
-// every item afterwards, so "which rows are on screen" is client-only state —
+// every entity afterwards, so "which rows are on screen" is client-only state —
 // the same justification popover-dismiss.spec.ts gives for asserting that a
 // dropdown is up. It is kept to presence and absence of the .bar / .child-bar /
 // .wbs-row contracts the controllers themselves hit-test; never text, never
@@ -17,6 +17,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   addItem,
   addItemDependency,
+  addMilestone,
   markFlagged,
   purgeRoadmap,
   seedRoadmap,
@@ -43,6 +44,12 @@ function bar(page: Page, itemId: number) {
 
 function row(page: Page, itemId: number) {
   return page.locator(`.wbs-row[data-item-id="${itemId}"]`);
+}
+
+function milestone(page: Page, milestoneId: number) {
+  return page.locator(
+    `.milestone[data-milestone-id="${milestoneId}"], .wbs-milestone[data-milestone-id="${milestoneId}"]`,
+  );
 }
 
 // Call once per test. addInitScript registers a script that runs on every
@@ -76,6 +83,31 @@ test("filtering removes non-matching bars from the timeline", async ({ page, req
   await expect(bar(page, seeded.items[1]!.id)).toBeVisible();
 });
 
+test("label filters remove milestones in both views and inversion restores them", async ({
+  page,
+  request,
+}) => {
+  const alpha = seeded.items[0]!.id;
+  const ms = await addMilestone(request, seeded.laneId, "Release", "2026-02-15");
+  const labelled = await request.patch(`/api/items/${alpha}`, {
+    data: { labels: ["@teamX"] },
+  });
+  expect(labelled.ok()).toBe(true);
+  await open(page, "timeline");
+  await expect(milestone(page, ms)).toBeVisible();
+
+  await pickFilter(page, "@teamX");
+  await expect(bar(page, alpha)).toBeVisible();
+  await expect(milestone(page, ms)).toHaveCount(0);
+
+  await page.keyboard.press("v");
+  await expect(row(page, alpha)).toBeVisible();
+  await expect(milestone(page, ms)).toHaveCount(0);
+
+  await pickFilter(page, "Invert filter");
+  await expect(milestone(page, ms)).toBeVisible();
+});
+
 test("filtering reconciles selection and can be cleared after its last match is removed", async ({
   page,
   request,
@@ -107,7 +139,7 @@ test("filtering reconciles selection and can be cleared after its last match is 
   await expect(bar(page, alpha.id)).toHaveCount(0);
   await expect(page.locator("#panel .panel-title-input")).toHaveCount(0);
 
-  await pickFilter(page, "Show all items");
+  await pickFilter(page, "Show all");
   await expect(bar(page, alpha.id)).toBeVisible();
   await expect(bar(page, beta.id)).toBeVisible();
 });
@@ -198,7 +230,7 @@ for (const view of ["timeline", "wbs"] as const) {
     await page.keyboard.press("f");
     await expect(entity(beta)).toHaveCount(0);
 
-    await pickFilter(page, "Show all items");
+    await pickFilter(page, "Show all");
     await expect(entity(beta)).toBeVisible();
     await page.locator("#filter-menu").click();
     await expect(invert).toBeDisabled();

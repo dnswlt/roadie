@@ -2,7 +2,7 @@
 //  - drag a bar to move it in time, across lanes, or into/out of a parent
 //  - drag a bar's edge handles to adjust start/end date
 // All previews are visual only; the model is updated once on drop.
-// While an item filter is active, bar moves pause because the hidden structure
+// While a filter is active, bar moves pause because the hidden structure
 // makes a drop ambiguous; resize handles remain active.
 //
 // The snapping math lives in snap.ts (DOM-free, tested); this file collects the
@@ -53,7 +53,7 @@ interface Drag {
   isGroup: boolean;
   members: HTMLElement[];
   memberIds: number[];
-  moveSuppressed: boolean; // this move was disabled by the active item filter at pointer-down
+  moveSuppressed: boolean; // this move was disabled by the active filter at pointer-down
   suppressedDragRecognized: boolean; // crossed 4px; pointer-up must not synthesize a click
 }
 
@@ -199,22 +199,22 @@ function onPointerDown(e: PointerEvent): void {
 //    children stay put and remain valid targets.)
 function collectSnapBounds(lane: LaneFull, exclude: Set<number>): number[] {
   const bounds = new Set<number>();
-  const drawn = state.projection().drawnItemIds;
+  const projection = state.projection();
   for (const it of lane.items) {
-    if (!drawn.has(it.id)) continue;
+    if (!projection.drawnItemIds.has(it.id)) continue;
     if (!exclude.has(it.id)) {
       bounds.add(dayOf(it.startDate));
       bounds.add(dayOf(it.endDate) + 1);
     }
     for (const c of it.children) {
-      if (drawn.has(c.id) && !exclude.has(c.id)) {
+      if (projection.drawnItemIds.has(c.id) && !exclude.has(c.id)) {
         bounds.add(dayOf(c.startDate));
         bounds.add(dayOf(c.endDate) + 1);
       }
     }
   }
   for (const m of lane.milestones) {
-    bounds.add(dayOf(m.date));
+    if (projection.drawnMilestoneIds.has(m.id)) bounds.add(dayOf(m.date));
   }
   bounds.add(todayDay());
   return [...bounds];

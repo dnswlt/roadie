@@ -82,9 +82,14 @@ export function renderWbs(container: HTMLElement): void {
     const hint = div("lanes-hint");
     hint.textContent = "All contexts are hidden — use the eye menu to show them.";
     lanesEl.append(hint);
-  } else if (state.filter !== null && projection.drawnItemIds.size === 0) {
+  } else if (
+    state.filter !== null &&
+    projection.drawnItemIds.size === 0 &&
+    projection.drawnMilestoneIds.size === 0
+  ) {
     const hint = div("lanes-hint");
-    hint.textContent = "No items match this filter — use the filter menu to change or clear it.";
+    hint.textContent =
+      "No items or milestones match this filter — use the filter menu to change or clear it.";
     lanesEl.append(hint);
   }
 
@@ -168,7 +173,6 @@ function isoDate(iso: string): string {
 }
 
 function renderMilestoneRow(m: Milestone): HTMLElement {
-  // Never removed by the filter, as in the timeline (see render.ts).
   let className = state.selectedMilestoneId === m.id ? "wbs-milestone selected" : "wbs-milestone";
   if (m.tentative) className += " tentative";
   const el = div(className);
@@ -217,7 +221,7 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   if (state.isItemSelected(item.id)) cls += " selected";
   const row = div(cls);
   if (state.filter !== null) row.classList.add("move-disabled");
-  if (!state.matchesFilter(item)) row.classList.add("dimmed");
+  if (!state.matchesItem(item)) row.classList.add("dimmed");
   row.dataset.itemId = String(item.id);
   if (lead) row.append(lead);
   const main = div("wbs-main");

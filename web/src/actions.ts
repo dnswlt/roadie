@@ -464,7 +464,7 @@ export const actions = {
     // carries no labels and neither signal, so it matches no filter and would
     // be created invisible — and selected for editing, which the panel would
     // then show off-chart.
-    if (!state.matchesFilter(item)) state.filter = null;
+    if (!state.matchesItem(item)) state.filter = null;
     state.selectItem(item.id);
     state.notify();
     return item;
@@ -607,6 +607,9 @@ export const actions = {
         lane.milestones.push(milestone);
         lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
       }
+      // A new milestone carries none of the item-only filter metadata and has
+      // no dependency yet. Do not create it invisibly under a positive filter.
+      if (!state.matchesMilestone(milestone)) state.filter = null;
       state.selectMilestone(milestone.id);
       state.notify();
     } catch (e) {
@@ -625,6 +628,7 @@ export const actions = {
         lane.milestones.push(milestone);
         lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
       }
+      if (!state.matchesMilestone(milestone)) state.filter = null;
       state.selectMilestone(milestone.id);
       state.notify();
       return true;

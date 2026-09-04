@@ -2,9 +2,11 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
   canDrag,
+  filterPredicate,
   filterItems,
   filterLane,
-  itemPredicate,
+  itemFacts,
+  milestoneFacts,
   project,
   type Filter,
 } from "./filter";
@@ -35,9 +37,21 @@ function item(
   };
 }
 
+function milestone(id: number): Milestone {
+  return {
+    id,
+    uid: `uid-m${id}`,
+    laneId: 1,
+    title: `m${id}`,
+    description: "",
+    date: "2026-01-01",
+    tentative: false,
+  };
+}
+
 // Every caller reaches a filter through its predicate, so the tests do too.
 function match(filter: Filter | null) {
-  return itemPredicate(filter, new Set());
+  return filterPredicate(filter, new Set());
 }
 
 function ids(items: ItemFull[]): Array<[number, number[]]> {
@@ -48,7 +62,7 @@ function ids(items: ItemFull[]): Array<[number, number[]]> {
 // projection can hand back the roadmap's own arrays untouched.
 test("no filter preserves the original item array", () => {
   const items = [item(1, ["a"]), item(2)];
-  assert.equal(itemPredicate(null, new Set()), null);
+  assert.equal(filterPredicate(null, new Set()), null);
   assert.equal(filterItems(items, null), items);
 });
 
@@ -77,7 +91,7 @@ test("inversion applies before retaining parent breadcrumbs", () => {
   const parent = item(1, ["refined"], false, [item(2), item(3, ["refined"])]);
   const pred = match({ kind: "labels", labels: ["refined"], inverted: true })!;
   assert.deepEqual(ids(filterItems([parent], pred)), [[1, [2]]]);
-  assert.equal(pred(parent), false);
+  assert.equal(pred(itemFacts(parent)), false);
   assert.equal(parent.children.length, 2);
 });
 
@@ -88,15 +102,19 @@ test("each signal filter can be inverted independently", () => {
     ["atRisk", [1, 3]],
     ["dependencyConflicts", [1, 2]],
   ] as const) {
-    const pred = itemPredicate({ kind, inverted: true }, new Set([3]))!;
-    assert.deepEqual(items.filter(pred).map(i => i.id), expected, kind);
+    const pred = filterPredicate({ kind, inverted: true }, new Set(["item:3"]))!;
+    assert.deepEqual(items.filter((i) => pred(itemFacts(i))).map(i => i.id), expected, kind);
   }
 });
 
-test("an inverted filter with no positive matches matches every item", () => {
-  assert.equal(match({ kind: "labels", labels: ["gone"], inverted: true })!(item(1)), true);
-  assert.equal(match({ kind: "flagged", inverted: true })!(item(1)), true);
-  assert.equal(match({ kind: "dependencyConflicts", inverted: true })!(item(1)), true);
+test("an inverted filter with no positive matches matches every entity", () => {
+  assert.equal(match({ kind: "labels", labels: ["gone"], inverted: true })!(itemFacts(item(1))), true);
+  assert.equal(match({ kind: "flagged", inverted: true })!(itemFacts(item(1))), true);
+  assert.equal(match({ kind: "dependencyConflicts", inverted: true })!(itemFacts(item(1))), true);
+  assert.equal(
+    match({ kind: "labels", labels: ["gone"], inverted: true })!(milestoneFacts(milestone(1))),
+    true,
+  );
 });
 
 test("a matching child keeps its non-matching parent and filters its siblings", () => {
@@ -106,7 +124,7 @@ test("a matching child keeps its non-matching parent and filters its siblings", 
   const result = filterItems([parent, item(4)], match({ kind: "labels", labels: ["keep"] }));
 
   assert.deepEqual(ids(result), [[1, [2]]]);
-  assert.equal(match({ kind: "labels", labels: ["keep"] })!(result[0]!), false);
+  assert.equal(match({ kind: "labels", labels: ["keep"] })!(itemFacts(result[0]!)), false);
   assert.equal(parent.children.length, 2, "the roadmap model is not mutated");
 });
 
@@ -131,25 +149,20 @@ test("dependency-conflict focus uses derived item membership and keeps breadcrum
   const parent = item(1, [], false, [item(2), item(3)]);
   // Conflict membership arrives as a set: it is derived from the graph, not
   // read off the item, which is why Filter itself carries nothing.
-  const pred = itemPredicate({ kind: "dependencyConflicts" }, new Set([2, 4]))!;
+  const pred = filterPredicate(
+    { kind: "dependencyConflicts" },
+    new Set(["item:2", "item:4"]),
+  )!;
 
   assert.deepEqual(ids(filterItems([parent, item(4), item(5)], pred)), [
     [1, [2]],
     [4, []],
   ]);
-  assert.equal(pred(parent), false);
+  assert.equal(pred(itemFacts(parent)), false);
 });
 
-test("an empty filtered lane remains present with its milestones", () => {
-  const milestone: Milestone = {
-    id: 9,
-    uid: "uid-m9",
-    laneId: 1,
-    title: "M",
-    description: "",
-    date: "2026-01-01",
-    tentative: false,
-  };
+test("a filter removes non-matching milestones but preserves their lane", () => {
+  const ms = milestone(9);
   const lane: LaneFull = {
     id: 1,
     roadmapId: 1,
@@ -157,11 +170,35 @@ test("an empty filtered lane remains present with its milestones", () => {
     position: 0,
     color: "blue",
     items: [item(1, ["other"])],
-    milestones: [milestone],
+    milestones: [ms],
   };
   const result = filterLane(lane, match({ kind: "labels", labels: ["keep"] }));
+  assert.equal(result.id, lane.id);
   assert.deepEqual(result.items, []);
-  assert.equal(result.milestones[0], milestone);
+  assert.deepEqual(result.milestones, []);
+  assert.equal(
+    filterLane(lane, match({ kind: "labels", labels: ["keep"], inverted: true }))
+      .milestones[0],
+    ms,
+  );
+});
+
+test("milestones can match dependency conflicts but not item-only metadata", () => {
+  const ms = milestone(9);
+  assert.equal(match({ kind: "labels", labels: ["keep"] })!(milestoneFacts(ms)), false);
+  assert.equal(match({ kind: "flagged" })!(milestoneFacts(ms)), false);
+  assert.equal(match({ kind: "atRisk" })!(milestoneFacts(ms)), false);
+
+  const conflicts = filterPredicate(
+    { kind: "dependencyConflicts" },
+    new Set(["milestone:9"]),
+  )!;
+  assert.equal(conflicts(milestoneFacts(ms)), true);
+  assert.equal(
+    conflicts(itemFacts(item(9))),
+    false,
+    "item and milestone ids are separate spaces",
+  );
 });
 
 test("item moves pause while filtering but timeline resizing remains available", () => {
@@ -217,4 +254,5 @@ test("a hidden context contributes neither lanes nor drawn items", () => {
   const p = project([lane], { isLaneHidden: () => true, isFolded: () => false, match: null });
   assert.deepEqual(p.lanes, []);
   assert.equal(p.drawnItemIds.size, 0);
+  assert.equal(p.drawnMilestoneIds.size, 0);
 });
