@@ -109,7 +109,7 @@ func seedRoadmap(t *testing.T, name string) int64 {
 	return rm.ID
 }
 
-func TestMilestoneTentativeAPI(t *testing.T) {
+func TestMilestoneMetadataAPI(t *testing.T) {
 	ctx := context.Background()
 	rm, err := testStore.CreateRoadmap(ctx, "test-"+t.Name(), store.Ownership{})
 	if err != nil {
@@ -122,7 +122,8 @@ func TestMilestoneTentativeAPI(t *testing.T) {
 	}
 
 	w := do(t, http.MethodPost, "/api/lanes/"+itoa(lane.ID)+"/milestones", map[string]any{
-		"title": "Launch", "date": "2026-03-15", "tentative": true,
+		"title": "Launch", "date": "2026-03-15", "labels": []string{" release ", "@team"},
+		"flagged": true, "tentative": true, "atRisk": true,
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create status: want 201, got %d (%s)", w.Code, w.Body.String())
@@ -131,23 +132,30 @@ func TestMilestoneTentativeAPI(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &milestone); err != nil {
 		t.Fatal(err)
 	}
-	if !milestone.Tentative {
-		t.Fatalf("create response lost tentative: %+v", milestone)
+	if len(milestone.Labels) != 2 || milestone.Labels[0] != "release" || milestone.Labels[1] != "@team" ||
+		!milestone.Flagged || !milestone.Tentative || !milestone.AtRisk {
+		t.Fatalf("create response lost metadata: %+v", milestone)
 	}
 
-	w = do(t, http.MethodPatch, "/api/milestones/"+itoa(milestone.ID), map[string]any{"tentative": false})
+	w = do(t, http.MethodPatch, "/api/milestones/"+itoa(milestone.ID), map[string]any{
+		"labels": []string{}, "flagged": false, "tentative": false, "atRisk": false,
+	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("patch status: want 200, got %d (%s)", w.Code, w.Body.String())
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &milestone); err != nil {
 		t.Fatal(err)
 	}
-	if milestone.Tentative {
-		t.Fatalf("patch response did not clear tentative: %+v", milestone)
+	if len(milestone.Labels) != 0 || milestone.Flagged || milestone.Tentative || milestone.AtRisk {
+		t.Fatalf("patch response did not clear metadata: %+v", milestone)
 	}
 	full := getFull(t, rm.ID)
-	if len(full.Lanes) != 1 || len(full.Lanes[0].Milestones) != 1 || full.Lanes[0].Milestones[0].Tentative {
-		t.Fatalf("roadmap read did not reflect patched tentative: %+v", full.Lanes)
+	if len(full.Lanes) != 1 || len(full.Lanes[0].Milestones) != 1 {
+		t.Fatalf("roadmap read lost milestone: %+v", full.Lanes)
+	}
+	got := full.Lanes[0].Milestones[0]
+	if len(got.Labels) != 0 || got.Flagged || got.Tentative || got.AtRisk {
+		t.Fatalf("roadmap read did not reflect patched metadata: %+v", got)
 	}
 }
 

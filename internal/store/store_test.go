@@ -794,12 +794,15 @@ func TestMilestones(t *testing.T) {
 	lane, _ := testStore.CreateLane(ctx, rm.ID, "L")
 
 	m, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
-		Title: "GA launch", Description: "Public release", Date: date("2026-06-01"), Tentative: true,
+		Title: "GA launch", Description: "Public release", Date: date("2026-06-01"),
+		Labels: []string{" release ", "@team", "release"}, Flagged: true,
+		Tentative: true, AtRisk: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Title != "GA launch" || !m.Date.Equal(date("2026-06-01").Time) || m.LaneID != lane.ID || !m.Tentative {
+	if m.Title != "GA launch" || !m.Date.Equal(date("2026-06-01").Time) || m.LaneID != lane.ID ||
+		!slices.Equal(m.Labels, []string{"release", "@team"}) || !m.Flagged || !m.Tentative || !m.AtRisk {
 		t.Errorf("create result: %+v", m)
 	}
 
@@ -821,17 +824,27 @@ func TestMilestones(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if upd.Title != "GA launch" || !upd.Date.Equal(date("2026-07-15").Time) || !upd.Tentative {
+	if upd.Title != "GA launch" || !upd.Date.Equal(date("2026-07-15").Time) ||
+		!slices.Equal(upd.Labels, []string{"release", "@team"}) || !upd.Flagged || !upd.Tentative || !upd.AtRisk {
 		t.Errorf("update result: %+v", upd)
 	}
 	upd, err = testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		Labels:    model.Opt[[]string]{Set: true, Value: []string{" @other ", "@other"}},
+		Flagged:   model.Opt[bool]{Set: true, Value: false},
 		Tentative: model.Opt[bool]{Set: true, Value: false},
+		AtRisk:    model.Opt[bool]{Set: true, Value: false},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if upd.Tentative {
-		t.Errorf("clearing tentative: %+v", upd)
+	if !slices.Equal(upd.Labels, []string{"@other"}) || upd.Flagged || upd.Tentative || upd.AtRisk {
+		t.Errorf("metadata update: %+v", upd)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		Title:  model.Opt[string]{Set: true, Value: "Should not persist"},
+		Labels: model.Opt[[]string]{Set: true, Value: []string{strings.Repeat("😀", 65)}},
+	}); !isValidation(err) {
+		t.Errorf("long label update: want validation error, got %v", err)
 	}
 	if _, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
 		Title: model.Opt[string]{Set: true, Value: ""},
@@ -926,7 +939,8 @@ func TestImportRoadmap(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := testStore.CreateMilestone(ctx, lane2.ID, NewMilestone{
-		Title: "Launch", Date: date("2026-03-01"), Tentative: true}); err != nil {
+		Title: "Launch", Date: date("2026-03-01"), Labels: []string{"release"},
+		Flagged: true, Tentative: true, AtRisk: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -998,7 +1012,9 @@ func TestImportRoadmap(t *testing.T) {
 	if gc.LaneID != gl1.ID {
 		t.Errorf("child lane: want %d, got %d", gl1.ID, gc.LaneID)
 	}
-	if len(gl2.Milestones) != 1 || gl2.Milestones[0].Title != "Launch" || !gl2.Milestones[0].Tentative {
+	if len(gl2.Milestones) != 1 || gl2.Milestones[0].Title != "Launch" ||
+		!slices.Equal(gl2.Milestones[0].Labels, []string{"release"}) ||
+		!gl2.Milestones[0].Flagged || !gl2.Milestones[0].Tentative || !gl2.Milestones[0].AtRisk {
 		t.Errorf("milestones not preserved: %+v", gl2.Milestones)
 	}
 
@@ -1060,6 +1076,44 @@ func TestImportLabelLength(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestImportMilestoneLabelLength(t *testing.T) {
+	ctx := context.Background()
+	for _, length := range []int{64, 65} {
+		t.Run(fmt.Sprintf("length=%d", length), func(t *testing.T) {
+			label := strings.Repeat("😀", length)
+			src := model.RoadmapFull{
+				Roadmap: model.Roadmap{UID: testUID(), Name: "test-" + t.Name()},
+				Lanes: []model.LaneFull{{
+					Lane: model.Lane{Name: "Lane"},
+					Milestones: []model.Milestone{{
+						UID: testUID(), Title: "Launch", Date: date("2026-03-01"), Labels: []string{label},
+					}},
+				}},
+			}
+			rm, err := testStore.ImportRoadmap(ctx, src, Ownership{}, ImportCopy)
+			if err == nil {
+				t.Cleanup(func() { testStore.DeleteRoadmap(ctx, rm.ID) })
+			}
+			if length > 64 {
+				if !isValidation(err) || !strings.Contains(err.Error(), "labels must be at most") {
+					t.Fatalf("long label: want validation error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			full, err := testStore.GetRoadmapFull(ctx, rm.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := full.Lanes[0].Milestones[0].Labels; !slices.Equal(got, []string{label}) {
+				t.Errorf("imported label: got %q", got)
+			}
+		})
 	}
 }
 

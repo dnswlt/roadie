@@ -215,7 +215,7 @@ func scanLane(r rowScanner) (model.Lane, error) {
 	return l, err
 }
 
-const milestoneCols = "id, uid, lane_id, title, description, date, tentative, " +
+const milestoneCols = "id, uid, lane_id, title, description, date, labels, flagged, tentative, at_risk, " +
 	"integration_milestone, source_milestone_uid, updated_at"
 
 func scanMilestone(r rowScanner) (model.Milestone, error) {
@@ -223,11 +223,15 @@ func scanMilestone(r rowScanner) (model.Milestone, error) {
 	var date time.Time
 	var integration bool
 	var sourceUID *string
-	if err := r.Scan(&m.ID, &m.UID, &m.LaneID, &m.Title, &m.Description, &date, &m.Tentative,
+	if err := r.Scan(&m.ID, &m.UID, &m.LaneID, &m.Title, &m.Description, &date,
+		&m.Labels, &m.Flagged, &m.Tentative, &m.AtRisk,
 		&integration, &sourceUID, &m.UpdatedAt); err != nil {
 		return model.Milestone{}, err
 	}
 	m.Date = model.NewDate(date)
+	if m.Labels == nil {
+		m.Labels = []string{}
+	}
 	// A linkage exists only when the milestone actually has a cross-roadmap
 	// role. One of its two stored halves is always non-zero, so a plain
 	// milestone has exactly one spelling: no linkage at all.
@@ -1056,13 +1060,18 @@ func (s *Store) insertRoadmapContents(ctx context.Context, tx pgx.Tx, roadmapID 
 				}
 				mirrored[key] = true
 			}
+			labels, err := normalizeLabels(ms.Labels)
+			if err != nil {
+				return err
+			}
 			var msID int64
 			if err := tx.QueryRow(ctx,
-				`INSERT INTO milestones (id, uid, lane_id, title, description, date, tentative, integration_milestone, source_milestone_uid, updated_at)
-				 VALUES (`+nextID("milestones")+`, COALESCE($2::uuid, gen_random_uuid()), $3, $4, $5, $6, $7, $8, $9::uuid, COALESCE($10::timestamptz, now()))
+				`INSERT INTO milestones (id, uid, lane_id, title, description, date, labels, flagged, tentative, at_risk, integration_milestone, source_milestone_uid, updated_at)
+				 VALUES (`+nextID("milestones")+`, COALESCE($2::uuid, gen_random_uuid()), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid, COALESCE($13::timestamptz, now()))
 				 RETURNING id`,
 				pol.dbID(ms.ID), pol.milestoneUID(ms), laneID, ms.Title, ms.Description, ms.Date.Time,
-				ms.Tentative && sourceUID == nil, ms.IsIntegration(), sourceUID,
+				labels, ms.Flagged, ms.Tentative && sourceUID == nil, ms.AtRisk && sourceUID == nil,
+				ms.IsIntegration(), sourceUID,
 				pol.stamp(ms.UpdatedAt)).Scan(&msID); err != nil {
 				return err
 			}
@@ -1588,12 +1597,15 @@ type NewMilestone struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	Date        model.Date `json:"date"`
+	Labels      []string   `json:"labels"`
+	Flagged     bool       `json:"flagged"`
 	Tentative   bool       `json:"tentative"`
+	AtRisk      bool       `json:"atRisk"`
 	// Integration publishes the milestone for other roadmaps to mirror.
 	Integration bool `json:"integration"`
 	// SourceUID makes this a mirror of another roadmap's integration milestone.
-	// Date and Tentative are then ignored (the source owns both) and an empty
-	// Title adopts the source's.
+	// Date, Tentative and AtRisk are then ignored (the source owns them) and an
+	// empty Title adopts the source's. Labels and Flagged remain local.
 	SourceUID string `json:"sourceUid"`
 }
 
@@ -1612,6 +1624,10 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		}
 	} else if !validUID(n.SourceUID) {
 		return model.Milestone{}, invalidf("malformed source milestone identity %q", n.SourceUID)
+	}
+	labels, err := normalizeLabels(n.Labels)
+	if err != nil {
+		return model.Milestone{}, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -1632,7 +1648,7 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		}
 	}
 
-	title, date, tentative := n.Title, n.Date.Time, n.Tentative
+	title, date, tentative, atRisk := n.Title, n.Date.Time, n.Tentative, n.AtRisk
 	var sourceUID *string
 	var resolvedSource *sourceRef
 	if n.SourceUID != "" {
@@ -1655,14 +1671,14 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		}
 		// Provider-owned: the date is only the cache a broken mirror falls back
 		// to, and tentative is read from the source on every resolved read.
-		date, tentative = src.Date.Time, false
+		date, tentative, atRisk = src.Date.Time, false, false
 		sourceUID = &n.SourceUID
 		resolvedSource = &src
 	}
 	m, err := scanMilestone(tx.QueryRow(ctx,
-		`INSERT INTO milestones (lane_id, title, description, date, tentative, integration_milestone, source_milestone_uid)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7::uuid) RETURNING `+milestoneCols,
-		laneID, title, n.Description, date, tentative, n.Integration, sourceUID))
+		`INSERT INTO milestones (lane_id, title, description, date, labels, flagged, tentative, at_risk, integration_milestone, source_milestone_uid)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid) RETURNING `+milestoneCols,
+		laneID, title, n.Description, date, labels, n.Flagged, tentative, atRisk, n.Integration, sourceUID))
 	if err != nil {
 		return model.Milestone{}, err
 	}
@@ -1676,15 +1692,18 @@ type MilestonePatch struct {
 	Title       model.Opt[string]     `json:"title"`
 	Description model.Opt[string]     `json:"description"`
 	Date        model.Opt[model.Date] `json:"date"`
+	Labels      model.Opt[[]string]   `json:"labels"`
+	Flagged     model.Opt[bool]       `json:"flagged"`
 	Tentative   model.Opt[bool]       `json:"tentative"`
+	AtRisk      model.Opt[bool]       `json:"atRisk"`
 	Integration model.Opt[bool]       `json:"integration"`
 	LaneID      model.Opt[int64]      `json:"laneId"`
 }
 
 // UpdateMilestone applies a patch. A mirror accepts only what its consuming
-// roadmap owns, title, description and lane; the source plans the rest. The
-// source UID is not patchable at all — a mirror of another milestone is another
-// mirror.
+// roadmap owns: title, description, labels, flag and lane. The source plans its
+// date, tentative and at-risk state. The source UID is not patchable at all — a
+// mirror of another milestone is another mirror.
 //
 // A lane move stays inside the roadmap: nothing but rendering reads a
 // milestone's lane, so this is a display move, but crossing roadmaps would move
@@ -1693,12 +1712,6 @@ type MilestonePatch struct {
 // Un-publishing and deleting a consumed milestone are both allowed, leaving
 // broken mirrors behind; Linkage.UsedBy shows the owner that impact first.
 func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch) (model.Milestone, error) {
-	if p.Title.Set && p.Title.Value == "" {
-		return model.Milestone{}, invalidf("milestone title must not be empty")
-	}
-	if p.Date.Set && p.Date.Value.IsZero() {
-		return model.Milestone{}, invalidf("milestone date must not be null")
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return model.Milestone{}, err
@@ -1709,52 +1722,93 @@ func (s *Store) UpdateMilestone(ctx context.Context, id int64, p MilestonePatch)
 	if err != nil {
 		return model.Milestone{}, err
 	}
+	cur, err := scanMilestone(tx.QueryRow(ctx, `SELECT `+milestoneCols+` FROM milestones WHERE id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Milestone{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Milestone{}, err
+	}
 	if p.Integration.Set && p.Integration.Value {
 		if err := checkPublicLink(ctx, tx, roadmapID); err != nil {
 			return model.Milestone{}, err
 		}
 	}
-	mirror, err := isMirror(ctx, tx, id)
-	if err != nil {
-		return model.Milestone{}, err
-	}
-	if mirror {
+	if cur.IsMirror() {
 		switch {
 		case p.Date.Set:
 			return model.Milestone{}, invalidf("a mirror is scheduled by the roadmap that owns its source milestone")
 		case p.Tentative.Set:
 			return model.Milestone{}, invalidf("a mirror's tentative state comes from its source milestone")
+		case p.AtRisk.Set:
+			return model.Milestone{}, invalidf("a mirror's at-risk state comes from its source milestone")
 		case p.Integration.Set && p.Integration.Value:
 			return model.Milestone{}, invalidf("a mirror cannot itself be an integration milestone")
 		}
 	}
+
+	next := cur
+	if p.Title.Set {
+		next.Title = p.Title.Value
+	}
+	if p.Description.Set {
+		next.Description = p.Description.Value
+	}
+	if p.Date.Set {
+		next.Date = p.Date.Value
+	}
+	if p.Labels.Set {
+		next.Labels, err = normalizeLabels(p.Labels.Value)
+		if err != nil {
+			return model.Milestone{}, err
+		}
+	}
+	if p.Flagged.Set {
+		next.Flagged = p.Flagged.Value
+	}
+	if p.Tentative.Set {
+		next.Tentative = p.Tentative.Value
+	}
+	if p.AtRisk.Set {
+		next.AtRisk = p.AtRisk.Value
+	}
+	integration := cur.IsIntegration()
+	if p.Integration.Set {
+		integration = p.Integration.Value
+	}
 	if p.LaneID.Set {
+		next.LaneID = p.LaneID.Value
+	}
+
+	if next.Title == "" {
+		return model.Milestone{}, invalidf("milestone title must not be empty")
+	}
+	if next.Date.IsZero() {
+		return model.Milestone{}, invalidf("milestone date must not be null")
+	}
+	if next.LaneID != cur.LaneID {
 		var laneRoadmap int64
 		err := tx.QueryRow(ctx,
-			`SELECT roadmap_id FROM lanes WHERE id = $1`, p.LaneID.Value).Scan(&laneRoadmap)
+			`SELECT roadmap_id FROM lanes WHERE id = $1`, next.LaneID).Scan(&laneRoadmap)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return model.Milestone{}, invalidf("lane %d not found", p.LaneID.Value)
+			return model.Milestone{}, invalidf("lane %d not found", next.LaneID)
 		}
 		if err != nil {
 			return model.Milestone{}, err
 		}
 		if laneRoadmap != roadmapID {
-			return model.Milestone{}, invalidf("lane %d belongs to a different roadmap", p.LaneID.Value)
+			return model.Milestone{}, invalidf("lane %d belongs to a different roadmap", next.LaneID)
 		}
 	}
 	row := tx.QueryRow(ctx,
-		`UPDATE milestones SET title = CASE WHEN $2 THEN $3 ELSE title END,
-		        description = CASE WHEN $4 THEN $5 ELSE description END,
-		        date = CASE WHEN $6 THEN $7 ELSE date END,
-		        tentative = CASE WHEN $8 THEN $9 ELSE tentative END,
-		        integration_milestone = CASE WHEN $10 THEN $11 ELSE integration_milestone END,
-		        lane_id = CASE WHEN $12 THEN $13 ELSE lane_id END,
+		`UPDATE milestones SET title = $2, description = $3, date = $4,
+		        labels = $5, flagged = $6, tentative = $7, at_risk = $8,
+		        integration_milestone = $9, lane_id = $10,
 		        updated_at = now()
 		 WHERE id = $1
 		 RETURNING `+milestoneCols,
-		id, p.Title.Set, p.Title.Value, p.Description.Set, p.Description.Value,
-		p.Date.Set, p.Date.Value.Time, p.Tentative.Set, p.Tentative.Value,
-		p.Integration.Set, p.Integration.Value, p.LaneID.Set, p.LaneID.Value)
+		id, next.Title, next.Description, next.Date.Time, next.Labels,
+		next.Flagged, next.Tentative, next.AtRisk, integration, next.LaneID)
 	m, err := scanMilestone(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Milestone{}, ErrNotFound

@@ -157,14 +157,15 @@ type Milestone struct {
 	LaneID      int64  `json:"laneId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-	// Date and Tentative are owned by whoever plans the milestone. On a mirror
-	// that is the provider, not this roadmap: the stored values are a cached
-	// last-known date and a constant false, and a request-scoped read replaces
-	// them with the source's current ones whenever Source resolves. Date is
-	// never null, so a broken mirror still has a timeline position.
-	Date Date `json:"date"`
-	// True if timing is not a precise commitment.
-	Tentative bool `json:"tentative"`
+	// On a mirror, Date, Tentative and AtRisk come from the provider while
+	// Labels and Flagged stay local to the consuming roadmap. The stored date is
+	// the last-known provider date and never null, so a broken mirror keeps its
+	// timeline position; its stored planning signals are false.
+	Date      Date     `json:"date"`
+	Tentative bool     `json:"tentative"`
+	AtRisk    bool     `json:"atRisk"`
+	Labels    []string `json:"labels"`  // free-form tags, shared across the roadmap
+	Flagged   bool     `json:"flagged"` // "needs attention" marker; meaning owned by the app
 	// Linkage holds information for integration milestones and their mirrors.
 	// It is nil if this milestone is neither an integration milestone nor one
 	// of its mirrors.
@@ -224,6 +225,7 @@ type IntegrationMilestone struct {
 	Description string `json:"description"`
 	Date        Date   `json:"date"`
 	Tentative   bool   `json:"tentative"`
+	AtRisk      bool   `json:"atRisk"`
 	RoadmapID   int64  `json:"roadmapId"`
 	RoadmapName string `json:"roadmapName"`
 }

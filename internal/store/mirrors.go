@@ -15,8 +15,8 @@ import (
 //
 // A consuming roadmap represents another roadmap's published milestone with a
 // local *mirror* row, so every stored dependency still has both endpoints in
-// one roadmap. What the provider owns — date, tentative, its own wording — is
-// resolved at read time, never copied into the consumer.
+// one roadmap. What the provider owns — date and planning signals — is resolved
+// at read time, never copied into the consumer.
 //
 // Two rules govern this file:
 //
@@ -36,6 +36,7 @@ type sourceRef struct {
 	model.MirrorSource
 	Date      model.Date
 	Tentative bool
+	AtRisk    bool
 }
 
 // applyResolvedSource projects the provider-owned part of a mirror onto a
@@ -44,7 +45,7 @@ type sourceRef struct {
 func applyResolvedSource(m *model.Milestone, src sourceRef) {
 	source := src.MirrorSource
 	m.Linkage.Source = &source
-	m.Date, m.Tentative = src.Date, src.Tentative
+	m.Date, m.Tentative, m.AtRisk = src.Date, src.Tentative, src.AtRisk
 }
 
 func applyConsumers(m *model.Milestone, consumers []model.MirrorConsumer) {
@@ -77,12 +78,12 @@ func resolveMilestone(ctx context.Context, q querier, m *model.Milestone) error 
 
 // sourceCols are the provider-side columns every resolution reads, over
 // `milestones ms` joined to `lanes l` and `roadmaps`.
-const sourceCols = `ms.id, ms.title, ms.date, ms.tentative, roadmaps.id, roadmaps.name`
+const sourceCols = `ms.id, ms.title, ms.date, ms.tentative, ms.at_risk, roadmaps.id, roadmaps.name`
 
 func scanSource(r rowScanner) (sourceRef, error) {
 	var src sourceRef
 	var date time.Time
-	err := r.Scan(&src.MilestoneID, &src.Title, &date, &src.Tentative,
+	err := r.Scan(&src.MilestoneID, &src.Title, &date, &src.Tentative, &src.AtRisk,
 		&src.RoadmapID, &src.RoadmapName)
 	if err != nil {
 		return sourceRef{}, err
@@ -247,7 +248,7 @@ func resolveSources(ctx context.Context, q querier, uids []string) (map[string]s
 		var src sourceRef
 		var date time.Time
 		if err := rows.Scan(&uid, &src.MilestoneID, &src.Title, &date,
-			&src.Tentative, &src.RoadmapID, &src.RoadmapName); err != nil {
+			&src.Tentative, &src.AtRisk, &src.RoadmapID, &src.RoadmapName); err != nil {
 			return nil, err
 		}
 		src.Date = model.NewDate(date)
@@ -304,7 +305,7 @@ func (s *Store) SearchIntegrationMilestones(ctx context.Context, roadmapID int64
 		return []model.IntegrationMilestone{}, nil
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT ms.uid, ms.title, ms.description, ms.date, ms.tentative, roadmaps.id, roadmaps.name
+		`SELECT ms.uid, ms.title, ms.description, ms.date, ms.tentative, ms.at_risk, roadmaps.id, roadmaps.name
 		 `+sourceFrom+` AND roadmaps.id <> $1
 		   AND NOT EXISTS (
 		       SELECT 1 FROM milestones mir JOIN lanes ml ON ml.id = mir.lane_id
@@ -322,7 +323,7 @@ func (s *Store) SearchIntegrationMilestones(ctx context.Context, roadmapID int64
 	for rows.Next() {
 		var im model.IntegrationMilestone
 		var date time.Time
-		if err := rows.Scan(&im.UID, &im.Title, &im.Description, &date, &im.Tentative,
+		if err := rows.Scan(&im.UID, &im.Title, &im.Description, &date, &im.Tentative, &im.AtRisk,
 			&im.RoadmapID, &im.RoadmapName); err != nil {
 			return nil, err
 		}

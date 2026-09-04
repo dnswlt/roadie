@@ -32,7 +32,7 @@ func newMirrorFixture(t *testing.T) mirrorFixture {
 	f.providerLane = lane
 	f.source, err = testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
 		Title: "API available", Description: "v1 of the public API",
-		Date: date("2026-05-01"), Tentative: true, Integration: true})
+		Date: date("2026-05-01"), Tentative: true, AtRisk: true, Integration: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +118,8 @@ func TestMirrorCreation(t *testing.T) {
 	if !m.Date.Equal(f.source.Date.Time) {
 		t.Errorf("cached date: got %v, want %v", m.Date, f.source.Date)
 	}
-	if !m.Tentative {
-		t.Errorf("create response did not project the source's tentative state")
+	if !m.Tentative || !m.AtRisk {
+		t.Errorf("create response did not project the source's planning signals")
 	}
 	if m.IsIntegration() {
 		t.Errorf("a mirror must not be an integration milestone")
@@ -187,6 +187,7 @@ func TestMirrorIsPlannedByItsSource(t *testing.T) {
 	}{
 		{"date", MilestonePatch{Date: model.Opt[model.Date]{Set: true, Value: date("2026-09-01")}}},
 		{"tentative", MilestonePatch{Tentative: model.Opt[bool]{Set: true, Value: true}}},
+		{"at risk", MilestonePatch{AtRisk: model.Opt[bool]{Set: true, Value: true}}},
 		{"integration", MilestonePatch{Integration: model.Opt[bool]{Set: true, Value: true}}},
 	}
 	for _, c := range rejected {
@@ -195,19 +196,23 @@ func TestMirrorIsPlannedByItsSource(t *testing.T) {
 		}
 	}
 
-	// Lane, title and description stay the consumer's to change.
+	// Lane, title, description, labels and the attention flag stay the
+	// consumer's to change.
 	renamed, err := testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
 		Title:       model.Opt[string]{Set: true, Value: "Vendor API"},
 		Description: model.Opt[string]{Set: true, Value: "what we integrate against"},
+		Labels:      model.Opt[[]string]{Set: true, Value: []string{"@apps"}},
+		Flagged:     model.Opt[bool]{Set: true, Value: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if renamed.Title != "Vendor API" || renamed.Description != "what we integrate against" {
+	if renamed.Title != "Vendor API" || renamed.Description != "what we integrate against" ||
+		len(renamed.Labels) != 1 || renamed.Labels[0] != "@apps" || !renamed.Flagged {
 		t.Errorf("consumer-owned fields not applied: %+v", renamed)
 	}
 	if renamed.Linkage.Source == nil || renamed.Linkage.Source.MilestoneID != f.source.ID ||
-		!renamed.Date.Equal(f.source.Date.Time) || !renamed.Tentative {
+		!renamed.Date.Equal(f.source.Date.Time) || !renamed.Tentative || !renamed.AtRisk {
 		t.Errorf("updated mirror is not resolved: %+v", renamed)
 	}
 
@@ -296,17 +301,18 @@ func TestMirrorResolution(t *testing.T) {
 		t.Errorf("source title overwrote the mirror's: %q", got.Title)
 	}
 
-	// The provider reschedules and marks the date an estimate: both reach the
-	// consumer, and the cache follows so a later break lands on the new date.
+	// The provider reschedules and changes both planning signals: all three
+	// values reach the consumer, and the date cache follows for a later break.
 	if _, err := testStore.UpdateMilestone(ctx, f.source.ID, MilestonePatch{
 		Date:      model.Opt[model.Date]{Set: true, Value: date("2026-07-15")},
-		Tentative: model.Opt[bool]{Set: true, Value: true},
+		Tentative: model.Opt[bool]{Set: true, Value: false},
+		AtRisk:    model.Opt[bool]{Set: true, Value: false},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	got = f.resolved(t, m.ID)
-	if !got.Date.Equal(date("2026-07-15").Time) || !got.Tentative {
-		t.Errorf("provider reschedule not reflected: date=%v tentative=%v", got.Date, got.Tentative)
+	if !got.Date.Equal(date("2026-07-15").Time) || got.Tentative || got.AtRisk {
+		t.Errorf("provider plan not reflected: date=%v tentative=%v atRisk=%v", got.Date, got.Tentative, got.AtRisk)
 	}
 
 	// Deleting the source leaves a broken mirror at the last date it knew,
@@ -321,8 +327,8 @@ func TestMirrorResolution(t *testing.T) {
 	if !got.Date.Equal(date("2026-07-15").Time) {
 		t.Errorf("broken mirror moved: got %v, want the cached 2026-07-15", got.Date)
 	}
-	if got.Tentative {
-		t.Errorf("broken mirror reports a tentative state nobody owns")
+	if got.Tentative || got.AtRisk {
+		t.Errorf("broken mirror reports planning signals nobody owns")
 	}
 }
 

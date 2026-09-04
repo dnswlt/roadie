@@ -80,9 +80,15 @@ CREATE TABLE milestones (
     description TEXT NOT NULL DEFAULT '',
     -- On a mirror, a cached copy of the source milestone's date.
     date        DATE NOT NULL,
+    -- Classification and attention stay local to the roadmap holding a
+    -- mirror; they are not projected from its source.
+    labels      TEXT[] NOT NULL DEFAULT '{}',
+    flagged     BOOLEAN NOT NULL DEFAULT false,
     -- A tentative milestone is an estimate rather than a committed date.
-    -- Always false on a mirror, which takes its source's value at read time.
+    -- Both planning signals are always false on a mirror, which takes its
+    -- source's values at read time.
     tentative   BOOLEAN NOT NULL DEFAULT false,
+    at_risk     BOOLEAN NOT NULL DEFAULT false,
     -- Whether other roadmaps may mirror this milestone.
     integration_milestone BOOLEAN NOT NULL DEFAULT false,
     -- Non-NULL on a mirror, naming the milestone it mirrors. Deliberately not a

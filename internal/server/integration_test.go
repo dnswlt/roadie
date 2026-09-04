@@ -31,7 +31,7 @@ func seedProviderConsumer(t *testing.T) (source model.Milestone, consumerLane in
 
 	msdate, _ := model.ParseDate("2026-05-01")
 	source, err := testStore.CreateMilestone(ctx, providerLane, store.NewMilestone{
-		Title: "API available", Date: msdate, Tentative: true, Integration: true})
+		Title: "API available", Date: msdate, Tentative: true, AtRisk: true, Integration: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +66,9 @@ func TestIntegrationMilestoneAPI(t *testing.T) {
 	if picked == nil {
 		t.Fatalf("picker entry for the published milestone: %+v", picked)
 	}
+	if !picked.Tentative || !picked.AtRisk {
+		t.Fatalf("picker entry lost planning signals: %+v", picked)
+	}
 
 	w = do(t, http.MethodPost, "/api/lanes/"+itoa(consumerLane)+"/milestones", map[string]any{
 		"title": "Vendor API ready", "sourceUid": source.UID,
@@ -78,7 +81,7 @@ func TestIntegrationMilestoneAPI(t *testing.T) {
 		t.Fatalf("created milestone is not a mirror of the source: %+v", mirror.Linkage)
 	}
 	if mirror.Linkage.Source == nil || mirror.Linkage.Source.MilestoneID != source.ID ||
-		mirror.Linkage.Source.RoadmapID == 0 || !mirror.Tentative {
+		mirror.Linkage.Source.RoadmapID == 0 || !mirror.Tentative || !mirror.AtRisk {
 		t.Fatalf("created mirror is not resolved: %+v", mirror)
 	}
 
@@ -90,7 +93,7 @@ func TestIntegrationMilestoneAPI(t *testing.T) {
 	}
 	patched := decode[model.Milestone](t, w)
 	if patched.Linkage.Source == nil || patched.Linkage.Source.MilestoneID != source.ID ||
-		!patched.Date.Equal(source.Date.Time) || !patched.Tentative {
+		!patched.Date.Equal(source.Date.Time) || !patched.Tentative || !patched.AtRisk {
 		t.Fatalf("patched mirror is not resolved: %+v", patched)
 	}
 
