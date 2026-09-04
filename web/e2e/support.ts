@@ -8,6 +8,7 @@ import { expect, type APIRequestContext } from "@playwright/test";
 
 export interface Seeded {
   roadmapId: number;
+  roadmapName: string;
   laneId: number;
   items: { id: number; title: string }[]; // top-level, in rank order
 }
@@ -43,8 +44,9 @@ export async function seedRoadmap(
     endDate: "2026-02-01",
   },
 ): Promise<Seeded> {
+  const roadmapName = `e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const rm = await post<{ id: number }>(request, "/api/roadmaps", {
-    name: `e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+    name: roadmapName,
     visibility: "public",
   });
   const lane = await post<{ id: number }>(request, `/api/roadmaps/${rm.id}/lanes`, { name: "Lane" });
@@ -60,7 +62,7 @@ export async function seedRoadmap(
       }),
     );
   }
-  return { roadmapId: rm.id, laneId: lane.id, items };
+  return { roadmapId: rm.id, roadmapName, laneId: lane.id, items };
 }
 
 // addLane extends a seeded roadmap when a gesture needs a structural target.

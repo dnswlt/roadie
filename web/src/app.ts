@@ -73,6 +73,7 @@ function snapActive(): boolean {
 }
 
 function render(): void {
+  document.title = state.current ? `${state.current.name} · Roadie` : "Roadie";
   syncUrl(state);
   renderTopbar();
   // The version diff overrides the chart views while it is on screen; picking
