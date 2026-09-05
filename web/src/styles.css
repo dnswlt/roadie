@@ -280,8 +280,8 @@ body {
   cursor: default;
 }
 
-/* Bare topbar buttons hidden per view (fold-all, deps-toggle and view-recon,
-   renderTopbar). Wrapped buttons hide via .menu-wrap.hidden instead. */
+/* Bare topbar buttons hidden per view (fold-all, activity-toggle, deps-toggle
+   and view-recon, renderTopbar). Wrapped buttons hide via .menu-wrap.hidden. */
 .icon-btn.hidden {
   display: none;
 }
@@ -817,6 +817,83 @@ kbd {
    gap) separate cleanly and the boundaries read. */
 .th-period-alt {
   background: color-mix(in oklab, var(--grid) 40%, var(--surface));
+}
+
+/* Active-item profile: a fixed-height overview of the top-level items in the
+   currently projected contexts. It remains below the time axis while lanes
+   scroll underneath it. */
+.activity-row {
+  position: sticky;
+  /* Two 24px .th-row bands plus .thead's 1px bottom border. */
+  top: 49px;
+  z-index: 19;
+  display: flex;
+  height: var(--activity-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 220px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 10px 8px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.activity-name {
+  font-weight: 600;
+  padding-top: 3px;
+  color: var(--ink);
+}
+
+.activity-peak {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.activity-canvas {
+  height: var(--activity-h);
+  flex: none;
+}
+
+.activity-chart {
+  display: block;
+  overflow: visible;
+}
+
+.activity-grid,
+.activity-grid-strong {
+  stroke: var(--grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.activity-grid-strong {
+  stroke: var(--grid-strong);
+}
+
+.activity-area {
+  fill: color-mix(in oklab, var(--activity-c) 28%, transparent);
+  stroke: color-mix(in oklab, var(--activity-c) 72%, var(--ink));
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.activity-bucket {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.activity-bucket:hover {
+  fill: color-mix(in oklab, var(--activity-c) 10%, transparent);
 }
 
 /* Lanes */

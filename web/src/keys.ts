@@ -126,6 +126,12 @@ export const bindings: Binding[] = [
     run: () => state.toggleRecentFilter(),
   },
   {
+    key: "a",
+    label: "a",
+    description: "*Show or hide the active-item profile* (timeline view).",
+    run: () => state.toggleActivity(),
+  },
+  {
     key: "/",
     label: "/",
     description: "*Find* items, milestones, and contexts.",

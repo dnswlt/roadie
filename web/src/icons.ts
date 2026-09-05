@@ -251,6 +251,10 @@ export const icons = {
       size,
     );
   },
+  // The timeline's activity profile: a stepped filled-area silhouette rather
+  // than an ECG pulse, so the mark reads as concurrent load over time.
+  activityProfile: (size = 16) =>
+    svg(`<path d="M3 19v-5h5v-4h5v3h4V7h4v12Z"/>`, size),
   // Jira Recon: a list being checked off — reconciliation is ticking a result
   // list against the plan.
   listChecks: (size = 16) =>

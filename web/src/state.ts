@@ -108,6 +108,9 @@ class AppState {
   // Calendar grid a dragged/resized edge snaps to (in addition to always-on
   // item-edge snapping). A global view preference, persisted in localStorage.
   snapMode: SnapMode = "week";
+  // Whether the timeline shows its active-item profile. This is a global view
+  // preference, not roadmap content; new users see it until they turn it off.
+  activityVisible = true;
   // Remember each tabbed view's last tab, so leaving the view and returning to
   // it does not reset the page. A new tabbed view extends TabsByView instead of
   // adding another page-specific field to AppState.
@@ -479,6 +482,23 @@ class AppState {
   toggleReconView(): void {
     if (this.navigation.view === "recon") this.setViewMode(this.chartMode);
     else if (this.canShowRecon) this.setViewMode("recon");
+  }
+
+  loadActivityPreference(): void {
+    this.activityVisible = localStorage.getItem("roadie.activity") !== "0";
+  }
+
+  // toggleActivity backs both the toolbar control and the "a" shortcut. It
+  // changes timeline geometry, so it uses the full render scope.
+  toggleActivity(): void {
+    if (
+      !this.current ||
+      this.navigation.view !== "timeline" ||
+      this.preview?.compare !== undefined
+    ) return;
+    this.activityVisible = !this.activityVisible;
+    localStorage.setItem("roadie.activity", this.activityVisible ? "1" : "0");
+    this.notify();
   }
 
   isMilestonesCollapsed(laneId: number): boolean {

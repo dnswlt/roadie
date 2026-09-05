@@ -4,6 +4,12 @@
 import { laneColorValue } from "./colors";
 import { type DepSummary, refKey } from "./deps-graph";
 import { renderTimelineDependencies } from "./deps-timeline";
+import {
+  activityBuckets,
+  activityProfile,
+  activityStats,
+  activityStepPath,
+} from "./activity";
 
 import { icons } from "./icons";
 import {
@@ -42,6 +48,11 @@ import type { Item, ItemFull, LaneFull, Milestone, SchedulePeriod } from "./type
 
 let scale: Scale = { startDay: 0, endDay: 0, pxPerDay: 3 };
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+const ACTIVITY_H = 72;
+const ACTIVITY_PLOT_TOP = 6;
+const ACTIVITY_PLOT_BOTTOM = 66;
+
 // The dependency summaries backing this pass's marks, rebuilt at the top of
 // renderChart — same lifecycle as `scale`, and for the same reason: it is
 // derived from the state the pass is drawing, and every reader below is
@@ -66,6 +77,10 @@ function div(className: string): HTMLDivElement {
   const el = document.createElement("div");
   el.className = className;
   return el;
+}
+
+function svg<K extends keyof SVGElementTagNameMap>(tag: K): SVGElementTagNameMap[K] {
+  return document.createElementNS(SVG_NS, tag);
 }
 
 export function renderChart(container: HTMLElement): void {
@@ -122,9 +137,10 @@ export function renderChart(container: HTMLElement): void {
   thRows.append(topRow, calendarRow);
   thead.append(corner, thRows);
 
+  const projection = state.projection();
+
   // Lanes (hidden ones are skipped — see the eye menu in the topbar).
   const lanesEl = div("lanes");
-  const projection = state.projection();
   for (const lane of projection.lanes) {
     lanesEl.append(renderLane(lane, w));
   }
@@ -157,7 +173,9 @@ export function renderChart(container: HTMLElement): void {
   addBtn.textContent = "+ Add context";
   addRow.append(addBtn);
 
-  grid.append(thead, lanesEl, addRow);
+  grid.append(thead);
+  if (state.activityVisible) grid.append(renderActivityLane(projection.lanes, w, rm.periods));
+  grid.append(lanesEl, addRow);
   container.append(grid);
   renderTimelineDependencies(container);
 
@@ -177,6 +195,102 @@ export function renderChart(container: HTMLElement): void {
     container.scrollLeft = scrollLeft;
     container.scrollTop = scrollTop;
   }
+}
+
+function renderActivityLane(
+  lanes: LaneFull[],
+  chartW: number,
+  periods: SchedulePeriod[],
+): HTMLElement {
+  const profile = activityProfile(lanes, scale.startDay, scale.endDay);
+  const row = div("activity-row");
+  row.style.setProperty("--activity-h", `${ACTIVITY_H}px`);
+  const activityColor =
+    lanes.length === 1 ? laneColorValue(lanes[0]!.color) : laneColorValue("gray");
+  row.style.setProperty("--activity-c", activityColor);
+
+  const label = div("activity-label");
+  const name = document.createElement("span");
+  name.className = "activity-name";
+  name.textContent = "Active items";
+  const peak = document.createElement("span");
+  peak.className = "activity-peak";
+  peak.textContent = `Peak ${profile.peak}`;
+  label.append(name, peak);
+
+  const canvas = div("activity-canvas");
+  canvas.style.width = `${chartW}px`;
+  const chart = svg("svg");
+  chart.classList.add("activity-chart");
+  chart.setAttribute("width", String(chartW));
+  chart.setAttribute("height", String(ACTIVITY_H));
+  chart.setAttribute("viewBox", `0 0 ${chartW} ${ACTIVITY_H}`);
+  chart.setAttribute("role", "img");
+  chart.setAttribute(
+    "aria-label",
+    `Active top-level items in visible contexts. Peak ${profile.peak}.`,
+  );
+
+  const hasSchedule = periods.length > 0;
+  for (const tick of calendarGridTicks(scale, hasSchedule)) {
+    const date = new Date(tick.day * 86_400_000);
+    const strong = hasSchedule || (date.getUTCDate() === 1 && date.getUTCMonth() % 3 === 0);
+    chart.append(activityGridLine(tick.day, strong));
+  }
+  for (const boundary of scheduleBounds(periods)) {
+    chart.append(activityGridLine(boundary, true));
+  }
+
+  const pathData = activityStepPath(
+    profile,
+    scale.pxPerDay,
+    ACTIVITY_PLOT_TOP,
+    ACTIVITY_PLOT_BOTTOM,
+  );
+  if (pathData !== "") {
+    const path = svg("path");
+    path.classList.add("activity-area");
+    path.setAttribute("d", pathData);
+    chart.append(path);
+  }
+
+  for (const bucket of activityBuckets(scale.startDay, scale.endDay, periods)) {
+    const stats = activityStats(profile, bucket.startDay, bucket.endBoundary);
+    const hit = svg("rect");
+    hit.classList.add("activity-bucket");
+    hit.setAttribute("x", String(xOf(scale, bucket.startDay)));
+    hit.setAttribute("y", "0");
+    hit.setAttribute("width", String((bucket.endBoundary - bucket.startDay) * scale.pxPerDay));
+    hit.setAttribute("height", String(ACTIVITY_H));
+    const title = svg("title");
+    const endDay = bucket.endBoundary - 1;
+    title.textContent =
+      `${bucket.label} · ${formatDay(bucket.startDay)} – ${formatDay(endDay)}` +
+      `\nAverage: ${formatActivityAverage(stats.average)} active items` +
+      `\nPeak: ${stats.peak}`;
+    hit.append(title);
+    chart.append(hit);
+  }
+
+  canvas.append(chart);
+  row.append(label, canvas);
+  return row;
+}
+
+function activityGridLine(day: number, strong: boolean): SVGLineElement {
+  const line = svg("line");
+  if (strong) line.classList.add("activity-grid-strong");
+  else line.classList.add("activity-grid");
+  const x = xOf(scale, day);
+  line.setAttribute("x1", String(x));
+  line.setAttribute("x2", String(x));
+  line.setAttribute("y1", "0");
+  line.setAttribute("y2", String(ACTIVITY_H));
+  return line;
+}
+
+function formatActivityAverage(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 // emptyState builds the no-roadmap-yet notice with its create button (wired

@@ -165,6 +165,7 @@ function renderTopbar(): void {
         ? "Expand all child items"
         : "Collapse all child items";
   foldAll.disabled = !state.hasParentItems() || state.filter !== null;
+  renderActivityToggle();
   renderDependencyToggle();
   renderVisibilityItem();
   // Surface an active filter even while the dropdown is closed.
@@ -205,6 +206,18 @@ function renderTopbar(): void {
   $("lane-vis-wrap").classList.toggle("hidden", recon);
   $("filter-wrap").classList.toggle("hidden", recon);
   $("fold-all").classList.toggle("hidden", recon);
+}
+
+function renderActivityToggle(): void {
+  const btn = $("activity-toggle") as HTMLButtonElement;
+  btn.classList.toggle(
+    "hidden",
+    state.navigation.view !== "timeline" || state.preview?.compare !== undefined,
+  );
+  btn.classList.toggle("active", state.activityVisible);
+  btn.setAttribute("aria-pressed", String(state.activityVisible));
+  btn.disabled = !state.current;
+  btn.title = state.activityVisible ? "Hide active items (a)" : "Show active items (a)";
 }
 
 // Dependency focus is a timeline viewing mode rather than an action on the
@@ -400,6 +413,7 @@ function injectIcons(): void {
   $("find-menu").append(icons.search(18));
   $("lane-vis-menu").append(icons.eye(18));
   $("filter-menu").append(icons.filter(18));
+  $("activity-toggle").append(icons.activityProfile(18));
   $("deps-toggle").append(icons.diagramMerge(18));
   $("rm-rename").prepend(icons.pencil(14));
   $("rm-duplicate").prepend(icons.copy(14));
@@ -554,6 +568,7 @@ function wireTopbar(): void {
   $("fold-all").addEventListener("click", () => {
     state.setAllParentsCollapsed(!state.allParentsCollapsed());
   });
+  $("activity-toggle").addEventListener("click", () => state.toggleActivity());
   $("deps-toggle").addEventListener("click", () => toggleTimelineDependencies());
   $("zoom-fit").addEventListener("click", () => zoomToFit());
   $("zoom-in").addEventListener("click", () => setZoom(state.pxPerDay * 1.4));
@@ -1133,6 +1148,7 @@ async function boot(): Promise<void> {
   initKeys();
 
   restoreZoom();
+  state.loadActivityPreference();
   const storedSnap = localStorage.getItem("roadie.snap");
   if (
     storedSnap === "day" ||

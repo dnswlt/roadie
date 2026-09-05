@@ -593,6 +593,38 @@ test("isolating a lane hides the rest, and Show all brings them back", () => {
   assert.deepEqual(saved(), []);
 });
 
+test("activity visibility defaults on, persists, and changes only in the timeline", () => {
+  localStorage.removeItem("roadie.activity");
+  state.activityVisible = false;
+  state.loadActivityPreference();
+  assert.equal(state.activityVisible, true);
+
+  state.current = roadmapOf([lane(1)]);
+  state.navigation.view = "timeline";
+  state.preview = null;
+  state.toggleActivity();
+  assert.equal(state.activityVisible, false);
+  assert.equal(localStorage.getItem("roadie.activity"), "0");
+
+  state.activityVisible = true;
+  state.loadActivityPreference();
+  assert.equal(state.activityVisible, false);
+
+  state.toggleActivity();
+  assert.equal(state.activityVisible, true);
+  assert.equal(localStorage.getItem("roadie.activity"), "1");
+
+  state.navigation.view = "wbs";
+  state.toggleActivity();
+  assert.equal(state.activityVisible, true);
+
+  state.navigation.view = "timeline";
+  state.current = null;
+  state.toggleActivity();
+  assert.equal(state.activityVisible, true);
+  localStorage.removeItem("roadie.activity");
+});
+
 test("bulk parent folding toggles every parent and deselects hidden children", () => {
   const saved = (): number[] =>
     (JSON.parse(localStorage.getItem("roadie.collapsed.1") ?? "null") as number[]).sort();
