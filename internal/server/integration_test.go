@@ -31,7 +31,13 @@ func seedProviderConsumer(t *testing.T) (source model.Milestone, consumerLane in
 
 	msdate, _ := model.ParseDate("2026-05-01")
 	source, err := testStore.CreateMilestone(ctx, providerLane, store.NewMilestone{
-		Title: "API available", Date: msdate, Tentative: true, AtRisk: true, Integration: true})
+		Title: "API available", Date: msdate, Tentative: true, Integration: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err = testStore.UpdateMilestone(ctx, source.ID, store.MilestonePatch{
+		AtRisk: model.Opt[bool]{Set: true, Value: true},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

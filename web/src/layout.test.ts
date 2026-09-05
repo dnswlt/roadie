@@ -31,6 +31,9 @@ function ms(id: number, day: number): Milestone {
     description: "",
     date: isoOf(day),
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
   };
 }
 

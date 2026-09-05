@@ -74,7 +74,11 @@ function milestonesBlock(milestones: Milestone[]): string[] {
   if (milestones.length === 0) return [];
   const lines = ["### Milestones", ""];
   for (const ms of milestones) {
-    lines.push(`- **${ms.title}** — ${ms.tentative ? "≈ " : ""}${ms.date}`);
+    const metadata = [`${ms.tentative ? "≈ " : ""}${ms.date}`];
+    if (ms.atRisk) metadata.push("⚠");
+    if (ms.flagged) metadata.push("⚑");
+    if (ms.labels.length > 0) metadata.push(ms.labels.join(", "));
+    lines.push(`- **${ms.title}** — ${metadata.join(" · ")}`);
     const desc = ms.description.trim();
     if (desc.length > 0) {
       lines.push("", ...desc.split("\n").map((l) => (l.length > 0 ? `  ${l}` : "")), "");

@@ -543,12 +543,14 @@ class AppState {
     return null;
   }
 
-  // allLabels returns the distinct item labels in use across the current
-  // roadmap, sorted — the source for the filter dropdown and the editor's
-  // autocomplete. Milestones have no label field.
+  // allLabels returns the distinct labels in use across the current roadmap,
+  // sorted — the shared vocabulary for the filter dropdown and both editors.
   allLabels(): string[] {
     const set = new Set<string>();
     for (const lane of this.current?.lanes ?? []) {
+      for (const milestone of lane.milestones) {
+        for (const l of milestone.labels) set.add(l);
+      }
       for (const item of lane.items) {
         for (const l of item.labels) set.add(l);
         for (const child of item.children) for (const l of child.labels) set.add(l);
@@ -584,11 +586,11 @@ class AppState {
   // only place its total is visible — a mark nobody can see never gets dealt
   // with.
   flaggedCount(): number {
-    return this.countItems((i) => i.flagged);
+    return this.countEntities((entity) => entity.flagged);
   }
 
   atRiskCount(): number {
-    return this.countItems((i) => i.atRisk);
+    return this.countEntities((entity) => entity.atRisk);
   }
 
   // Both ends of every conflicting edge, which is the rule itself: the

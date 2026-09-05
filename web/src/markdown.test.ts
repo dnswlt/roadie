@@ -58,6 +58,9 @@ const milestone = (over: Partial<Milestone> = {}): Milestone => ({
   description: "",
   date: "2027-06-01",
   tentative: false,
+  atRisk: false,
+  labels: [],
+  flagged: false,
   ...over,
 });
 
@@ -138,6 +141,16 @@ test("milestones are one bulleted section, title and date on one line", () => {
 test("a tentative milestone prefixes its exported date with ≈", () => {
   const md = laneMarkdown(roadmap(), lane({ milestones: [milestone({ tentative: true })] }));
   assert.match(md, /^- \*\*Beta\*\* — ≈ 2027-06-01$/m);
+});
+
+test("milestone attention marks and labels follow its date", () => {
+  const md = laneMarkdown(
+    roadmap(),
+    lane({
+      milestones: [milestone({ atRisk: true, flagged: true, labels: ["release", "@team"] })],
+    }),
+  );
+  assert.match(md, /^- \*\*Beta\*\* — 2027-06-01 · ⚠ · ⚑ · release, @team$/m);
 });
 
 test("a milestone description is indented under its bullet", () => {

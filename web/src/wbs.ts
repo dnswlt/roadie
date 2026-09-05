@@ -186,11 +186,14 @@ function renderMilestoneRow(m: Milestone): HTMLElement {
   date.textContent = approx + periodPointText(state.current?.periods ?? [], m.date, isoDate);
   // The same mark carries both dependency presence and conflict in each view;
   // the WBS keeps it with the row's trailing furniture.
+  el.append(div("wbs-ms-diamond"), title);
+  const chips = labelChips(m.labels);
+  if (chips) el.append(chips);
   el.append(
-    div("wbs-ms-diamond"),
-    title,
     linkageMark(m),
     depMark(depSums.get(refKey({ kind: "milestone", id: m.id }))),
+    riskMark(m.atRisk),
+    flagMark(m.flagged),
     date,
   );
   return el;
@@ -227,16 +230,8 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
   const main = div("wbs-main");
   main.append(barTitle(item.title), barLink(item.description));
   row.append(main);
-  if (item.labels.length > 0) {
-    const chips = div("wbs-chips");
-    for (const l of item.labels) {
-      const chip = document.createElement("span");
-      chip.className = "wbs-chip";
-      chip.textContent = l;
-      chips.append(chip);
-    }
-    row.append(chips);
-  }
+  const chips = labelChips(item.labels);
+  if (chips) row.append(chips);
   const dates = div("wbs-dates has-spark");
   // Tentative timing: a compact "≈" ahead of the range — the timeline's
   // sawtooth silhouette does not translate to a row, the prefix does.
@@ -272,4 +267,16 @@ function renderRow(item: Item, lead: HTMLElement | null, isChild: boolean): HTML
     spark,
   );
   return row;
+}
+
+function labelChips(labels: readonly string[]): HTMLElement | null {
+  if (labels.length === 0) return null;
+  const chips = div("wbs-chips");
+  for (const label of labels) {
+    const chip = document.createElement("span");
+    chip.className = "wbs-chip";
+    chip.textContent = label;
+    chips.append(chip);
+  }
+  return chips;
 }

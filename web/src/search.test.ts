@@ -180,6 +180,9 @@ test("milestones match on title and description and carry their date twice", () 
     description: "auth complete",
     date: "2026-06-01",
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
   };
   const rm = roadmap(lane(1, "Platform", [], [ms]));
   const byTitle = search(rm, "GA");
@@ -188,6 +191,25 @@ test("milestones match on title and description and carry their date twice", () 
   assert.equal(byTitle[0]!.startDate, "2026-06-01");
   assert.equal(byTitle[0]!.endDate, "2026-06-01");
   assert.equal(search(rm, "auth")[0]!.field, "description");
+});
+
+test("milestones can be found by label", () => {
+  const ms: Milestone = {
+    id: 7,
+    uid: "uid-m7",
+    laneId: 1,
+    title: "GA launch",
+    description: "",
+    date: "2026-06-01",
+    tentative: false,
+    atRisk: false,
+    labels: ["@release-team"],
+    flagged: false,
+  };
+  const hits = search(roadmap(lane(1, "Platform", [], [ms])), "release-team");
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]!.kind, "milestone");
+  assert.equal(hits[0]!.field, "label");
 });
 
 test("ties break by start date, then title", () => {

@@ -952,10 +952,10 @@ function filterTitle(): string {
     return "Filter roadmap by labels, flags, risk or dependency conflicts";
   }
   if (filter.kind === "flagged") {
-    return filter.inverted ? "Filter: not flagged" : "Filter: flagged items";
+    return filter.inverted ? "Filter: not flagged" : "Filter: flagged";
   }
   if (filter.kind === "atRisk") {
-    return filter.inverted ? "Filter: not at risk" : "Filter: at-risk items";
+    return filter.inverted ? "Filter: not at risk" : "Filter: at risk";
   }
   if (filter.kind === "dependencyConflicts") {
     return filter.inverted ? "Filter: not in conflict" : "Filter: in conflict";
@@ -1009,7 +1009,7 @@ function buildFilterMenu(pop: HTMLElement): void {
   if (labels.length === 0 && !showFlagged && !showAtRisk && !showConflicts) {
     const empty = document.createElement("div");
     empty.className = "menu-empty";
-    empty.textContent = "No labels, flags, at-risk items or dependency conflicts to filter by yet.";
+    empty.textContent = "No labels, flags, at-risk plans or dependency conflicts to filter by yet.";
     pop.append(empty);
     return;
   }

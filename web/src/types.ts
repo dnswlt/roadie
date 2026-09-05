@@ -110,6 +110,7 @@ export interface IntegrationMilestone {
   description: string;
   date: string;
   tentative: boolean;
+  atRisk: boolean;
   roadmapId: number;
   roadmapName: string;
 }
@@ -125,6 +126,9 @@ export interface Milestone {
   description: string;
   date: string; // YYYY-MM-DD
   tentative: boolean; // timing is not a precise commitment; hollow diamond in timeline/WBS
+  atRisk: boolean; // plan still intended, but materially in doubt
+  labels: string[]; // free-form tags, shared across the roadmap
+  flagged: boolean; // "needs attention" marker; local even on a mirror
   linkage?: MilestoneLinkage;
 }
 
@@ -340,7 +344,10 @@ export interface MilestonePatch {
   title?: string;
   description?: string;
   date?: string;
+  labels?: string[];
+  flagged?: boolean;
   tentative?: boolean;
+  atRisk?: boolean;
   integration?: boolean;
   laneId?: number;
 }

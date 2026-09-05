@@ -1597,15 +1597,12 @@ type NewMilestone struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	Date        model.Date `json:"date"`
-	Labels      []string   `json:"labels"`
-	Flagged     bool       `json:"flagged"`
 	Tentative   bool       `json:"tentative"`
-	AtRisk      bool       `json:"atRisk"`
 	// Integration publishes the milestone for other roadmaps to mirror.
 	Integration bool `json:"integration"`
 	// SourceUID makes this a mirror of another roadmap's integration milestone.
-	// Date, Tentative and AtRisk are then ignored (the source owns them) and an
-	// empty Title adopts the source's. Labels and Flagged remain local.
+	// Date and Tentative are then ignored, and an empty Title adopts the source's.
+	// The source also owns at-risk state; labels and the flag remain local.
 	SourceUID string `json:"sourceUid"`
 }
 
@@ -1624,10 +1621,6 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		}
 	} else if !validUID(n.SourceUID) {
 		return model.Milestone{}, invalidf("malformed source milestone identity %q", n.SourceUID)
-	}
-	labels, err := normalizeLabels(n.Labels)
-	if err != nil {
-		return model.Milestone{}, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -1648,7 +1641,7 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		}
 	}
 
-	title, date, tentative, atRisk := n.Title, n.Date.Time, n.Tentative, n.AtRisk
+	title, date, tentative := n.Title, n.Date.Time, n.Tentative
 	var sourceUID *string
 	var resolvedSource *sourceRef
 	if n.SourceUID != "" {
@@ -1671,14 +1664,14 @@ func (s *Store) CreateMilestone(ctx context.Context, laneID int64, n NewMileston
 		}
 		// Provider-owned: the date is only the cache a broken mirror falls back
 		// to, and tentative is read from the source on every resolved read.
-		date, tentative, atRisk = src.Date.Time, false, false
+		date, tentative = src.Date.Time, false
 		sourceUID = &n.SourceUID
 		resolvedSource = &src
 	}
 	m, err := scanMilestone(tx.QueryRow(ctx,
-		`INSERT INTO milestones (lane_id, title, description, date, labels, flagged, tentative, at_risk, integration_milestone, source_milestone_uid)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::uuid) RETURNING `+milestoneCols,
-		laneID, title, n.Description, date, labels, n.Flagged, tentative, atRisk, n.Integration, sourceUID))
+		`INSERT INTO milestones (lane_id, title, description, date, tentative, integration_milestone, source_milestone_uid)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7::uuid) RETURNING `+milestoneCols,
+		laneID, title, n.Description, date, tentative, n.Integration, sourceUID))
 	if err != nil {
 		return model.Milestone{}, err
 	}

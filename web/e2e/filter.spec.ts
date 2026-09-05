@@ -108,6 +108,27 @@ test("label filters remove milestones in both views and inversion restores them"
   await expect(milestone(page, ms)).toBeVisible();
 });
 
+for (const view of ["timeline", "wbs"] as const) {
+  test(`milestone metadata stays visible through filtering in ${view}`, async ({ page, request }) => {
+    const ms = await addMilestone(request, seeded.laneId, "Release", "2026-02-15");
+    const updated = await request.patch(`/api/milestones/${ms}`, {
+      data: { labels: ["release"], flagged: true, atRisk: true },
+    });
+    expect(updated.ok()).toBe(true);
+    await open(page, view);
+
+    await pickFilter(page, "release");
+    const rendered = milestone(page, ms);
+    await expect(rendered).toBeVisible();
+    await expect(rendered.locator(".bar-flag")).toBeVisible();
+    await expect(rendered.locator(".bar-risk")).toBeVisible();
+    if (view === "wbs") await expect(rendered.locator(".wbs-chip")).toHaveText("release");
+
+    await pickFilter(page, /^Flagged \(/);
+    await expect(rendered).toBeVisible();
+  });
+}
+
 test("filtering reconciles selection and can be cleared after its last match is removed", async ({
   page,
   request,
@@ -178,7 +199,7 @@ test("a context with no items says nothing about filters", async ({ page, reques
     await expect(page.locator(".lanes-hint")).toHaveCount(0);
     await page.locator("#filter-menu").click();
     const menu = page.locator("#filter-pop");
-    await expect(menu).toContainText("No labels, flags, at-risk items or dependency conflicts to filter by yet.");
+    await expect(menu).toContainText("No labels, flags, at-risk plans or dependency conflicts to filter by yet.");
     await expect(menu.getByRole("button")).toHaveCount(0);
     await expect(menu.locator(".menu-sep")).toHaveCount(0);
   } finally {

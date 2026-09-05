@@ -228,14 +228,19 @@ const MILESTONE_FIELD_CHIPS: Record<MilestoneField, string> = {
   title: "title",
   description: "description",
   date: "date",
+  labels: "labels",
+  flagged: "flagged",
   tentative: "tentative",
+  atRisk: "at risk",
   integration: "integration milestone",
   lane: "moved",
   deps: "dependencies",
 };
 
 const MILESTONE_BOOLEAN_FIELDS: ReadonlySet<MilestoneField> = new Set([
+  "flagged",
   "tentative",
+  "atRisk",
   "integration",
 ]);
 
@@ -249,7 +254,9 @@ function chipText(f: ItemField, a: Item): string {
 
 function milestoneChipText(f: MilestoneField, a: Milestone): string {
   const name = MILESTONE_FIELD_CHIPS[f];
+  if (f === "flagged") return `${a.flagged ? "+" : "−"} ${name}`;
   if (f === "tentative") return `${a.tentative ? "+" : "−"} ${name}`;
+  if (f === "atRisk") return `${a.atRisk ? "+" : "−"} ${name}`;
   if (f === "integration") return `${a.linkage?.integration ? "+" : "−"} ${name}`;
   return name;
 }
@@ -323,6 +330,20 @@ function prioText(p: number | null): string {
   return p === null ? "—" : `P${p}`;
 }
 
+function labelsRow(before: readonly string[], after: readonly string[]): HTMLElement {
+  const beforeSet = new Set(before);
+  const afterSet = new Set(after);
+  const row = div("diff-field");
+  row.append(span("diff-field-label", "Labels"));
+  for (const label of after.filter((value) => !beforeSet.has(value))) {
+    row.append(span("diff-add", `+ ${label}`));
+  }
+  for (const label of before.filter((value) => !afterSet.has(value))) {
+    row.append(span("diff-del", `− ${label}`));
+  }
+  return row;
+}
+
 // depRows lists an entity's edge changes as one labeled row, edges flowing
 // inline. The arrow keeps the app's prerequisite → dependent direction:
 // "→ X" is an edge this entity enables, "← X" one that feeds it. Color alone
@@ -354,13 +375,7 @@ function fillItemDetail(el: HTMLElement, entry: ItemDiff): void {
         break;
       case "labels": {
         // Not old-list → new-list: just the labels that came and went.
-        const bSet = new Set(b.labels);
-        const aSet = new Set(a.labels);
-        const row = div("diff-field");
-        row.append(span("diff-field-label", "Labels"));
-        for (const l of a.labels.filter((x) => !bSet.has(x))) row.append(span("diff-add", `+ ${l}`));
-        for (const l of b.labels.filter((x) => !aSet.has(x))) row.append(span("diff-del", `− ${l}`));
-        el.append(row);
+        el.append(labelsRow(b.labels, a.labels));
         break;
       }
       case "lane":
@@ -441,6 +456,7 @@ function renderMilestone(entry: MilestoneDiff): HTMLElement[] {
       if (entry.fields.includes("date")) {
         detailEl.append(fieldRow("Date", isoDate(b.date), isoDate(a.date)));
       }
+      if (entry.fields.includes("labels")) detailEl.append(labelsRow(b.labels, a.labels));
       if (entry.fields.includes("lane")) {
         detailEl.append(fieldRow("Context", beforeIx.lane(b.laneId), afterIx.lane(a.laneId)));
       }

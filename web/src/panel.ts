@@ -243,13 +243,16 @@ export function editSelection(): void {
   focusPanelTitle();
 }
 
-// toggleFlagSelection flags or unflags every selected item, behind the panel
-// chip and the "!" shortcut. Unlike deleteSelection it embraces a
-// multi-selection: flagging the handful of items a discussion just surfaced is
-// the whole point. Mixed selections flag (rather than unflag), so the first
-// press always marks everything; only an all-flagged selection clears.
+// toggleFlagSelection flags or unflags the selected milestone or every selected
+// item, behind the panel chip and the "!" shortcut. Item multi-selection flags
+// on a mixed state and clears only when everything is already flagged.
 export function toggleFlagSelection(): void {
   if (state.preview) return;
+  if (state.selectedMilestoneId !== null) {
+    const milestone = state.findMilestone(state.selectedMilestoneId)?.milestone;
+    if (milestone) void actions.updateMilestone(milestone.id, { flagged: !milestone.flagged });
+    return;
+  }
   const ids = [...state.selectedItemIds];
   if (ids.length === 0) return;
   const items = ids.map((id) => state.findItem(id)?.item).filter((it) => it !== undefined);
@@ -955,7 +958,9 @@ export function renderPanel(panel: HTMLElement): void {
     chips,
   );
 
-  const labels = labelsField(item);
+  const labels = labelsField(item.labels, (labels) =>
+    void actions.updateItem(item.id, { labels }),
+  );
 
   const actionsRow = document.createElement("div");
   actionsRow.className = "panel-actions";
@@ -1105,6 +1110,26 @@ function milestoneTentativeButton(milestone: Milestone): HTMLButtonElement {
   );
 }
 
+function milestoneRiskButton(milestone: Milestone): HTMLButtonElement {
+  return metadataSignalButton(
+    "risk-btn",
+    "At risk: the milestone date stands, but there is reason to doubt it",
+    icons.alertTriangle(16),
+    milestone.atRisk,
+    (atRisk) => void actions.updateMilestone(milestone.id, { atRisk }),
+  );
+}
+
+function milestoneFlagButton(milestone: Milestone): HTMLButtonElement {
+  return metadataSignalButton(
+    "flag-btn",
+    "Flag: needs attention (!)",
+    icons.flag(16),
+    milestone.flagged,
+    (flagged) => void actions.updateMilestone(milestone.id, { flagged }),
+  );
+}
+
 function milestoneIntegrationButton(milestone: Milestone): HTMLButtonElement {
   const published = milestone.linkage?.integration ?? false;
   const title = "Integration milestone: other roadmaps may depend on it";
@@ -1175,11 +1200,14 @@ function riskButton(item: Item): HTMLButtonElement {
   );
 }
 
-// labelsField is a tag editor: removable chips for the item's labels plus an
+// labelsField is a tag editor: removable chips for an entity's labels plus an
 // input to add more (Enter/comma commits; a datalist autocompletes existing
 // labels). Like the priority chips, it mutates its own DOM on add/remove and
 // commits through actions — the panel skips its own rebuild while focused.
-function labelsField(item: { id: number; labels: string[] }): HTMLElement {
+function labelsField(
+  initialLabels: readonly string[],
+  update: (labels: string[]) => void,
+): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "panel-field";
   const label = document.createElement("span");
@@ -1215,9 +1243,8 @@ function labelsField(item: { id: number; labels: string[] }): HTMLElement {
     datalist.append(opt);
   }
 
-  let labels = [...item.labels];
-  const commit = () =>
-    savePanelField(() => void actions.updateItem(item.id, { labels: [...labels] }));
+  let labels = [...initialLabels];
+  const commit = () => savePanelField(() => update([...labels]));
 
   const renderChips = () => {
     chips.replaceChildren();
@@ -1488,19 +1515,27 @@ function renderMilestonePanel(body: HTMLElement, loc: MilestoneLocation): void {
   attrs.append(dates.dateRow);
   if (dates.periodRow) attrs.append(dates.periodRow);
   const tentative = milestoneTentativeButton(milestone);
+  const atRisk = milestoneRiskButton(milestone);
   if (milestone.linkage?.sourceUid) {
     tentative.disabled = true;
     tentative.title = "Tentative timing is set by the source roadmap";
     tentative.setAttribute("aria-label", tentative.title);
+    atRisk.disabled = true;
+    atRisk.title = "At-risk state is set by the source roadmap";
+    atRisk.setAttribute("aria-label", atRisk.title);
   }
-  const signals = [tentative];
+  const signals = [tentative, atRisk, milestoneFlagButton(milestone)];
   // A mirror consumes another roadmap's contract and cannot publish itself.
   if (!milestone.linkage?.sourceUid) {
     signals.unshift(milestoneIntegrationButton(milestone));
   }
   const metadata = metadataField(signals);
+  const labels = labelsField(milestone.labels, (labels) =>
+    void actions.updateMilestone(milestone.id, { labels }),
+  );
   attrs.append(
     metadata,
+    labels,
     dependenciesSection(
       { kind: "milestone", id: milestone.id },
       mirrorSourceGroup(milestone) ?? integrationConsumersGroup(milestone),

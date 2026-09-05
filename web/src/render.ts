@@ -342,7 +342,13 @@ function renderMilestone(m: Milestone, row: number): HTMLElement {
   const title = document.createElement("span");
   title.className = "milestone-title";
   title.textContent = m.title;
-  label.append(linkageMark(m), depMark(milestoneDeps(m)), title);
+  label.append(
+    linkageMark(m),
+    depMark(milestoneDeps(m)),
+    riskMark(m.atRisk),
+    flagMark(m.flagged),
+    title,
+  );
   label.style.maxWidth = `${MS_LABEL_MAX}px`;
   el.append(div("milestone-diamond"), label);
   return el;
@@ -556,12 +562,12 @@ function measureTitleWidth(text: string): number {
   return measureIn("bar-title", text);
 }
 
-// Unlike title text, the dependency mark's width is a CSS box-model result.
-// Measure the real .bar-dep once per variant so changes to its glyph, padding,
-// or margins automatically feed milestone row packing. The conflict ring sits
-// within its 5px trailing margin, so it does not extend the label's right edge.
+// Unlike title text, semantic-mark widths are CSS box-model results. Measure
+// the real elements so changes to their boxes and margins feed milestone row
+// packing automatically.
 const depMarkWidths = new Map<boolean, number>();
 const linkageMarkWidths = new Map<boolean, number>();
+let warningMarkWidth: number | undefined;
 
 function measureMilestoneMark(mark: HTMLElement): number {
   const probe = div("milestone-label");
@@ -599,6 +605,14 @@ function measureLinkageMarkWidth(milestone: Milestone): number {
   return width;
 }
 
+function measureWarningMarkWidth(): number {
+  if (warningMarkWidth !== undefined) return warningMarkWidth;
+  // Both warning kinds deliberately occupy the one .bar-warning box defined
+  // in styles.css, so either glyph measures the space reserved for both.
+  warningMarkWidth = measureMilestoneMark(flagMark(true) as HTMLElement);
+  return warningMarkWidth;
+}
+
 // The width a milestone's band label wants, including its semantic marks,
 // which decides how many rows the band needs (packMilestoneRows, layout.ts).
 function milestoneLabelWidth(milestone: Milestone): number {
@@ -606,6 +620,8 @@ function milestoneLabelWidth(milestone: Milestone): number {
   return (
     measureLinkageMarkWidth(milestone) +
     measureDepMarkWidth(deps) +
+    (milestone.atRisk ? measureWarningMarkWidth() : 0) +
+    (milestone.flagged ? measureWarningMarkWidth() : 0) +
     measureIn("milestone-label", milestone.title)
   );
 }

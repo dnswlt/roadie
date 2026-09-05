@@ -41,6 +41,9 @@ function milestone(id: number, laneId: number, over: Partial<Milestone> = {}): M
     description: "",
     date: "2026-02-01",
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
     ...over,
   };
 }
@@ -305,13 +308,29 @@ test("milestone edits are classified like items", () => {
   assert.deepEqual(kinds, [["modified", "date"], ["added"], ["removed"]]);
 });
 
-test("a milestone tentative flip is a visible modified field", () => {
+test("milestone metadata changes are visible modified fields", () => {
   const before = roadmap([lane(1, { milestones: [milestone(50, 1)] })]);
-  const after = roadmap([lane(1, { milestones: [milestone(50, 1, { tentative: true })] })]);
+  const after = roadmap([
+    lane(1, {
+      milestones: [
+        milestone(50, 1, {
+          labels: ["release"],
+          flagged: true,
+          tentative: true,
+          atRisk: true,
+        }),
+      ],
+    }),
+  ]);
   const d = diffRoadmaps(before, after);
   assert.equal(isEmptyDiff(d), false);
   assert.equal(d.lanes[0]!.milestones[0]!.kind, "modified");
-  assert.deepEqual(d.lanes[0]!.milestones[0]!.fields, ["tentative"]);
+  assert.deepEqual(d.lanes[0]!.milestones[0]!.fields, [
+    "labels",
+    "flagged",
+    "tentative",
+    "atRisk",
+  ]);
   assert.deepEqual(diffCounts(d), { added: 0, removed: 0, modified: 1 });
 });
 
@@ -329,6 +348,9 @@ test("mirror source resolution does not change the snapshot diff", () => {
     linkage: { integration: false, sourceUid: "uid-source" },
   });
   const resolved = milestone(50, 1, {
+    date: "2026-04-01",
+    tentative: true,
+    atRisk: true,
     linkage: {
       integration: false,
       sourceUid: "uid-source",

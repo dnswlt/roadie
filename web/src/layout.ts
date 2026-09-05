@@ -33,7 +33,7 @@ export const MS_LABEL_CLEAR = 14;
 // Milestone titles have no expanded state on the timeline, so this is primarily
 // a readability limit, not a row-saving heuristic. 320px leaves ordinary long
 // titles useful at a glance while still bounding pathological names. It covers
-// the complete label, dependency mark included, and is shared by rendering and
+// the complete label, semantic marks included, and is shared by rendering and
 // packing so their geometry stays exact.
 export const MS_LABEL_MAX = 320;
 

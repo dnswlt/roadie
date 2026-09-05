@@ -30,7 +30,7 @@ function item(
   };
 }
 
-function milestone(id: number, laneId = 1): Milestone {
+function milestone(id: number, laneId = 1, over: Partial<Milestone> = {}): Milestone {
   return {
     id,
     uid: `uid-m${id}`,
@@ -39,6 +39,10 @@ function milestone(id: number, laneId = 1): Milestone {
     description: "",
     date: "2026-01-02",
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
+    ...over,
   };
 }
 
@@ -92,13 +96,23 @@ test("no filter matches every entity", () => {
   assert.equal(state.matchesMilestone(milestone(3)), true);
 });
 
-test("label filter matches items carrying that label and excludes milestones", () => {
+test("label filter matches items and milestones carrying that label", () => {
   state.filter = { kind: "labels", labels: ["a"] };
   assert.equal(state.matchesItem(item(1, ["a", "b"], false)), true);
   assert.equal(state.matchesItem(item(2, ["b"], false)), false);
   // A flagged item is not exempt: the two filter kinds are independent.
   assert.equal(state.matchesItem(item(3, [], true)), false);
-  assert.equal(state.matchesMilestone(milestone(4)), false);
+  assert.equal(state.matchesMilestone(milestone(4, 1, { labels: ["a"] })), true);
+  assert.equal(state.matchesMilestone(milestone(5)), false);
+});
+
+test("label vocabulary is shared by items, children and milestones", () => {
+  const parent = item(1, ["parent"], false, [item(2, ["child"], false)]);
+  const only = lane(1, [parent]);
+  only.milestones.push(milestone(3, only.id, { labels: ["milestone", "parent"] }));
+  state.current = roadmapOf([only]);
+
+  assert.deepEqual(state.allLabels(), ["child", "milestone", "parent"]);
 });
 
 // Several picked labels match as OR: adding one widens the filter result.
@@ -175,6 +189,8 @@ test("flag filter excludes unflagged items regardless of labels", () => {
   state.filter = { kind: "flagged" };
   assert.equal(state.matchesItem(item(1, [], true)), true);
   assert.equal(state.matchesItem(item(2, ["a"], false)), false);
+  assert.equal(state.matchesMilestone(milestone(3, 1, { flagged: true })), true);
+  assert.equal(state.matchesMilestone(milestone(4)), false);
 });
 
 // A user's own label literally named "flagged" must not act as the flag —
@@ -195,6 +211,20 @@ test("at-risk filter excludes items that are not at risk, flagged or not", () =>
   // at-risk one is included even when it lacks the flag.
   assert.equal(state.matchesItem(item(3, [], true, [], false)), false);
   assert.equal(state.matchesItem(item(4, [], true, [], true)), true);
+  assert.equal(state.matchesMilestone(milestone(5, 1, { atRisk: true })), true);
+  assert.equal(state.matchesMilestone(milestone(6)), false);
+});
+
+test("signal counts include milestones", () => {
+  const only = lane(1, [item(1, [], true), item(2, [], false, [], true)]);
+  only.milestones.push(
+    milestone(3, only.id, { flagged: true, atRisk: true }),
+    milestone(4, only.id),
+  );
+  state.current = roadmapOf([only]);
+
+  assert.equal(state.flaggedCount(), 2);
+  assert.equal(state.atRiskCount(), 2);
 });
 
 // The filter holds labels or one signal, never a mix, so each pick drops the other.
@@ -417,6 +447,9 @@ test("hiding contexts drops their item and milestone selections", () => {
     description: "",
     date: "2026-01-01",
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
   });
   const second = lane(2, [item(2, [], false)]);
   state.current = roadmapOf([first, second]);
@@ -444,6 +477,9 @@ test("folding a WBS milestone group drops its selected milestone locally", () =>
     description: "",
     date: "2026-01-01",
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
   });
   state.current = roadmapOf([only]);
   state.hiddenLanes = new Set();
@@ -468,6 +504,9 @@ test("selection and hidden lanes survive a restore, and only ids decide it", () 
     description: "",
     date: "2026-01-01",
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
   });
   const laneWith = (id: number, itemId: number, msId: number): LaneFull => {
     const l = lane(id, [item(itemId, [], false)]);

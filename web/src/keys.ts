@@ -110,7 +110,7 @@ export const bindings: Binding[] = [
   {
     key: "!",
     label: "!",
-    description: "*Flag or unflag* the selected items.",
+    description: "*Flag or unflag* the selected items or milestone.",
     run: () => toggleFlagSelection(),
   },
   {

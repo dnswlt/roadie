@@ -37,7 +37,7 @@ function item(
   };
 }
 
-function milestone(id: number): Milestone {
+function milestone(id: number, over: Partial<Milestone> = {}): Milestone {
   return {
     id,
     uid: `uid-m${id}`,
@@ -46,6 +46,10 @@ function milestone(id: number): Milestone {
     description: "",
     date: "2026-01-01",
     tentative: false,
+    atRisk: false,
+    labels: [],
+    flagged: false,
+    ...over,
   };
 }
 
@@ -183,11 +187,11 @@ test("a filter removes non-matching milestones but preserves their lane", () => 
   );
 });
 
-test("milestones can match dependency conflicts but not item-only metadata", () => {
-  const ms = milestone(9);
-  assert.equal(match({ kind: "labels", labels: ["keep"] })!(milestoneFacts(ms)), false);
-  assert.equal(match({ kind: "flagged" })!(milestoneFacts(ms)), false);
-  assert.equal(match({ kind: "atRisk" })!(milestoneFacts(ms)), false);
+test("milestones match their labels and attention metadata", () => {
+  const ms = milestone(9, { labels: ["keep"], flagged: true, atRisk: true });
+  assert.equal(match({ kind: "labels", labels: ["keep"] })!(milestoneFacts(ms)), true);
+  assert.equal(match({ kind: "flagged" })!(milestoneFacts(ms)), true);
+  assert.equal(match({ kind: "atRisk" })!(milestoneFacts(ms)), true);
 
   const conflicts = filterPredicate(
     { kind: "dependencyConflicts" },

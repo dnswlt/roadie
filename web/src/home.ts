@@ -494,21 +494,17 @@ function countdown(purgeAt: string): string {
 
 // countContents totals what the roadmap holds. Children count as items: they
 // are items, and a total that skipped them would disagree with what the chart
-// visibly contains. The flagged count rides along because open flags are a
-// signal ("something in here needs attention"), not bookkeeping.
-function countContents(rm: RoadmapFull): { items: number; milestones: number; flagged: number } {
+// visibly contains.
+function countContents(rm: RoadmapFull): { items: number; milestones: number } {
   let items = 0;
   let milestones = 0;
-  let flagged = 0;
   for (const lane of rm.lanes) {
     for (const item of lane.items) {
       items += 1 + item.children.length;
-      if (item.flagged) flagged++;
-      for (const c of item.children) if (c.flagged) flagged++;
     }
     milestones += lane.milestones.length;
   }
-  return { items, milestones, flagged };
+  return { items, milestones };
 }
 
 function plural(n: number, word: string): string {
@@ -576,11 +572,8 @@ function factsBlock(rm: RoadmapFull, authors: Contributor[]): HTMLElement {
   if (more > 0) contexts.title = laneNames.join(", ");
   facts.append(contexts);
 
-  const { items, milestones, flagged } = countContents(rm);
+  const { items, milestones } = countContents(rm);
   facts.append(factRow("Size", `${plural(items, "item")} · ${plural(milestones, "milestone")}`));
-  // Open flags mean "something in here needs attention" — worth a row, but
-  // only when there are any; "Flagged: 0" would be noise on every roadmap.
-  if (flagged > 0) facts.append(factRow("Flagged", plural(flagged, "item")));
 
   // "Standard" = the plain calendar grid (quarters/months); a schedule swaps
   // that for named sprint/PI periods.

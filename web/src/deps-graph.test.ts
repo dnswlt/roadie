@@ -49,6 +49,9 @@ const lane = (id: number, position: number, itemIds: number[], milestoneIds: num
       description: "",
       date: "2026-01-01",
       tentative: false,
+      atRisk: false,
+      labels: [],
+      flagged: false,
     }),
   ),
 });
@@ -141,6 +144,9 @@ const milestone = (id: number, date: string): Milestone => ({
   description: "",
   date,
   tentative: false,
+  atRisk: false,
+  labels: [],
+  flagged: false,
 });
 
 test("analyzeDependencies counts each direction and omits entities with no edges", () => {

@@ -122,8 +122,7 @@ func TestMilestoneMetadataAPI(t *testing.T) {
 	}
 
 	w := do(t, http.MethodPost, "/api/lanes/"+itoa(lane.ID)+"/milestones", map[string]any{
-		"title": "Launch", "date": "2026-03-15", "labels": []string{" release ", "@team"},
-		"flagged": true, "tentative": true, "atRisk": true,
+		"title": "Launch", "date": "2026-03-15", "tentative": true,
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create status: want 201, got %d (%s)", w.Code, w.Body.String())
@@ -132,16 +131,29 @@ func TestMilestoneMetadataAPI(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &milestone); err != nil {
 		t.Fatal(err)
 	}
+	if len(milestone.Labels) != 0 || milestone.Flagged || !milestone.Tentative || milestone.AtRisk {
+		t.Fatalf("create response has unexpected metadata: %+v", milestone)
+	}
+
+	w = do(t, http.MethodPatch, "/api/milestones/"+itoa(milestone.ID), map[string]any{
+		"labels": []string{" release ", "@team"}, "flagged": true, "atRisk": true,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch status: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &milestone); err != nil {
+		t.Fatal(err)
+	}
 	if len(milestone.Labels) != 2 || milestone.Labels[0] != "release" || milestone.Labels[1] != "@team" ||
 		!milestone.Flagged || !milestone.Tentative || !milestone.AtRisk {
-		t.Fatalf("create response lost metadata: %+v", milestone)
+		t.Fatalf("patch response lost metadata: %+v", milestone)
 	}
 
 	w = do(t, http.MethodPatch, "/api/milestones/"+itoa(milestone.ID), map[string]any{
 		"labels": []string{}, "flagged": false, "tentative": false, "atRisk": false,
 	})
 	if w.Code != http.StatusOK {
-		t.Fatalf("patch status: want 200, got %d (%s)", w.Code, w.Body.String())
+		t.Fatalf("clear status: want 200, got %d (%s)", w.Code, w.Body.String())
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &milestone); err != nil {
 		t.Fatal(err)

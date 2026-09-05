@@ -607,8 +607,8 @@ export const actions = {
         lane.milestones.push(milestone);
         lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
       }
-      // A new milestone carries none of the item-only filter metadata and has
-      // no dependency yet. Do not create it invisibly under a positive filter.
+      // A new milestone carries no labels or attention marks and has no
+      // dependency yet. Do not create it invisibly under a positive filter.
       if (!state.matchesMilestone(milestone)) state.filter = null;
       state.selectMilestone(milestone.id);
       state.notify();
@@ -647,8 +647,11 @@ export const actions = {
         if (patch.title !== undefined) milestone.title = patch.title;
         if (patch.description !== undefined)
           milestone.description = patch.description;
+        if (patch.labels !== undefined) milestone.labels = patch.labels;
+        if (patch.flagged !== undefined) milestone.flagged = patch.flagged;
         if (patch.tentative !== undefined)
           milestone.tentative = patch.tentative;
+        if (patch.atRisk !== undefined) milestone.atRisk = patch.atRisk;
         if (patch.integration !== undefined) {
           if (patch.integration) {
             milestone.linkage = { ...milestone.linkage, integration: true };

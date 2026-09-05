@@ -32,7 +32,13 @@ func newMirrorFixture(t *testing.T) mirrorFixture {
 	f.providerLane = lane
 	f.source, err = testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
 		Title: "API available", Description: "v1 of the public API",
-		Date: date("2026-05-01"), Tentative: true, AtRisk: true, Integration: true})
+		Date: date("2026-05-01"), Tentative: true, Integration: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.source, err = testStore.UpdateMilestone(ctx, f.source.ID, MilestonePatch{
+		AtRisk: model.Opt[bool]{Set: true, Value: true},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

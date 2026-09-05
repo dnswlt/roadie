@@ -150,7 +150,7 @@ export function search(rm: RoadmapFull, query: string): Match[] {
     for (const ms of lane.milestones as Milestone[]) {
       const tier = rowTier(terms, {
         title: ms.title.toLowerCase(),
-        labels: "", // milestones carry neither labels nor a flag
+        labels: ms.labels.join("\n").toLowerCase(),
         description: ms.description.toLowerCase(),
         lane: laneLower,
       });

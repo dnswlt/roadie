@@ -47,7 +47,10 @@ export type MilestoneField =
   | "title"
   | "description"
   | "date"
+  | "labels"
+  | "flagged"
   | "tentative"
+  | "atRisk"
   | "integration"
   | "lane"
   | "deps";
@@ -175,8 +178,18 @@ export function milestoneChanges(b: Milestone, a: Milestone): MilestoneField[] {
   const out: MilestoneField[] = [];
   if (b.title !== a.title) out.push("title");
   if (b.description !== a.description) out.push("description");
-  if (b.date !== a.date) out.push("date");
-  if (b.tentative !== a.tentative) out.push("tentative");
+  if (!sameLabels(b.labels, a.labels)) out.push("labels");
+  if (b.flagged !== a.flagged) out.push("flagged");
+  // A mirror's date and planning signals are projected from its source onto
+  // live reads, but a snapshot holds the local fallback values. Restoring it
+  // does not change the provider's plan, so those presentation differences do
+  // not belong in the version diff.
+  const mirror = !!(b.linkage?.sourceUid || a.linkage?.sourceUid);
+  if (!mirror) {
+    if (b.date !== a.date) out.push("date");
+    if (b.tentative !== a.tentative) out.push("tentative");
+    if (b.atRisk !== a.atRisk) out.push("atRisk");
+  }
   // Source resolution is request-scoped presentation state, not snapshot
   // content. Only the persisted publishing role participates in the diff.
   if ((b.linkage?.integration ?? false) !== (a.linkage?.integration ?? false))

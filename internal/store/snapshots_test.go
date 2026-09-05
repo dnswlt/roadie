@@ -29,9 +29,16 @@ func seedSmallRoadmap(t *testing.T, rmID int64) model.Lane {
 		Title: "Child", StartDate: date("2026-01-05"), EndDate: date("2026-01-10"), ParentID: &parent.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
-		Title: "Launch", Date: date("2026-03-01"), Labels: []string{"release"},
-		Flagged: true, Tentative: true, AtRisk: true}); err != nil {
+	milestone, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
+		Title: "Launch", Date: date("2026-03-01"), Tentative: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, milestone.ID, MilestonePatch{
+		Labels:  model.Opt[[]string]{Set: true, Value: []string{"release"}},
+		Flagged: model.Opt[bool]{Set: true, Value: true},
+		AtRisk:  model.Opt[bool]{Set: true, Value: true},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	return lane

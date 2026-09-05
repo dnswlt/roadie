@@ -795,15 +795,25 @@ func TestMilestones(t *testing.T) {
 
 	m, err := testStore.CreateMilestone(ctx, lane.ID, NewMilestone{
 		Title: "GA launch", Description: "Public release", Date: date("2026-06-01"),
-		Labels: []string{" release ", "@team", "release"}, Flagged: true,
-		Tentative: true, AtRisk: true,
+		Tentative: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.Title != "GA launch" || !m.Date.Equal(date("2026-06-01").Time) || m.LaneID != lane.ID ||
-		!slices.Equal(m.Labels, []string{"release", "@team"}) || !m.Flagged || !m.Tentative || !m.AtRisk {
+		len(m.Labels) != 0 || m.Flagged || !m.Tentative || m.AtRisk {
 		t.Errorf("create result: %+v", m)
+	}
+	m, err = testStore.UpdateMilestone(ctx, m.ID, MilestonePatch{
+		Labels:  model.Opt[[]string]{Set: true, Value: []string{" release ", "@team", "release"}},
+		Flagged: model.Opt[bool]{Set: true, Value: true},
+		AtRisk:  model.Opt[bool]{Set: true, Value: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(m.Labels, []string{"release", "@team"}) || !m.Flagged || !m.AtRisk {
+		t.Errorf("metadata update: %+v", m)
 	}
 
 	// Validation: empty title, missing date, missing lane.
@@ -938,9 +948,16 @@ func TestImportRoadmap(t *testing.T) {
 		AtRisk:    model.Opt[bool]{Set: true, Value: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testStore.CreateMilestone(ctx, lane2.ID, NewMilestone{
-		Title: "Launch", Date: date("2026-03-01"), Labels: []string{"release"},
-		Flagged: true, Tentative: true, AtRisk: true}); err != nil {
+	milestone, err := testStore.CreateMilestone(ctx, lane2.ID, NewMilestone{
+		Title: "Launch", Date: date("2026-03-01"), Tentative: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testStore.UpdateMilestone(ctx, milestone.ID, MilestonePatch{
+		Labels:  model.Opt[[]string]{Set: true, Value: []string{"release"}},
+		Flagged: model.Opt[bool]{Set: true, Value: true},
+		AtRisk:  model.Opt[bool]{Set: true, Value: true},
+	}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -24,9 +24,9 @@ export type Filter = { readonly inverted?: boolean } & (
 
 export type SignalFilterKind = Exclude<Filter["kind"], "labels">;
 
-// What the filter can ask about anything the chart draws. Milestones carry no
-// labels and no attention marks: they answer those item-only questions with
-// the empty answer rather than becoming a special case in every filter kind.
+// What the filter can ask about anything the chart draws. The adapters below
+// keep entity kinds out of the predicate itself; both expose the same metadata
+// while retaining kind-qualified dependency keys.
 export interface Filterable {
   readonly key: string;
   readonly labels: readonly string[];
@@ -46,9 +46,9 @@ export function itemFacts(item: Item): Filterable {
 export function milestoneFacts(milestone: Milestone): Filterable {
   return {
     key: refKey({ kind: "milestone", id: milestone.id }),
-    labels: [],
-    flagged: false,
-    atRisk: false,
+    labels: milestone.labels,
+    flagged: milestone.flagged,
+    atRisk: milestone.atRisk,
   };
 }
 
