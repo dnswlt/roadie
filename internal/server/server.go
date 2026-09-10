@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/dnswlt/roadie/internal/auth"
 	"github.com/dnswlt/roadie/internal/model"
 	"github.com/dnswlt/roadie/internal/recon"
+	"github.com/dnswlt/roadie/internal/sheet"
 	"github.com/dnswlt/roadie/internal/store"
 	"github.com/dnswlt/roadie/internal/tracker"
 )
@@ -143,6 +145,7 @@ func New(st *store.Store, static fs.FS, opts ...Option) *Server {
 	s.mux.HandleFunc("DELETE /api/roadmaps/{id}/purge", s.guard(byRoadmapID, s.purgeRoadmap))
 	s.mux.HandleFunc("POST /api/roadmaps/{id}/duplicate", s.guard(byRoadmapID, s.duplicateRoadmap))
 	s.mux.HandleFunc("GET /api/roadmaps/{id}/export", s.guard(byRoadmapID, s.exportRoadmap))
+	s.mux.HandleFunc("GET /api/roadmaps/{id}/export.xlsx", s.guard(byRoadmapID, s.exportRoadmapSheet))
 	s.mux.HandleFunc("GET /api/roadmaps/{id}", s.guard(byRoadmapID, s.getRoadmap))
 	s.mux.HandleFunc("PATCH /api/roadmaps/{id}", s.snap(snapThrottle, byRoadmapID, s.patchRoadmap))
 	// Visibility is not roadmap content — it is not snapshotted, and a restore
@@ -457,9 +460,46 @@ func (s *Server) exportRoadmap(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition",
-		fmt.Sprintf("attachment; filename=%q", exportFilename(full.Name)))
+		fmt.Sprintf("attachment; filename=%q", exportFilename(full.Name, ".roadie.json")))
 	if err := json.NewEncoder(w).Encode(exp); err != nil {
 		log.Printf("write export: %v", err)
+	}
+}
+
+// xlsxContentType is the OOXML spreadsheet media type.
+const xlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+// exportRoadmapSheet streams the roadmap as a downloadable .xlsx workbook
+// (internal/sheet), named after the roadmap.
+//
+// Its own route rather than a format parameter on the JSON export: the two
+// produce unrelated files — one round-trips back through import, the other is
+// for reading — and the extension in the path is what makes a plain browser
+// navigation download something the OS recognizes.
+//
+// The workbook is built in memory rather than streamed: a zip archive that
+// fails halfway through would already have sent a 200 and a Content-Length.
+func (s *Server) exportRoadmapSheet(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeClientErr(w, err)
+		return
+	}
+	full, err := s.store.GetRoadmapFull(r.Context(), id)
+	if err != nil {
+		s.writeErr(w, err)
+		return
+	}
+	var buf bytes.Buffer
+	if err := sheet.Write(&buf, full, sheet.Options{ExportedAt: time.Now().UTC()}); err != nil {
+		s.writeErr(w, fmt.Errorf("render xlsx: %w", err))
+		return
+	}
+	w.Header().Set("Content-Type", xlsxContentType)
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf("attachment; filename=%q", exportFilename(full.Name, ".xlsx")))
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("write xlsx export: %v", err)
 	}
 }
 
@@ -530,9 +570,10 @@ func (s *Server) importWithMode(w http.ResponseWriter, r *http.Request, mode sto
 	writeJSON(w, http.StatusCreated, rm)
 }
 
-// exportFilename turns a roadmap name into a safe download filename, keeping
-// letters/digits and collapsing everything else to underscores.
-func exportFilename(name string) string {
+// exportFilename turns a roadmap name into a safe download filename with the
+// given suffix, keeping letters/digits and collapsing everything else to
+// underscores.
+func exportFilename(name, suffix string) string {
 	var b strings.Builder
 	for _, r := range name {
 		switch {
@@ -546,7 +587,7 @@ func exportFilename(name string) string {
 	if base == "" {
 		base = "roadmap"
 	}
-	return base + ".roadie.json"
+	return base + suffix
 }
 
 func (s *Server) getRoadmap(w http.ResponseWriter, r *http.Request) {

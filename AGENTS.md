@@ -72,7 +72,8 @@ Jira Recon view (`recon.ts`, server `tracker.go`) · schedule check
 scripts in `internal/tracker/extractor`; the script editor is Recon's third
 tab) ·
 version diff (`diff.ts` + `diff-text.ts` + `diff-view.ts`, toggled from the
-snapshot banner).
+snapshot banner) · Excel export (`internal/sheet`, served from
+`GET /api/roadmaps/{id}/export.xlsx`).
 
 ## Rules
 

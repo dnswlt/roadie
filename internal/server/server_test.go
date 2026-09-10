@@ -14,6 +14,7 @@ import (
 
 	"github.com/dnswlt/roadie/internal/model"
 	"github.com/dnswlt/roadie/internal/store"
+	"github.com/xuri/excelize/v2"
 )
 
 var testSrv *Server
@@ -168,6 +169,38 @@ func TestMilestoneMetadataAPI(t *testing.T) {
 	got := full.Lanes[0].Milestones[0]
 	if len(got.Labels) != 0 || got.Flagged || got.Tentative || got.AtRisk {
 		t.Fatalf("roadmap read did not reflect patched metadata: %+v", got)
+	}
+}
+
+// The .xlsx export is a separate download with its own content type and
+// filename, and what it serves must be a workbook a reader can actually open.
+// What is *in* it is internal/sheet's business and tested there.
+func TestExportXLSX(t *testing.T) {
+	id := seedRoadmap(t, "test-"+t.Name())
+
+	w := do(t, "GET", "/api/roadmaps/"+itoa(id)+"/export.xlsx", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != xlsxContentType {
+		t.Errorf("content-type: %q", ct)
+	}
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, `filename="test_TestExportXLSX.xlsx"`) {
+		t.Errorf("content-disposition: %q", cd)
+	}
+	f, err := excelize.OpenReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("the download is not a workbook: %v", err)
+	}
+	defer f.Close()
+	rows, err := f.GetRows("Roadmap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The header plus the seeded milestone, parent and child.
+	if len(rows) != 4 {
+		t.Errorf("rows = %d, want 4: %v", len(rows), rows)
 	}
 }
 

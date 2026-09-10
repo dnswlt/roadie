@@ -113,6 +113,9 @@ export const api = {
   purgeRoadmap: (id: number) =>
     req<void>("DELETE", `/api/roadmaps/${id}/purge`),
   exportRoadmapUrl: (id: number) => `/api/roadmaps/${id}/export`,
+  // A rendering to read rather than a file to import: nothing takes an .xlsx
+  // back, which is why it is a separate URL and not a parameter on the one above.
+  exportRoadmapSheetUrl: (id: number) => `/api/roadmaps/${id}/export.xlsx`,
   // An import is always public; the server records the importer as its owner,
   // so it can be made private straight afterwards. The file's own visibility
   // field is ignored server-side — a file must not be able to publish itself.

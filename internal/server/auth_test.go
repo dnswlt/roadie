@@ -28,6 +28,7 @@ func TestRequireClientHeader(t *testing.T) {
 		// Safe methods change nothing, so there is nothing to forge — and the
 		// export link is a plain browser navigation that cannot set headers.
 		{"GET without header", "GET", "/api/roadmaps/1/export", "", true},
+		{"xlsx export without header", "GET", "/api/roadmaps/1/export.xlsx", "", true},
 		// Only the API is guarded; the login flow posts no client id.
 		{"logout without header", "POST", "/auth/logout", "", true},
 	}

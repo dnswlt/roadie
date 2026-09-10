@@ -37,6 +37,9 @@
 //
 // The map keys are persisted on lanes — "red" is a stored value, not a
 // description of the hex. Retheme by changing the hex, never the key.
+//
+// internal/sheet/colors.go holds the same six hexes: the .xlsx export is
+// rendered without a browser, so it cannot derive them from here. Retheme both.
 
 export const LANE_COLORS: Record<string, string> = {
   blue: "#779df5",

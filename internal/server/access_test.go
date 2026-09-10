@@ -97,6 +97,7 @@ func (f privateFixture) calls() []apiCall {
 	return []apiCall{
 		{"GET /api/roadmaps/{id}", "GET", rm(""), ""},
 		{"GET /api/roadmaps/{id}/export", "GET", rm("/export"), ""},
+		{"GET /api/roadmaps/{id}/export.xlsx", "GET", rm("/export.xlsx"), ""},
 		{"GET /api/roadmaps/{id}/contributors", "GET", rm("/contributors"), ""},
 		{"GET /api/roadmaps/{id}/snapshots", "GET", rm("/snapshots"), ""},
 		{"POST /api/roadmaps/{id}/snapshots", "POST", rm("/snapshots"), `{"name":"v1.0"}`},
@@ -212,6 +213,7 @@ func TestOwnerReachesOwnPrivateRoadmap(t *testing.T) {
 	for _, path := range []string{
 		fmt.Sprintf("/api/roadmaps/%d", f.roadmap),
 		fmt.Sprintf("/api/roadmaps/%d/export", f.roadmap),
+		fmt.Sprintf("/api/roadmaps/%d/export.xlsx", f.roadmap),
 		fmt.Sprintf("/api/roadmaps/%d/contributors", f.roadmap),
 		fmt.Sprintf("/api/roadmaps/%d/snapshots", f.roadmap),
 		fmt.Sprintf("/api/snapshots/%d", f.snapshot),

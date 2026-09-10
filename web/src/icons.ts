@@ -103,6 +103,12 @@ export const icons = {
         `<path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>`,
       size,
     ),
+  table: (size = 16) =>
+    svg(
+      `<rect width="18" height="18" x="3" y="3" rx="2"/>` +
+        `<path d="M3 9h18"/><path d="M3 15h18"/><path d="M12 3v18"/>`,
+      size,
+    ),
   upload: (size = 16) =>
     svg(
       `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>` +

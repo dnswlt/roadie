@@ -421,6 +421,7 @@ function injectIcons(): void {
   $("rm-history").prepend(icons.history(14));
   $("rm-schedule").prepend(icons.calendar(14));
   $("rm-export").prepend(icons.download(14));
+  $("rm-export-xlsx").prepend(icons.table(14));
   $("rm-copy-md").prepend(icons.copy(14));
   $("rm-delete").prepend(icons.trash(14));
   $("snap-menu").append(icons.magnet(18));
@@ -544,6 +545,10 @@ function wireTopbar(): void {
   $("rm-export").addEventListener("click", () => {
     closeTopbarMenu(menuPop);
     actions.exportRoadmap();
+  });
+  $("rm-export-xlsx").addEventListener("click", () => {
+    closeTopbarMenu(menuPop);
+    actions.exportRoadmapSheet();
   });
   // Export downloads the JSON that import and snapshots round-trip; this copies
   // the same roadmap as prose, for pasting somewhere that reads rather than

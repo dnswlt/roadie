@@ -29,6 +29,17 @@ type ItemMetadataPatch = Pick<
 // use it at all — they inherit their parent's exact range.
 const DEFAULT_ITEM_SPAN = 27;
 
+// download navigates to a server route that answers with an attachment. The
+// empty `download` attribute leaves the filename to Content-Disposition.
+function download(url: string): void {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "";
+  document.body.append(a);
+  a.click();
+  a.remove();
+}
+
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -304,12 +315,14 @@ export const actions = {
   // the file.
   exportRoadmap(): void {
     if (!state.current) return;
-    const a = document.createElement("a");
-    a.href = api.exportRoadmapUrl(state.current.id);
-    a.download = ""; // let the server's Content-Disposition set the filename
-    document.body.append(a);
-    a.click();
-    a.remove();
+    download(api.exportRoadmapUrl(state.current.id));
+  },
+
+  // exportRoadmapSheet downloads the same roadmap as a spreadsheet: a rendering
+  // to read and pivot, not a file anything imports back.
+  exportRoadmapSheet(): void {
+    if (!state.current) return;
+    download(api.exportRoadmapSheetUrl(state.current.id));
   },
 
   // importRoadmap uploads a previously exported file as a new roadmap and
