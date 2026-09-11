@@ -265,8 +265,9 @@ func (x *writer) writeRow(n int, r row) {
 // LibreOffice render the cell as a single run — the line breaks inside it
 // disappear. So the two cases are drawn differently rather than fudged into
 // one: a lone link *is* the cell, clickable and styled as a link, with its URL
-// in the tooltip; several are plain text, one per line, to read and copy.
-// Styling those as links would promise a click target the format cannot give.
+// in the tooltip; several are plain text, one per line. Styling those as links
+// would promise a click target the format cannot give. Either way the cell
+// names the links; the URLs behind them are in the description beside it.
 func (x *writer) writeLinks(n int, description string) int {
 	links := extractLinks(description)
 	if len(links) == 0 {
@@ -279,12 +280,12 @@ func (x *writer) writeLinks(n int, description string) int {
 			excelize.HyperlinkOpts{Tooltip: &tooltip}))
 		return 1
 	}
-	urls := make([]string, len(links))
+	labels := make([]string, len(links))
 	for i, l := range links {
-		urls[i] = l.url
+		labels[i] = l.label
 	}
-	x.styled(sheetRoadmap, colLinks, n, x.st.wrapped(), strings.Join(urls, "\n"))
-	return len(urls)
+	x.styled(sheetRoadmap, colLinks, n, x.st.wrapped(), strings.Join(labels, "\n"))
+	return len(labels)
 }
 
 // writeDeps renders one dependency cell. A number whose edge the calendar

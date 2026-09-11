@@ -62,9 +62,9 @@ func TestItemRowValues(t *testing.T) {
 		{"L", "Yes"},
 		{"M", "Yes"},
 		{"N", "platform, q1"},
-		// Two links, so the cell is plain text with one URL per line: attaching
-		// a hyperlink would collapse them onto one.
-		{"O", "https://x.test/design\nhttps://y.test/notes"},
+		// Two links, so the cell is plain text with one per line: attaching a
+		// hyperlink would collapse them onto one.
+		{"O", "the design\ny.test/notes"},
 		{"P", "spec at [the design](https://x.test/design), also https://y.test/notes."},
 	} {
 		if got := cell(t, f, sheetRoadmap, tc.col+rowItem); got != tc.want {

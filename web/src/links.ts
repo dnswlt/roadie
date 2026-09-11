@@ -1,4 +1,9 @@
 // Extract bare URLs and `[text](url)` links from descriptions.
+//
+// internal/sheet/links.go is a port of this file for the .xlsx export, which is
+// rendered without a browser. Change the matching, the trimming or a label here
+// and it has to change there too, or the same description names its links two
+// ways.
 
 // A link found in a description, ready to render.
 export interface Link {
@@ -60,9 +65,14 @@ export function extractLinks(text: string): Link[] {
   return [...byUrl.values()];
 }
 
-// linkLabel gives a chip a short, human-readable name: a Jira-style issue key
-// when the URL is a ".../browse/KEY-123" link, otherwise the host plus the
-// last path segment (so two links to the same host stay distinguishable).
+// linkLabel gives a chip a short, human-readable name: an issue key when the URL
+// is a ".../browse/KEY-123" link, otherwise the host plus the last path segment
+// (so two links to the same host stay distinguishable). The set of shapes it
+// recognises can be extended.
+//
+// This is presentation, not tracker integration. Which of a description's links
+// are the tracker's own issues is a separate question, needs the configured
+// tracker host, and is answered in recon-diff.ts from state.me.trackerUrl.
 export function linkLabel(url: string): string {
   try {
     const u = new URL(url);
