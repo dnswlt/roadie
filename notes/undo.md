@@ -12,12 +12,12 @@
 
 ## The Claim
 
-Every undo-worthy mutation in Roadie is a partial PATCH on entities that keep
-their database IDs. Its inverse is another PATCH of the same shape. So undo is
-not a subsystem: it is `actions` applying the inverse of what it just applied,
-through `optimistic()` like any other edit — same rollback, same toast, and
-server-side the same `s.snap` wrapper, so an undo takes its own snapshot,
-broadcasts its own SSE doorbell, and is attributed to whoever pressed it.
+Undo-worthy field edits are partial PATCHes on entities that keep their database
+IDs; lane order uses its existing PUT. Each inverse uses the same mutation path
+as the forward edit. So undo is not a separate server subsystem: it is `actions`
+applying another edit, with the same toast and `s.snap` wrapper. An undo takes
+its own snapshot, broadcasts its own SSE doorbell, and is attributed to whoever
+pressed it.
 
 The backend changes not at all.
 
@@ -42,11 +42,18 @@ One batch = one undo step. The existing multi-call actions
 (`moveItemWithChildren`, `shiftItems`, `updateItemMetadata`) already batch
 exactly this way, so the grouping is not a new judgement call.
 
+Record item, milestone and lane edits by what they change, wherever the user
+makes them. That includes an item description changed by Jira linking and a
+milestone's integration status. Saving a Jira favourite query or extractor
+script is not an edit to roadmap content and never enters this stack.
+
 ## The Inverse Is Read, Not Captured
 
 `inverseOf(edit, roadmap)` walks the batch and, for each entry, reads the
 entity's current values for exactly the fields the patch sets. No call site
-captures a "before" value, so no call site can capture a stale one.
+captures a separate "before" value. The inverse still reflects the client's
+last observed roadmap, which can lag another user's write. Copy mutable values
+such as labels; the milestone's integration value comes from its linkage.
 
 The one special case: **a patch touching any of `parentId`, `laneId` or `rank`
 inverts to all three**, plus the item's current index in its container. A move
@@ -62,20 +69,28 @@ are. That is where the position algebra gets pinned, not by hand-dragging.
 ## One Choke Point
 
 `actions.applyEdit(edit, { push = true })` computes the inverse, then does what
-today's actions do: optimistic local apply, `Promise.all` of the API calls,
-rollback on failure. On success — and only on success — it pushes the inverse.
+today's actions do: optimistic local apply followed by the existing API calls.
+On success — and only on success — it pushes the inverse. For a multi-call
+gesture, wait for every request to settle. If any fails, do not record an undo
+step: clear the stack and reload from the server after all calls finish. An
+optimistic snapshot rollback cannot undo requests that already committed.
 
 `updateItem`, `moveItemWithChildren`, `shiftItems`, `updateItemMetadata`,
 `updateMilestone`, `renameLane`, `setLaneColor` and `reorderLanes` become thin
 builders over it. Call sites in `panel.ts`, `dnd.ts`, `wbs-dnd.ts` and `app.ts`
 do not change.
 
-Undo itself calls `applyEdit(inverse, { push: false })` and moves a cursor.
+Undo itself calls `applyEdit(inverse, { push: false })` and moves the cursor only
+on success. This is replay, not an excluded content mutation: it neither pushes
+a new entry nor clears the stack.
+Undo/redo cannot run while a roadmap edit is pending, and repeated shortcuts
+cannot start a second replay before the first finishes. Ordinary edits keep
+their existing concurrency behavior; undo introduces no write queue.
 
 ## The Stack Invariant
 
-> Every entry on the stack refers to entities that still exist and that nobody
-> else has touched.
+> Every entry belongs to the current live roadmap and the client state from
+> which its inverse was read.
 
 Held by clearing, never by checking:
 
@@ -83,13 +98,20 @@ Held by clearing, never by checking:
   `set current` accessor, which already invalidates everything derived from the
   model's identity. That covers the SSE refresh, switching roadmaps, entering
   and leaving a snapshot preview, a restore, and a failed mutation's rollback.
-* **A mutation that is not a patch ⇒ clear** (`undo.clear()`): every create,
-  every delete, schedule replace, dependency add/remove, import.
+* **A foreign SSE event or stream disconnect ⇒ clear immediately**, even when
+  refresh is deferred during a drag or field edit. Reconnect refreshes the
+  roadmap before new history can be recorded.
+* **A successful roadmap-content mutation not recorded as an Edit ⇒ clear.**
+  The action mutation boundary does this by default; recording an Edit is the
+  explicit exception. Creates, deletes, schedule replacement and dependency
+  changes clear the stack. Tracker favourites, extractor scripts, checkpoint
+  metadata and visibility are outside that roadmap-content boundary.
 
-So undo needs no "does this still exist" guard: with those two rules the case
-cannot arise. Dropping the stack on a remote edit is deliberate — undo does not
-have to work under concurrent editing, and reasoning about a stack that has to
-is where undo implementations go wrong.
+Clear on an *observed* remote edit rather than waiting for `state.current` to
+be replaced. Client-only undo cannot prevent a remote write that lands before
+its SSE notification from being overwritten by an inverse PATCH. A GET before
+undo would narrow, but not close, that check-then-write gap. An in-flight edit
+may push its inverse only if no stack clear happened while it was pending.
 
 ## Redo
 
@@ -105,9 +127,10 @@ to the browser and the OS. Cmd+Z is the exception that proves it: the rule is
 against *inventing* chords, and this one is already in everyone's fingers.
 
 Add an optional `mod: "primary"` to `Binding` (Cmd on macOS, Ctrl elsewhere)
-and let those through. Undo keeps `inTextField: false`, so while the caret sits
-in the title field Cmd+Z stays the browser's own text undo — which is what the
-user means there, and is free.
+and let those through: Cmd/Ctrl+Z for undo, Cmd/Ctrl+Shift+Z for redo. Both keep
+`inTextField: false`, so while the caret sits in the title field they stay the
+browser's own text undo/redo. While a historical snapshot is previewed, they
+do nothing; browsing the live roadmap's history list is not an edit.
 
 Help renders the bindings table, so undo documents itself.
 
@@ -139,6 +162,6 @@ come back. That is a restore, and version history does it.
 **Creates, schedule, dependencies, import.** Same reason or smaller: nothing
 here is a field change on a surviving entity.
 
-Both clear the stack, and the reason for the clear is worth remembering so a
-Cmd+Z that finds nothing can say "Deleting can't be undone — use version
-history" rather than doing nothing at all.
+Those roadmap-content changes clear the stack, and the reason is worth
+remembering so a Cmd+Z that finds nothing can say "Empty undo stack —
+use version history" rather than doing nothing at all.
