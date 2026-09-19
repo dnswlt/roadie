@@ -5,7 +5,13 @@
 // item selection/edit-panel flow.
 
 import { expect, test } from "@playwright/test";
-import { laneItems, purgeRoadmap, seedRoadmap, type Seeded } from "./support";
+import {
+  laneItems,
+  purgeRoadmap,
+  seedRoadmap,
+  trackerBrowseUrl,
+  type Seeded,
+} from "./support";
 
 let seeded: Seeded;
 
@@ -13,7 +19,7 @@ test.beforeEach(async ({ request, page }) => {
   seeded = await seedRoadmap(request, ["Linked parent", "Unlinked sibling"]);
   const parent = seeded.items[0]!;
   const linked = await request.patch(`/api/items/${parent.id}`, {
-    data: { description: "https://jira.example.test/browse/ROAD-1" },
+    data: { description: await trackerBrowseUrl(request, "ROAD-1") },
   });
   expect(linked.ok(), `PATCH item -> ${linked.status()}`).toBe(true);
   const child = await request.post(`/api/lanes/${seeded.laneId}/items`, {

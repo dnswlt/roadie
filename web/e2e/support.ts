@@ -87,6 +87,23 @@ export async function markFlagged(
   expect(res.ok(), `PATCH item flag -> ${res.status()}`).toBe(true);
 }
 
+// trackerBrowseUrl builds a browse link for `issueKey` under the tracker
+// deployment this server is configured with. Recon counts a link in a
+// description as a reference only when it sits under that deployment
+// (recon-diff.ts), so a fixture naming a plausible-looking Jira host elsewhere
+// is not a reference at all — the link has to come from the same place the app
+// reads it.
+export async function trackerBrowseUrl(
+  request: APIRequestContext,
+  issueKey: string,
+): Promise<string> {
+  const res = await request.get("/api/me");
+  expect(res.ok(), `GET /api/me -> ${res.status()}`).toBe(true);
+  const me = (await res.json()) as { trackerUrl: string };
+  expect(me.trackerUrl, "a tracker deployment is configured").not.toBe("");
+  return `${me.trackerUrl.replace(/\/+$/, "")}/browse/${issueKey}`;
+}
+
 // addItemDependency creates the one graph edge kind: `to` needs `from`.
 // Dependency-filter specs arrange edges through the API because the filter,
 // not the panel picker, is the interaction under test.
