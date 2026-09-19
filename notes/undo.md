@@ -70,10 +70,17 @@ are. That is where the position algebra gets pinned, not by hand-dragging.
 
 `actions.applyEdit(edit, { push = true })` computes the inverse, then does what
 today's actions do: optimistic local apply followed by the existing API calls.
-On success — and only on success — it pushes the inverse. For a multi-call
-gesture, wait for every request to settle. If any fails, do not record an undo
-step: clear the stack and reload from the server after all calls finish. An
-optimistic snapshot rollback cannot undo requests that already committed.
+It pushes the inverse before the requests go out, in the order this client
+applied them rather than the order the server answers in — two gestures overlap
+whenever a re-render commits a panel field left half-typed, and a stack in
+response order is one no cursor can walk back through. For a multi-call
+gesture, wait for every request to settle. If any fails, no undo step survives:
+the rollback clears the stack, and the roadmap is reloaded from the server once
+all calls finish. An optimistic snapshot rollback cannot undo requests that
+already committed. If that reload fails too and part of the gesture had landed,
+the roadmap on screen matches neither the server nor the edit: say so and ask
+for a page load, rather than let editing continue from a model known to be
+wrong.
 
 `updateItem`, `moveItemWithChildren`, `shiftItems`, `updateItemMetadata`,
 `updateMilestone`, `renameLane`, `setLaneColor` and `reorderLanes` become thin
@@ -100,7 +107,8 @@ Held by clearing, never by checking:
   and leaving a snapshot preview, a restore, and a failed mutation's rollback.
 * **A foreign SSE event or stream disconnect ⇒ clear immediately**, even when
   refresh is deferred during a drag or field edit. Reconnect refreshes the
-  roadmap before new history can be recorded.
+  roadmap, but an edit can record new history before that lands — the same
+  concurrent-edit race the paragraph below accepts.
 * **A successful roadmap-content mutation not recorded as an Edit ⇒ clear.**
   The action mutation boundary does this by default; recording an Edit is the
   explicit exception. Creates, deletes, schedule replacement and dependency

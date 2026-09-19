@@ -91,6 +91,26 @@ test("dropping a row onto a top-level row nests it under that item", async ({ pa
   expect(items.map((i) => i.title)).toEqual(["Alpha", "Gamma"]); // Beta left the top level
 });
 
+// The WBS half of the timeline's rule: a drag leaves the row it dropped
+// selected, whoever was selected before.
+test("a drag selects the row it dropped", async ({ page }) => {
+  await openWbs(page);
+  const [alpha, beta, gamma] = seeded.items;
+  await row(page, gamma!.id).click();
+  await expect(page.locator(".wbs-row.selected")).toHaveAttribute(
+    "data-item-id",
+    String(gamma!.id),
+  );
+
+  const a = (await row(page, alpha!.id).boundingBox())!;
+  await dragTo(page, beta!.id, a.x + a.width / 2, a.y + a.height / 2);
+
+  await expect(page.locator(".wbs-row.selected")).toHaveAttribute(
+    "data-item-id",
+    String(beta!.id),
+  );
+});
+
 test("filtering blocks WBS item rearrangement", async ({ page, request }) => {
   const [alpha, beta, gamma] = seeded.items;
   await markFlagged(request, alpha!.id);

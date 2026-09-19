@@ -63,7 +63,8 @@ Where things live: snapshots (store/server/`history.ts`) · trash
 (`search.ts` + `search-list.ts` + `find.ts`) · chart projection and item filter
 (`filter.ts`, held by `state.projection()`) ·
 Home dialog (`home.ts`, name-path
-folding in `tree.ts`) · shortcuts (`keys.ts`) ·
+folding in `tree.ts`) · shortcuts (`keys.ts`) · undo/redo (`undo.ts`, replayed
+through `actions.applyEdit`) ·
 snapping math (`snap.ts`, driven by `dnd.ts`) · WBS view (`wbs.ts` + `wbs-dnd.ts`) ·
 dependencies (`store/dependencies.go` + `depgraph.go`, `deps.ts` + `deps-graph.ts`) ·
 integration milestones and mirrors (`store/mirrors.go`, `server/integration.go`) ·

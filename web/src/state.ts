@@ -11,6 +11,7 @@ import {
   type Projection,
   type SignalFilterKind,
 } from "./filter";
+import { undoStack } from "./undo";
 import type {
   Contributor,
   Item,
@@ -79,6 +80,10 @@ class AppState {
   set current(next: RoadmapFull | null) {
     this.currentValue = next;
     this.invalidateDerived();
+    // Undo history describes the model its inverses were read from, so a
+    // wholesale replacement — an SSE refresh, another roadmap, a snapshot
+    // preview, a restore, a failed mutation's rollback — drops it too.
+    undoStack.clear();
   }
   // Identity and runtime capabilities from /api/me, fetched once at boot —
   // neither can change without a page load. Visibility decisions still arrive
@@ -202,6 +207,12 @@ class AppState {
   // header then hides itself. Unlike `history` this needs no null/closed state:
   // it is only ever read while the history side-list is open.
   contributors: Contributor[] = [];
+
+  // Set when a gesture part-saved and the resync that would have settled it
+  // failed as well: the roadmap on screen matches neither the server nor the
+  // edit, and only a page load can fix that. Drives the reload bar (app.ts),
+  // which has no dismissal for the same reason.
+  inconsistent = false;
 
   // Set when an SSE change event arrived while it was unsafe to auto-refresh
   // (a drag, a focused edit field, or a snapshot preview). Drives the "Updated

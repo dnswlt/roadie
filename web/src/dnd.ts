@@ -518,9 +518,10 @@ function onPointerUp(e: PointerEvent): void {
     return;
   }
 
-  // A single-item drag ends any lingering multi-selection: the user is now
-  // manipulating one item, so collapse back to a single (soon: none) selection.
-  if (state.hasMultiSelection()) state.clearSelection();
+  // A single-item drag selects what it dropped: the item just placed is the one
+  // the panel should be describing, and it is what the next keystroke acts on.
+  // Any lingering multi-selection collapses onto it.
+  state.selectItem(d.id);
 
   // Unfold the parent an item was just nested into, so it doesn't vanish into
   // a folded block. Done here rather than on hover: setCollapsed re-renders,

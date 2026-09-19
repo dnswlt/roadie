@@ -19,6 +19,8 @@ export interface ItemNode {
   title: string;
   description: string;
   labels: string[];
+  priority: number | null;
+  flagged: boolean;
   startDate: string;
   endDate: string;
   rank: number;

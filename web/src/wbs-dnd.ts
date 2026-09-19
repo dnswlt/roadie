@@ -270,9 +270,9 @@ function onPointerUp(e: PointerEvent): void {
   // A completed drag is not a click: click-jiggle-click must not read as a double.
   dblClick.reset();
 
-  // A drag ends any lingering multi-selection, as on the timeline: the user
-  // is now manipulating one item.
-  if (state.hasMultiSelection()) state.clearSelection();
+  // A drag selects the row it dropped, as on the timeline, collapsing any
+  // lingering multi-selection onto it.
+  state.selectItem(d.id);
 
   // Unfold the parent an item was just nested into, so it doesn't vanish into
   // a folded block (dnd.ts does the same, for the same reason).
@@ -290,10 +290,13 @@ function onPointerUp(e: PointerEvent): void {
   }
   if (Object.keys(patch).length > 0) {
     void actions.updateItem(d.id, patch);
+    return;
   }
-  // No net change needs no notify: unlike a bar resize, the preview never
-  // touched the element's real geometry — resetVisuals clearing the transform
-  // already put the row back exactly where the model has it.
+  // No net change moved nothing: unlike a bar resize, the preview never touched
+  // the element's real geometry — resetVisuals clearing the transform already
+  // put the row back exactly where the model has it. Only the selection is new,
+  // which is the narrow scope's whole purpose.
+  state.notifySelection();
 }
 
 function resetVisuals(d: WbsDrag): void {

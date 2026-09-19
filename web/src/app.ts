@@ -85,6 +85,7 @@ function render(): void {
   renderPanel(panel);
   renderHistory(historyEl, snapshotBanner);
   renderStalePill();
+  renderReloadBar();
 }
 
 // renderStalePill shows/hides the "Updated elsewhere" affordance, raised when a
@@ -102,6 +103,30 @@ function renderStalePill(): void {
   pill.textContent = "Updated elsewhere · Refresh";
   pill.addEventListener("click", refreshNow);
   document.body.appendChild(pill);
+}
+
+// renderReloadBar shows the one state the client cannot edit its way out of:
+// a gesture part-saved and the resync that would have settled it failed too
+// (actions.recover). It has no dismissal, because nothing on this page can
+// make the model true again.
+function renderReloadBar(): void {
+  const existing = document.getElementById("reload-bar");
+  if (!state.inconsistent) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const bar = document.createElement("div");
+  bar.id = "reload-bar";
+  bar.className = "reload-bar";
+  bar.append("Some changes may have saved. Reload the page before editing");
+  const reload = document.createElement("button");
+  reload.type = "button";
+  reload.className = "btn btn-primary reload-btn";
+  reload.textContent = "Reload";
+  reload.addEventListener("click", () => location.reload());
+  bar.append(reload);
+  document.body.appendChild(bar);
 }
 
 // renderVisibilityItem rebuilds the menu's private/public toggle. It is hidden

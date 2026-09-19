@@ -11,7 +11,9 @@
 //
 // Shortcuts are single-key wherever the action has a letter to type: no chords
 // to look up. Moving an item has no such letter and borrows the editors'
-// Alt+Arrow instead; Ctrl and Cmd stay with the browser and the OS.
+// Alt+Arrow instead. The rule is against *inventing* chords, so the primary
+// modifier is taken for undo and redo alone — Cmd+Z is already in everyone's
+// fingers — and left to the browser and the OS everywhere else.
 
 import { actions } from "./actions";
 import { openDepsForSelection } from "./deps";
@@ -40,8 +42,10 @@ export interface Binding {
   key: string;
   // Modifier the binding requires. Without one it is a bare shortcut, which
   // fires only when no modifier is held: an unmodified entry must never answer
-  // for part of a browser or OS chord.
-  mod?: "alt";
+  // for part of a browser or OS chord. "primary" is Cmd on macOS and Ctrl
+  // elsewhere, the platform's own edit modifier; Shift joins only that one
+  // (see matches).
+  mod?: "alt" | "primary" | "primary+shift";
   // How the key is drawn in Help (kbd label), which is not always `key`.
   label: string;
   // Shown in Help; a *starred* phrase renders bold there, a `backticked` key
@@ -57,6 +61,11 @@ export interface Binding {
   preventDefault?: boolean;
   run: () => void;
 }
+
+// How the primary modifier is written in Help, which is the only thing that
+// depends on knowing the platform — matching accepts either key (see matches),
+// so a wrong guess here costs a label, not a shortcut.
+const isMac = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent);
 
 export const bindings: Binding[] = [
   {
@@ -133,6 +142,24 @@ export const bindings: Binding[] = [
     run: () => moveSelection("down"),
   },
   {
+    key: "z",
+    mod: "primary",
+    label: isMac ? "⌘ Z" : "Ctrl Z",
+    description: "*Undo* the last edit to an item, milestone, or context.",
+    // Outside a text field the browser has no undo of its own to run here, but
+    // it would happily revert a field elsewhere on the page.
+    preventDefault: true,
+    run: () => void actions.undo(),
+  },
+  {
+    key: "z",
+    mod: "primary+shift",
+    label: isMac ? "⌘ ⇧ Z" : "Ctrl Shift Z",
+    description: "*Redo* the edit that was undone.",
+    preventDefault: true,
+    run: () => void actions.redo(),
+  },
+  {
     key: "!",
     label: "!",
     description: "*Flag or unflag* the selected items or milestone.",
@@ -205,6 +232,26 @@ export const bindings: Binding[] = [
   },
 ];
 
+// matches compares a binding against the event's modifiers. Alt and the primary
+// modifier are ours only where a binding asks for them, so a bare binding never
+// answers for part of a browser or OS chord.
+//
+// Either of Ctrl and Cmd counts as primary, rather than whichever this platform
+// is believed to use: the platform can only be guessed from a deprecated
+// string, and a wrong guess hands Cmd+Z silently back to the browser.
+//
+// Shift joins a chord only under the primary modifier, where the browser stops
+// shifting the character (Cmd+Shift+Z arrives as a plain "z"). Elsewhere it is
+// already in `key`.
+function matches(binding: Binding, e: KeyboardEvent): boolean {
+  if ((binding.mod === "alt") !== e.altKey) return false;
+  if (binding.mod === "primary" || binding.mod === "primary+shift") {
+    if (e.ctrlKey === e.metaKey) return false; // both or neither: an OS chord, not ours
+    return binding.key === e.key.toLowerCase() && (binding.mod === "primary+shift") === e.shiftKey;
+  }
+  return !e.ctrlKey && !e.metaKey && binding.key === e.key;
+}
+
 // isTextField reports whether the event target owns the characters typed into
 // it, in which case a bare-key shortcut is not ours to take.
 function isTextField(target: EventTarget | null): boolean {
@@ -215,13 +262,7 @@ function isTextField(target: EventTarget | null): boolean {
 
 export function initKeys(): void {
   window.addEventListener("keydown", (e) => {
-    // Leave browser/OS combos alone. Alt is ours only where a binding asks for
-    // it, so the same arrow key is free to mean nothing on its own. Shift is
-    // not excluded: e.key already reports the shifted character, so requiring
-    // Shift for "!" is invisible here and rejecting it would break layouts
-    // that need it.
-    if (e.ctrlKey || e.metaKey) return;
-    const binding = bindings.find((b) => b.key === e.key && (b.mod === "alt") === e.altKey);
+    const binding = bindings.find((b) => matches(b, e));
     if (!binding) return;
     // An open modal owns the keyboard: its own buttons take focus, so a target
     // check alone would let a shortcut fire on the chart behind the dialog.

@@ -2851,6 +2851,36 @@ dialog.mirror-dialog {
   filter: brightness(1.06);
 }
 
+/* The reload bar sits where the stale pill does but does not leave on its own:
+   it reports a roadmap the client can no longer describe, so it is a statement
+   with one way out rather than an affordance to dismiss. */
+.reload-bar {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 9px 10px 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+}
+
+.reload-bar .reload-btn {
+  flex: none;
+  padding: 4px 12px;
+  color: var(--danger);
+  background: #fff;
+  border-color: #fff;
+}
+
 /* Labels */
 
 /* Tag editor in the panel: chips and the add-input share one bordered box and

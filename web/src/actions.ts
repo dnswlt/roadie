@@ -2,18 +2,24 @@
 // deletes are optimistic: apply locally, call the API, and restore roadmap data
 // on failure. Transient view state such as selection is not transactional.
 // Creates wait for the server (it assigns the ID).
+//
+// Field edits additionally go through applyEdit, which records the inverse so
+// the same path can replay it (undo.ts).
 
 import { api } from "./api";
 import { connectEvents } from "./events";
+import { invalidatePanel } from "./panel";
 import { state } from "./state";
 import { dayOf, isoOf, todayDay } from "./timescale";
 import { toast } from "./toast";
+import { describeEdit, editTarget, inverseOf, undoStack, type Edit } from "./undo";
 import type {
   DependencyRef,
   ImportMode,
   Item,
   ItemFull,
   ItemPatch,
+  LanePatch,
   MilestonePatch,
   NewSchedulePeriod,
   Visibility,
@@ -44,9 +50,18 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// Mutations awaiting their response, through either boundary below. Undo and
+// redo stand down while one is in flight: the entry they would replay was read from a model that request is
+// about to change. Only replays are refused; ordinary edits are never queued.
+let mutationsInFlight = 0;
+
+// `recorded` says this mutation is already on the undo stack (applyEdit put it
+// there). Every other roadmap-content mutation through here drops the history
+// instead: an entry describes the model its inverse was read from.
 async function optimistic(
   mutate: () => void,
   call: () => Promise<unknown>,
+  opts: { recorded?: boolean } = {},
 ): Promise<boolean> {
   // Single choke point: no mutation persists while previewing a snapshot (its
   // IDs are historical and could hit the wrong live row). Silently no-op — the
@@ -55,13 +70,17 @@ async function optimistic(
   const snap = state.snapshot(); // Roadmap data only; selection/view state is not part of rollback.
   mutate();
   state.notify();
+  mutationsInFlight++;
   try {
     await call();
+    if (!opts.recorded) undoStack.clear();
     return true;
   } catch (e) {
     state.restore(snap);
     toast(errMsg(e), true);
     return false;
+  } finally {
+    mutationsInFlight--;
   }
 }
 
@@ -150,6 +169,190 @@ function applyItemPatch(id: number, patch: ItemPatch): void {
       lane.items.splice(idx, 0, full);
       renumber(lane.items);
     }
+  }
+}
+
+// applyMilestonePatch is applyItemPatch's milestone twin: a new date re-sorts
+// the lane it lives in, and integration is a property of its linkage rather
+// than a field of its own.
+function applyMilestonePatch(id: number, patch: MilestonePatch): void {
+  const loc = state.findMilestone(id);
+  if (!loc) return;
+  const { milestone } = loc;
+  if (patch.title !== undefined) milestone.title = patch.title;
+  if (patch.description !== undefined) milestone.description = patch.description;
+  if (patch.labels !== undefined) milestone.labels = patch.labels;
+  if (patch.flagged !== undefined) milestone.flagged = patch.flagged;
+  if (patch.tentative !== undefined) milestone.tentative = patch.tentative;
+  if (patch.atRisk !== undefined) milestone.atRisk = patch.atRisk;
+  if (patch.integration !== undefined) {
+    if (patch.integration) {
+      milestone.linkage = { ...milestone.linkage, integration: true };
+    } else if (milestone.linkage?.sourceUid) {
+      milestone.linkage = { ...milestone.linkage, integration: false };
+    } else {
+      milestone.linkage = undefined;
+    }
+  }
+  if (patch.date !== undefined) {
+    milestone.date = patch.date;
+    loc.lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  // A lane move is a plain relocation: milestones have no rank, so the target
+  // lane keeps its date order and neither lane renumbers.
+  if (patch.laneId !== undefined && patch.laneId !== milestone.laneId) {
+    const target = state.findLane(patch.laneId);
+    if (target) {
+      loc.lane.milestones = loc.lane.milestones.filter((m) => m.id !== id);
+      milestone.laneId = patch.laneId;
+      target.milestones.push(milestone);
+      target.milestones.sort((a, b) => a.date.localeCompare(b.date));
+    }
+  }
+}
+
+function applyLanePatch(id: number, patch: LanePatch): void {
+  const lane = state.findLane(id);
+  if (!lane) return;
+  if (patch.name !== undefined) lane.name = patch.name;
+  if (patch.color !== undefined) lane.color = patch.color;
+}
+
+function applyLaneOrder(laneIds: number[]): void {
+  if (!state.current) return;
+  const byId = new Map(state.current.lanes.map((l) => [l.id, l]));
+  const lanes = [];
+  for (const id of laneIds) {
+    const lane = byId.get(id);
+    if (lane) lanes.push(lane);
+  }
+  state.current.lanes = lanes;
+}
+
+function applyEditLocal(edit: Edit): void {
+  for (const e of edit.items ?? []) applyItemPatch(e.id, e.patch);
+  for (const e of edit.milestones ?? []) applyMilestonePatch(e.id, e.patch);
+  for (const e of edit.lanes ?? []) applyLanePatch(e.id, e.patch);
+  if (edit.laneOrder) applyLaneOrder(edit.laneOrder);
+}
+
+function editRequests(edit: Edit, roadmapId: number): Promise<unknown>[] {
+  const calls: Promise<unknown>[] = [];
+  for (const e of edit.items ?? []) calls.push(api.updateItem(e.id, e.patch));
+  for (const e of edit.milestones ?? []) calls.push(api.updateMilestone(e.id, e.patch));
+  for (const e of edit.lanes ?? []) calls.push(api.updateLane(e.id, e.patch));
+  if (edit.laneOrder) calls.push(api.setLaneOrder(roadmapId, edit.laneOrder));
+  return calls;
+}
+
+// serverFirst runs a mutation the server has to answer before local state can
+// change: a create, which is where the id comes from, or a wholesale
+// replacement. It is the other mutation boundary beside optimistic, and it
+// counts in flight for the same reason — nothing it does is an Edit, so the
+// history goes with it, and no replay may run while one is pending.
+async function serverFirst<T>(request: Promise<T>): Promise<T> {
+  mutationsInFlight++;
+  try {
+    const result = await request;
+    undoStack.clear();
+    return result;
+  } finally {
+    mutationsInFlight--;
+  }
+}
+
+// recover resyncs after a gesture whose requests did not all succeed. The
+// rollback restored the pre-edit snapshot, which is exact only while nothing
+// committed, so the server is asked what the roadmap now holds — and the undo
+// history goes, since no entry can describe a model this uncertain.
+//
+// `committed` says at least one request did land. If the resync then fails too,
+// the roadmap on screen matches neither the server nor the edit, and no further
+// editing can put that right: the client says so and asks for a reload (app.ts).
+async function recover(committed: boolean): Promise<void> {
+  undoStack.clear();
+  try {
+    await actions.refreshFromServer();
+  } catch {
+    if (committed) {
+      state.inconsistent = true;
+      state.notify();
+    }
+  }
+}
+
+// applyEdit is the one path an undoable gesture takes: read the inverse off the
+// current model, record it as one undo step, apply the batch locally, and send
+// its PATCHes. Undo and redo replay through here with push: false.
+async function applyEdit(edit: Edit, opts: { push?: boolean } = {}): Promise<boolean> {
+  const roadmap = state.current;
+  if (!roadmap || state.preview) return false;
+  const roadmapId = roadmap.id;
+  const push = opts.push !== false;
+  const inverse = push ? inverseOf(edit, roadmap) : null;
+  // Record before the requests go out, in the order this client applied them
+  // rather than the order the server answers in. Those differ whenever two
+  // gestures overlap — and one common sequence guarantees it, since the
+  // re-render below is what commits a panel field the user had left half-typed.
+  // Nothing is owed to a failure: the rollback replaces `current`, which drops
+  // the whole history with it.
+  if (push) {
+    if (inverse) undoStack.push({ forward: edit, inverse });
+    else undoStack.clear(); // the batch named something the roadmap no longer holds
+  }
+  let settled: PromiseSettledResult<unknown>[] = [];
+  const ok = await optimistic(
+    () => applyEditLocal(edit),
+    async () => {
+      // Every request settles before the rollback runs: restoring the pre-edit
+      // snapshot over a request still on its way would leave the client showing
+      // a change the server accepted.
+      settled = await Promise.allSettled(editRequests(edit, roadmapId));
+      const failed = settled.find((r) => r.status === "rejected");
+      if (failed) throw failed.reason;
+    },
+    { recorded: true },
+  );
+  if (!ok) {
+    // One request that failed committed nothing, so the rollback is the whole
+    // repair. Several are a gesture in an unknown state.
+    if (settled.length > 1) {
+      await recover(settled.some((r) => r.status === "fulfilled"));
+    }
+    return false;
+  }
+  return true;
+}
+
+// replay applies a recorded step: undo the inverse, redo the edit as made. The
+// cursor moves only once the replay has landed, and only if the history it
+// started from is still the one on the stack.
+async function replay(direction: "undo" | "redo"): Promise<void> {
+  // While a snapshot is previewed the chord does nothing at all, toast included.
+  if (!state.current || state.preview) return;
+  if (mutationsInFlight > 0) return;
+  const step = direction === "undo" ? undoStack.undoStep() : undoStack.redoStep();
+  if (!step) {
+    // Say so rather than do nothing: what emptied the stack was a create, a
+    // delete or a restore, and version history is what reverses those.
+    if (direction === "undo") toast("Nothing to undo — try version history");
+    return;
+  }
+  const edit = direction === "undo" ? step.inverse : step.forward;
+  const mark = undoStack.mark();
+  // A replay changes panel fields from outside the panel.
+  invalidatePanel();
+  if (!(await applyEdit(edit, { push: false }))) return;
+  if (direction === "undo") undoStack.commitUndo(mark);
+  else undoStack.commitRedo(mark);
+  // An undo the user cannot see reads as a broken shortcut, so the entity it
+  // touched is revealed, selected and named.
+  const target = editTarget(edit);
+  if (target) state.jumpTo(target.kind, target.id);
+  const roadmap = state.current;
+  if (roadmap) {
+    const what = describeEdit(edit, roadmap);
+    toast(direction === "undo" ? `Undid ${what}` : `Redid ${what}`);
   }
 }
 
@@ -346,7 +549,7 @@ export const actions = {
   async addLane(name: string): Promise<void> {
     if (!state.current || state.preview) return;
     try {
-      const lane = await api.createLane(state.current.id, name);
+      const lane = await serverFirst(api.createLane(state.current.id, name));
       state.current.lanes.push({ ...lane, items: [], milestones: [] });
       state.notify();
     } catch (e) {
@@ -355,23 +558,11 @@ export const actions = {
   },
 
   async renameLane(id: number, name: string): Promise<void> {
-    await optimistic(
-      () => {
-        const lane = state.findLane(id);
-        if (lane) lane.name = name;
-      },
-      () => api.updateLane(id, { name }),
-    );
+    await applyEdit({ lanes: [{ id, patch: { name } }] });
   },
 
   async setLaneColor(id: number, color: string): Promise<void> {
-    await optimistic(
-      () => {
-        const lane = state.findLane(id);
-        if (lane) lane.color = color;
-      },
-      () => api.updateLane(id, { color }),
-    );
+    await applyEdit({ lanes: [{ id, patch: { color } }] });
   },
 
   async deleteLane(id: number): Promise<void> {
@@ -395,21 +586,7 @@ export const actions = {
   },
 
   async reorderLanes(laneIds: number[]): Promise<void> {
-    if (!state.current) return;
-    const rmId = state.current.id;
-    await optimistic(
-      () => {
-        if (!state.current) return;
-        const byId = new Map(state.current.lanes.map((l) => [l.id, l]));
-        const lanes = [];
-        for (const id of laneIds) {
-          const lane = byId.get(id);
-          if (lane) lanes.push(lane);
-        }
-        state.current.lanes = lanes;
-      },
-      () => api.setLaneOrder(rmId, laneIds),
-    );
+    await applyEdit({ laneOrder: laneIds });
   },
 
   // addItem creates an item with default dates and selects it for editing.
@@ -448,14 +625,16 @@ export const actions = {
     }
     let item: Item;
     try {
-      item = await api.createItem(laneId, {
-        title: parentId ? "New child item" : "New item",
-        description: "",
-        startDate: isoOf(startDay),
-        endDate: isoOf(endDay),
-        parentId,
-        rank: opts.rank,
-      });
+      item = await serverFirst(
+        api.createItem(laneId, {
+          title: parentId ? "New child item" : "New item",
+          description: "",
+          startDate: isoOf(startDay),
+          endDate: isoOf(endDay),
+          parentId,
+          rank: opts.rank,
+        }),
+      );
     } catch (e) {
       toast(errMsg(e), true);
       return null;
@@ -484,10 +663,7 @@ export const actions = {
   },
 
   async updateItem(id: number, patch: ItemPatch): Promise<void> {
-    await optimistic(
-      () => applyItemPatch(id, patch),
-      () => api.updateItem(id, patch),
-    );
+    await applyEdit({ items: [{ id, patch }] });
   },
 
   // moveItemWithChildren patches a parent item and shifts each child's dates
@@ -507,17 +683,7 @@ export const actions = {
         endDate: isoOf(dayOf(c.endDate) + dayDelta),
       } satisfies ItemPatch,
     }));
-    await optimistic(
-      () => {
-        applyItemPatch(id, patch);
-        for (const cp of childPatches) applyItemPatch(cp.id, cp.patch);
-      },
-      () =>
-        Promise.all([
-          api.updateItem(id, patch),
-          ...childPatches.map((cp) => api.updateItem(cp.id, cp.patch)),
-        ]),
-    );
+    await applyEdit({ items: [{ id, patch }, ...childPatches] });
   },
 
   // shiftItems moves several items in time by the same day-delta, leaving
@@ -537,12 +703,7 @@ export const actions = {
         },
       });
     }
-    await optimistic(
-      () => {
-        for (const p of patches) applyItemPatch(p.id, p.patch);
-      },
-      () => Promise.all(patches.map((p) => api.updateItem(p.id, p.patch))),
-    );
+    await applyEdit({ items: patches });
   },
 
   // updateItemMetadata applies one scalar patch to several explicitly selected items.
@@ -553,12 +714,7 @@ export const actions = {
     patch: ItemMetadataPatch,
   ): Promise<void> {
     if (ids.length === 0) return;
-    await optimistic(
-      () => {
-        for (const id of ids) applyItemPatch(id, patch);
-      },
-      () => Promise.all(ids.map((id) => api.updateItem(id, patch))),
-    );
+    await applyEdit({ items: ids.map((id) => ({ id, patch })) });
   },
 
   // setFlagged backs both the panel chip and the "!" shortcut. It retains the
@@ -610,11 +766,13 @@ export const actions = {
   async addMilestone(laneId: number): Promise<void> {
     if (state.preview) return;
     try {
-      const milestone = await api.createMilestone(laneId, {
-        title: "New milestone",
-        description: "",
-        date: isoOf(todayDay()),
-      });
+      const milestone = await serverFirst(
+        api.createMilestone(laneId, {
+          title: "New milestone",
+          description: "",
+          date: isoOf(todayDay()),
+        }),
+      );
       const lane = state.findLane(milestone.laneId);
       if (lane) {
         lane.milestones.push(milestone);
@@ -635,7 +793,7 @@ export const actions = {
   async addMirror(laneId: number, sourceUid: string): Promise<boolean> {
     if (state.preview) return false;
     try {
-      const milestone = await api.createMilestone(laneId, { sourceUid });
+      const milestone = await serverFirst(api.createMilestone(laneId, { sourceUid }));
       const lane = state.findLane(milestone.laneId);
       if (lane) {
         lane.milestones.push(milestone);
@@ -652,48 +810,7 @@ export const actions = {
   },
 
   async updateMilestone(id: number, patch: MilestonePatch): Promise<void> {
-    await optimistic(
-      () => {
-        const loc = state.findMilestone(id);
-        if (!loc) return;
-        const { milestone } = loc;
-        if (patch.title !== undefined) milestone.title = patch.title;
-        if (patch.description !== undefined)
-          milestone.description = patch.description;
-        if (patch.labels !== undefined) milestone.labels = patch.labels;
-        if (patch.flagged !== undefined) milestone.flagged = patch.flagged;
-        if (patch.tentative !== undefined)
-          milestone.tentative = patch.tentative;
-        if (patch.atRisk !== undefined) milestone.atRisk = patch.atRisk;
-        if (patch.integration !== undefined) {
-          if (patch.integration) {
-            milestone.linkage = { ...milestone.linkage, integration: true };
-          } else if (milestone.linkage?.sourceUid) {
-            milestone.linkage = { ...milestone.linkage, integration: false };
-          } else {
-            milestone.linkage = undefined;
-          }
-        }
-        if (patch.date !== undefined) {
-          milestone.date = patch.date;
-          loc.lane.milestones.sort((a, b) => a.date.localeCompare(b.date));
-        }
-        // A lane move is a plain relocation: milestones have no rank, so the
-        // target lane keeps its date order and neither lane renumbers.
-        if (patch.laneId !== undefined && patch.laneId !== milestone.laneId) {
-          const target = state.findLane(patch.laneId);
-          if (target) {
-            loc.lane.milestones = loc.lane.milestones.filter(
-              (m) => m.id !== id,
-            );
-            milestone.laneId = patch.laneId;
-            target.milestones.push(milestone);
-            target.milestones.sort((a, b) => a.date.localeCompare(b.date));
-          }
-        }
-      },
-      () => api.updateMilestone(id, patch),
-    );
+    await applyEdit({ milestones: [{ id, patch }] });
   },
 
   async deleteMilestone(id: number): Promise<void> {
@@ -720,7 +837,7 @@ export const actions = {
   ): Promise<boolean> {
     if (state.preview || !state.current) return false;
     try {
-      const dep = await api.createDependency(state.current.id, from, to);
+      const dep = await serverFirst(api.createDependency(state.current.id, from, to));
       state.current.dependencies.push(dep);
       state.notify();
       return true;
@@ -756,13 +873,24 @@ export const actions = {
   ): Promise<{ saved: boolean; error?: string }> {
     if (state.preview || !state.current) return { saved: false };
     try {
-      const saved = await api.replaceSchedule(state.current.id, periods);
+      const saved = await serverFirst(api.replaceSchedule(state.current.id, periods));
       state.current.periods = saved;
       state.notify();
       return { saved: true };
     } catch (e) {
       return { saved: false, error: errMsg(e) };
     }
+  },
+
+  // Undo and redo. Both replay a recorded edit through the same mutation path
+  // it took: another PATCH, with its own snapshot, its own change event and
+  // its own attribution. Keyboard-only (keys.ts).
+  async undo(): Promise<void> {
+    await replay("undo");
+  },
+
+  async redo(): Promise<void> {
+    await replay("redo");
   },
 
   // Version history (snapshots).

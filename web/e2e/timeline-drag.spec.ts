@@ -294,6 +294,21 @@ test("dragging a timeline bar into another lane moves it across lanes", async ({
     });
 });
 
+// What you just placed is what you are working on: a drag leaves its item
+// selected, so the panel describes it and the next keystroke acts on it. A
+// drag that started from another item's selection is the case that shows it.
+test("a drag selects the bar it dropped", async ({ page }) => {
+  await openTimeline(page);
+  const [alpha, beta] = [seeded.items[0]!, seeded.items[1]!];
+  await bar(page, beta.id).click();
+  await expect(page.locator(".block.selected")).toHaveAttribute("data-item-id", String(beta.id));
+
+  await dragToLane(page, alpha.id, targetLaneId);
+
+  await expect(page.locator(".block.selected")).toHaveAttribute("data-item-id", String(alpha.id));
+  await expect(page.locator("#panel .panel-title-input")).toHaveValue(alpha.title);
+});
+
 test("dropping a timeline bar onto another bar nests it under that item", async ({ page, request }) => {
   await openTimeline(page);
   const [alpha, beta] = seeded.items;

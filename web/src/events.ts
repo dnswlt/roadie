@@ -14,6 +14,7 @@ import { api, clientId } from "./api";
 import { isDragging } from "./dnd";
 import { isWbsDragging } from "./wbs-dnd";
 import { state } from "./state";
+import { undoStack } from "./undo";
 
 // REFRESH_DEBOUNCE_MS coalesces a burst of events (a parent moved with its
 // children, a multi-select shift arriving as several pings) into one refetch.
@@ -47,12 +48,16 @@ export function connectEvents(roadmapId: number): void {
   source?.close();
   sourceRoadmapId = roadmapId;
   source = new EventSource(`/api/roadmaps/${roadmapId}/events`);
-  // On a *reconnect* (not the first open) refetch once: a change may have
-  // landed while we were disconnected, and no event for it is coming.
+  // Refetch once after any gap in coverage: a change may have landed while we
+  // were disconnected and no event for it is coming. A reconnect is the obvious
+  // gap; so is a first connection that only succeeded after a failed attempt,
+  // where the roadmap was loaded before anything was listening.
   let opened = false;
+  let gap = false;
   source.onopen = () => {
-    if (opened) requestRefresh();
+    if (opened || gap) requestRefresh();
     opened = true;
+    gap = false;
   };
   source.onmessage = (e) => {
     let ev: { origin?: string };
@@ -73,6 +78,10 @@ export function connectEvents(roadmapId: number): void {
   // than transient — api.me() redirects into the login flow on a 401 and is a
   // cheap no-op otherwise.
   source.onerror = () => {
+    // A gap in the stream is an unobserved remote edit: what is recorded can
+    // no longer be trusted to describe the roadmap on the server.
+    gap = true;
+    undoStack.clear();
     clearTimeout(authProbeTimer);
     authProbeTimer = window.setTimeout(() => {
       if (source?.readyState === EventSource.OPEN) return; // it came back; nothing to do
@@ -92,6 +101,11 @@ function isEditing(): boolean {
 // requestRefresh applies the refresh when it's safe, otherwise raises the stale
 // pill and waits for the user to finish (maybeFlush) or click it (refreshNow).
 function requestRefresh(): void {
+  // Drop the undo history on the *observed* remote edit rather than when the
+  // refresh lands, which is debounced and deferred outright during a drag or a
+  // field edit. What an edit records between here and the refresh is the race
+  // client-only undo cannot close anyway (notes/undo.md).
+  undoStack.clear();
   if (isEditing()) {
     if (!state.stale) {
       state.stale = true;

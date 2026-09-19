@@ -310,6 +310,13 @@ function savePanelField(save: () => void): void {
 // re-render can skip rebuilding the panel under the user's cursor.
 let renderedKey: string | null = null;
 
+// invalidatePanel makes the next render rebuild the panel even while it holds
+// focus. Panel controls repaint themselves on the click that changed them, so
+// anything changing those same fields from elsewhere must ask for a rebuild.
+export function invalidatePanel(): void {
+  renderedKey = null;
+}
+
 // The panel element, captured on render so flushPendingEdit can find it.
 let panelEl: HTMLElement | null = null;
 
