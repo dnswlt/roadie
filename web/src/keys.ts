@@ -9,8 +9,9 @@
 //     because *nothing* competes for the keystroke, and that argument has to
 //     hold for every binding, not per handler.
 //
-// Shortcuts stay single-key on purpose: no chords to look up, and Ctrl/Cmd/Alt
-// combos are left to the browser and the OS.
+// Shortcuts are single-key wherever the action has a letter to type: no chords
+// to look up. Moving an item has no such letter and borrows the editors'
+// Alt+Arrow instead; Ctrl and Cmd stay with the browser and the OS.
 
 import { actions } from "./actions";
 import { openDepsForSelection } from "./deps";
@@ -26,6 +27,7 @@ import {
   togglePanel,
 } from "./panel";
 import { cancelReconLinkMode } from "./recon";
+import { moveSelection } from "./reorder";
 import { state } from "./state";
 import { zoomToFit } from "./zoom";
 
@@ -36,6 +38,10 @@ export interface Binding {
   // foreclose ever binding the pair separately. The cost is that Caps Lock
   // suppresses letter shortcuts, which is the cheaper of the two problems.
   key: string;
+  // Modifier the binding requires. Without one it is a bare shortcut, which
+  // fires only when no modifier is held: an unmodified entry must never answer
+  // for part of a browser or OS chord.
+  mod?: "alt";
   // How the key is drawn in Help (kbd label), which is not always `key`.
   label: string;
   // Shown in Help; a *starred* phrase renders bold there, a `backticked` key
@@ -106,6 +112,25 @@ export const bindings: Binding[] = [
     // into it — same reason as "/".
     preventDefault: true,
     run: () => editSelection(),
+  },
+  {
+    key: "ArrowUp",
+    mod: "alt",
+    label: "Alt ↑",
+    description: "*Move the selected item up*, within its context or its parent.",
+    // Option+Arrow scrolls by the page in macOS browsers. The keystroke is
+    // ours whenever it matches a binding, move or no move, so the chart never
+    // jumps a page behind the row being moved.
+    preventDefault: true,
+    run: () => moveSelection("up"),
+  },
+  {
+    key: "ArrowDown",
+    mod: "alt",
+    label: "Alt ↓",
+    description: "*Move the selected item down*, within its context or its parent.",
+    preventDefault: true,
+    run: () => moveSelection("down"),
   },
   {
     key: "!",
@@ -190,11 +215,13 @@ function isTextField(target: EventTarget | null): boolean {
 
 export function initKeys(): void {
   window.addEventListener("keydown", (e) => {
-    // Leave browser/OS combos alone. Shift is not excluded: e.key already
-    // reports the shifted character, so requiring Shift for "!" is invisible
-    // here and rejecting it would break layouts that need it.
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const binding = bindings.find((b) => b.key === e.key);
+    // Leave browser/OS combos alone. Alt is ours only where a binding asks for
+    // it, so the same arrow key is free to mean nothing on its own. Shift is
+    // not excluded: e.key already reports the shifted character, so requiring
+    // Shift for "!" is invisible here and rejecting it would break layouts
+    // that need it.
+    if (e.ctrlKey || e.metaKey) return;
+    const binding = bindings.find((b) => b.key === e.key && (b.mod === "alt") === e.altKey);
     if (!binding) return;
     // An open modal owns the keyboard: its own buttons take focus, so a target
     // check alone would let a shortcut fire on the chart behind the dialog.

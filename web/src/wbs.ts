@@ -18,6 +18,7 @@ import { laneColorValue } from "./colors";
 import { type DepSummary, refKey } from "./deps-graph";
 
 import { icons } from "./icons";
+import { LABEL_W } from "./layout";
 import {
   barLink,
   barTitle,
@@ -31,6 +32,7 @@ import {
   riskMark,
 } from "./render";
 import { periodPointText, periodRangeText } from "./schedule";
+import { scrollIntoViewport } from "./scroll";
 import { state } from "./state";
 import { contentRange, dayOf, formatDay, spanFraction } from "./timescale";
 import type { Item, ItemFull, LaneFull, Milestone } from "./types";
@@ -102,12 +104,18 @@ export function renderWbs(container: HTMLElement): void {
 
   container.append(lanesEl, addRow);
 
-  const selectedEl = state.scrollToSelection
+  const scrollMode = state.scrollToSelection;
+  const selectedEl = scrollMode
     ? container.querySelector<HTMLElement>(".wbs-row.selected, .wbs-milestone.selected")
     : null;
-  if (state.scrollToSelection && selectedEl) {
-    state.scrollToSelection = false;
-    selectedEl.scrollIntoView({ block: "center" });
+  if (scrollMode && selectedEl) {
+    state.scrollToSelection = null;
+    // Put the scroller back where the reader left it before measuring: see
+    // render.ts, same reason.
+    container.scrollTop = scrollTop;
+    // Nothing is pinned over the outline's top; the Contexts rail is pinned
+    // over its left in both views.
+    scrollIntoViewport(container, selectedEl, scrollMode, { top: 0, left: LABEL_W });
   } else {
     container.scrollTop = scrollTop;
   }

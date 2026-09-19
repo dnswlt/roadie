@@ -22,6 +22,7 @@ import {
 } from "./layout";
 import { extractLinks } from "./links";
 import { scheduleBounds } from "./schedule";
+import { scrollIntoViewport } from "./scroll";
 import { state } from "./state";
 import {
   calendarGridTicks,
@@ -179,15 +180,28 @@ export function renderChart(container: HTMLElement): void {
   container.append(grid);
   renderTimelineDependencies(container);
 
-  const selectedEl = state.scrollToSelection
+  const scrollMode = state.scrollToSelection;
+  const selectedEl = scrollMode
     ? container.querySelector<HTMLElement>(".block.selected, .child-bar.selected, .milestone.selected")
     : null;
-  if (state.scrollToSelection && selectedEl) {
-    state.scrollToSelection = false;
+  if (scrollMode && selectedEl) {
+    state.scrollToSelection = null;
     state.scrollToToday = false;
-    selectedEl.scrollIntoView({ block: "center", inline: "center" });
+    // Put the scroller back where the reader left it before measuring:
+    // replaceChildren above reset it to the top, and "nearest" means nearest
+    // to the viewport they are actually looking at.
+    container.scrollLeft = scrollLeft;
+    container.scrollTop = scrollTop;
+    // The row itself, not the block it heads: a parent's block is as tall as
+    // its children, and making room for the whole family would push the row
+    // being moved off the top of the band.
+    const rowEl = selectedEl.querySelector<HTMLElement>(":scope > .bar") ?? selectedEl;
+    scrollIntoViewport(container, rowEl, scrollMode, {
+      top: pinnedTop(container),
+      left: LABEL_W,
+    });
   } else if (state.scrollToToday) {
-    state.scrollToSelection = false;
+    state.scrollToSelection = null;
     state.scrollToToday = false;
     container.scrollLeft = Math.max(0, LABEL_W + tx - container.clientWidth / 2);
     container.scrollTop = 0;
@@ -195,6 +209,19 @@ export function renderChart(container: HTMLElement): void {
     container.scrollLeft = scrollLeft;
     container.scrollTop = scrollTop;
   }
+}
+
+// pinnedTop measures how much of the scroller's top edge the bands pinned over
+// it cover: the time axis, and the active-item profile when it is shown.
+// Measured rather than added up from their CSS offsets, which would be a
+// second copy of a layout the stylesheet owns.
+function pinnedTop(container: HTMLElement): number {
+  const top = container.getBoundingClientRect().top;
+  let covered = 0;
+  for (const el of container.querySelectorAll<HTMLElement>(".thead, .activity-row")) {
+    covered = Math.max(covered, el.getBoundingClientRect().bottom - top);
+  }
+  return covered;
 }
 
 function renderActivityLane(

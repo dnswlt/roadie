@@ -1,3 +1,4 @@
+import type { ScrollMode } from "./scroll";
 import { DEFAULT_PX_PER_DAY, type SnapMode } from "./timescale";
 import { analyzeDependencies, type DependencyAnalysis } from "./deps-graph";
 import {
@@ -40,6 +41,7 @@ export interface MilestoneLocation {
 }
 
 export type { Filter } from "./filter";
+export type { ScrollMode } from "./scroll";
 
 // Which projection is on screen: the timeline chart (render.ts), the WBS
 // outline (wbs.ts), or the Jira Recon view (recon.ts). Recon holds its tracker
@@ -161,9 +163,13 @@ class AppState {
   }
   // Set after loading a roadmap so the chart scrolls to today once.
   scrollToToday = false;
-  // Set when a selection should be scrolled into view once (e.g. a deep link
-  // opened with #item-/#milestone-). Takes precedence over scrollToToday.
-  scrollToSelection = false;
+  // Set when a selection should be scrolled into view once. Takes precedence
+  // over scrollToToday. The mode says how far the viewport may travel to do
+  // it: "center" for arriving from somewhere else (a deep link, find, a view
+  // switch), where the surroundings are unknown and the selection should land
+  // in the middle; "nearest" for a selection that moved a step under the user,
+  // which only has to stay on screen.
+  scrollToSelection: ScrollMode | null = null;
   // Lanes hidden from the chart. Purely a view preference (not part of the
   // data model), persisted per roadmap in localStorage.
   hiddenLanes = new Set<number>();
@@ -459,7 +465,7 @@ class AppState {
     }
     localStorage.setItem("roadie.view", mode);
     if (this.selectedItemIds.size > 0 || this.selectedMilestoneId !== null) {
-      this.scrollToSelection = true;
+      this.scrollToSelection = "center";
     }
     this.notify();
   }
@@ -825,7 +831,7 @@ class AppState {
       if (this.isLaneHidden(loc.lane.id)) this.setLaneHidden(loc.lane.id, false);
       this.selectMilestone(id);
     }
-    this.scrollToSelection = true;
+    this.scrollToSelection = "center";
     return true;
   }
 
